@@ -1,0 +1,115 @@
+name: Tests
+
+on:
+  push:
+    branches: '**'
+    tags-ignore: '**'
+  pull_request:
+
+jobs:
+  Static-Code-Checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Style Check With Black
+        run: |
+          python3 -m pip install black
+          black -q --diff --line-length 120 --skip-string-normalization *.py > black.diff
+          if [ -s black.diff ]; then
+              cat black.diff
+              exit 123
+          fi
+
+      - name: Lint With Codespell
+        run: |
+          python3 -m pip install codespell
+          codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)' )
+
+      - name: Lint With Flake8
+        run: |
+          python3 -m pip install flake8 Flake8-pyproject
+          flake8 *.py
+
+      - name: Lint With Pylint
+        run: |
+          python3 -m pip install pylint
+          pylint --rcfile tests/.pylintrc *.py | tee pylint.log
+          ! 'egrep' ': E[0-9]{4}: ' pylint.log
+
+      - name: Lint With Pytype
+        run: |
+          python3 -m pip install pytype
+          pytype -d import-error *.py
+
+      - name: Lint With Mypy
+        run: |
+          yes | python3 -m pip install --upgrade-strategy eager --upgrade types-dataclasses mypy
+          mypy *.py
+
+  Tests:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: ['macos-latest', 'ubuntu-latest']
+        # https://endoflife.date/python
+        python-version: ['3.9', '3.12', '3.13']
+        include:
+        - os: ubuntu-latest
+          python-version: '3.14.0-alpha.0'
+
+    defaults:
+      run:
+        # This is especially important for windows because it seems to default to powershell
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # We need one tag for testing the git mount.
+          # This is BROKEN! God damn it. Is anything working at all...
+          # https://github.com/actions/checkout/issues/1781
+          fetch-tags: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Dependencies (Linux)
+        if: startsWith( matrix.os, 'ubuntu' )
+        run: |
+          sudo apt-get -y install libfuse2 fuse3
+
+      - name: Install Dependencies (MacOS)
+        if: startsWith( matrix.os, 'macos' )
+        run: |
+          brew install macfuse
+
+      - name: Install pip Dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --upgrade wheel
+          python3 -m pip install --upgrade setuptools
+          python3 -m pip install --upgrade-strategy eager --upgrade twine build
+
+      - name: Test Installation From Tarball
+        run: |
+          python3 -m build
+          twine check dist/*
+          python3 -m pip install "$( find dist -name '*.tar.gz' | head -1 )"[full]
+
+      - name: Test Installation From Source
+        run: |
+          python3 -m pip install .[full]
+
+      - name: Test Import
+        run: |
+          python3 -c 'import mfusepy'
