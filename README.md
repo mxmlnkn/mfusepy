@@ -60,11 +60,12 @@ In the end, there is mostly only some path-to-hash table in the high-level libfu
 
 See some examples of how you can use fusepy:
 
----------------------------------+-----------------------------
-[memory](examples/memory.py)     | A simple memory filesystem
-[loopback](examples/loopback.py) | A loopback filesystem
-[context](examples/context.py)   | Sample usage of fuse_get_context()
-[sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)
+| Example                          | Description                                    |
+|----------------------------------|------------------------------------------------|
+| [memory](examples/memory.py)     | A simple memory filesystem                     |
+| [loopback](examples/loopback.py) | A loopback filesystem                          |
+| [context](examples/context.py)   | Sample usage of fuse_get_context()             |
+| [sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)   |
 
 
 # Platforms
