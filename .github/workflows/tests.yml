@@ -91,7 +91,7 @@ jobs:
       - name: Install Dependencies (MacOS)
         if: startsWith( matrix.os, 'macos' )
         run: |
-          brew install macfuse
+          brew install -q macfuse
 
       - name: Install pip Dependencies
         run: |
