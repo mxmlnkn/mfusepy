@@ -1797,10 +1797,6 @@ class Operations:
         return {'st_mode': (S_IFDIR | 0o755), 'st_nlink': 2}
 
     @_nullable_dummy_function
-    def getxattr(self, path, name, position=0):
-        raise FuseOSError(ENOTSUP)
-
-    @_nullable_dummy_function
     def init(self, path):
         '''
         Called on filesystem initialization. (Path is always /)
@@ -1829,7 +1825,26 @@ class Operations:
 
     @_nullable_dummy_function
     def listxattr(self, path):
+        '''
+        Return all extended file attribute keys for the specified path.
+        Should return an iterable of text strings.
+        '''
         return []
+
+    @_nullable_dummy_function
+    def getxattr(self, path, name, position=0):
+        '''
+        Return the extended file attribute value to the specified (key) name and path.
+        Should return a bytes object.
+        '''
+        # I have no idea what 'position' does. It is a compatibility placeholder specifically for
+        # "if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):", for which getxattr_t supposedly has
+        # an additional uint32_t argument for some reason. I think that including FreeBSD here might be a bug,
+        # because it also only uses libfuse. TODO: Somehow need to test this!
+        # MacFuse does indeed have that extra argument but also only in some overload, not in "Vanilla":
+        # https://github.com/macfuse/library/blob/6c26f28394c1cbda2428498c03e1f898c775404e/include/fuse.h#L1465-L1471
+        # It seems to be some kind of position, maybe to query very long values in a chunked manner with an offset?
+        raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
     def lock(self, path, fh, cmd, lock):

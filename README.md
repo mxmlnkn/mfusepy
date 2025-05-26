@@ -6,6 +6,8 @@ It's just one file and is implemented using ctypes to use [libfuse](https://gith
 
 # Installation
 
+Via [PyPI](https://pypi.org/project/mfusepy/):
+
 ```bash
 pip install mfusepy
 ```
