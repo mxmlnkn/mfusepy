@@ -1342,7 +1342,7 @@ class FUSE:
     elif fuse_version_major == 3:
 
         def rename(self, old, new, flags):
-            self._rename(old, new)
+            return self._rename(old, new)
 
     def link(self, source, target):
         'creates a hard link `target -> source` (e.g. ln source target)'
@@ -1668,7 +1668,7 @@ class FUSE:
     elif fuse_version_major == 3:
 
         def utimens(self, path, buf, fip):
-            self._utimens(path, buf)
+            return self._utimens(path, buf)
 
     def bmap(self, path, blocksize, idx):
         return self.operations('bmap', path.decode(self.encoding), blocksize, idx)
