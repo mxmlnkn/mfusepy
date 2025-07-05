@@ -68,6 +68,10 @@ jobs:
         include:
         - os: ubuntu-latest
           python-version: '3.14.0-alpha.0'
+        - os: ubuntu-22.04
+          python-version: '3.7'
+        - os: ubuntu-22.04
+          python-version: '3.8'
 
     defaults:
       run:

@@ -7,7 +7,9 @@
 # https://github.com/pypa/setuptools/issues/4903
 # Use setuptools >= 77 for project.license-files support
 # https://setuptools.readthedocs.io/en/latest/history.html#id284
-requires = ["setuptools >= 77", "wheel"]
+# Use setuptools <= 82 because the license specification changes backward-incompatible in 2026-02.
+# https://github.com/pypa/setuptools/issues/4903#issuecomment-2923109576
+requires = ["setuptools >= 61, <= 82"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -15,8 +17,7 @@ name = "mfusepy"
 version = "1.1.0"
 description = "Ctypes bindings for the high-level API in libfuse 2 and 3"
 authors = [{name = "Maximilian Knespel", email = "mxmlnknp@gmail.com"}]
-license = "ISC"
-license-files = ["LICENSE"]
+license = {text = "ISC"}
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -24,6 +25,8 @@ classifiers = [
     "Operating System :: POSIX",
     "Operating System :: Unix",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -39,3 +42,4 @@ content-type = "text/markdown"
 
 [tool.setuptools]
 py-modules = ["mfusepy"]
+license-files = ["LICENSE"]
