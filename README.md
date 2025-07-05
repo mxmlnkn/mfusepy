@@ -1,5 +1,14 @@
 # mfusepy
 
+[![Python Version](https://img.shields.io/pypi/pyversions/mfusepy)](https://pypi.org/project/mfusepy/)
+[![PyPI version](https://badge.fury.io/py/mfusepy.svg)](https://badge.fury.io/py/mfusepy)
+[![Downloads](https://static.pepy.tech/badge/mfusepy/month)](https://pepy.tech/project/mfusepy)
+[![Changelog](https://img.shields.io/badge/Changelog-Markdown-blue)](https://github.com/mxmlnkn/mfusepy/blob/master/CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-ISC-blue.svg)](http://opensource.org/licenses/ISC)
+[![Build Status](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml/badge.svg)](https://github.com/mxmlnkn/mfusepy/actions)
+[![Discord](https://img.shields.io/discord/783411320354766878?label=discord)](https://discord.gg/Wra6t6akh2)
+[![Telegram](https://img.shields.io/badge/Chat-Telegram-%2330A3E6)](https://t.me/joinchat/FUdXxkXIv6c4Ib8bgaSxNg)
+
 `mfusepy` is a Python module that provides a simple interface to [FUSE](https://docs.kernel.org/filesystems/fuse.html) and [macFUSE](https://osxfuse.github.io/).
 It's just one file and is implemented using ctypes to use [libfuse](https://github.com/libfuse/libfuse).
 
@@ -13,6 +22,23 @@ pip install mfusepy
 ```
 
 You also need to install the `fuse` (2) or [`fuse3`](https://pkgs.org/search/?q=fuse3) package on your system.
+
+
+# Versioning
+
+This version tries to follow [semantic versioning](https://semver.org/).
+If you depend on this project, you should fix the major version, or else you risk your project breaking on a newer version release!
+E.g., in your pyproject.toml:
+
+```toml
+dependencies = ["mfusepy ~= 1.1",]
+```
+
+If you have tested with multiple major versions and they are known to work, you can also relax the check for maximum compatibility:
+
+```toml
+dependencies = ["mfusepy >= 1.1, < 3.0",]
+```
 
 
 # About this fork
@@ -42,7 +68,7 @@ The prefix `m` in the name stands for anything you want it to: "multi" because m
 | [refuse](https://github.com/pleiszenburg/refuse)      | ISC  | [3](https://www.wheelodex.org/projects/refuse/rdepends/) | Dead fork of fusepy with many other dead forks: [[1]](https://github.com/yarikoptic/refuse) [[2]](https://github.com/YoilyL/refuse) |
 | [fusepyng](https://pypi.org/project/fusepyng/)       | ISC  | [0](https://www.wheelodex.org/projects/fusepyng/rdepends/) | Dead fork of fusepy. Github repo has been force-pushed as a statement. Fork [here](https://github.com/djsutherland/fusepyng). |
 | [userspacefs](https://pypi.org/project/userspacefs/)  | GPL3 (why not ISC?) | [1](https://www.wheelodex.org/projects/userspacefs/rdepends/) | Fork of fusepyng/fusepy. Gated behind self-hosting solution with no possibility to open issues or pull requests. |
-| [fusepy3](https://github.com/fox-it/fusepy3)          | ISC  | Not on PyPI | Fork of fusepy for [fox-it/dissect](https://github.com/fox-it/dissect) ecosystem to add libfuse3 support. Seems to drop libfuse2 support though and I it does not seem to work around the ABI [incompatibilities](https://github.com/libfuse/libfuse/issues/1029) between libfuse3 minor versions. Last update 9 months ago. Looks like publish and forget, or it may simply have no bugs. |
+| [fusepy3](https://github.com/fox-it/fusepy3)          | ISC  | Not on PyPI | Fork of fusepy for [fox-it/dissect](https://github.com/fox-it/dissect) ecosystem to add libfuse3 support. Seems to drop libfuse2 support though and it does not seem to work around the ABI [incompatibilities](https://github.com/libfuse/libfuse/issues/1029) between libfuse3 minor versions. Last update 1.5 years ago. Looks like publish and forget, or it may simply have no bugs. |
 
 
 ## Low-level interface support (inode/int-based)
@@ -52,8 +78,8 @@ In the end, there is mostly only some path-to-hash table in the high-level libfu
 
 | Project | License | Dependants | Notes
 |------------------------------------------------------------------|------|-----|------------------------|
-| [pyfuse3](https://github.com/libfuse/pyfuse3)                    | LGPL | [9](https://www.wheelodex.org/projects/pyfuse3/rdepends/) | ReadMe contains: "Warning - no longer developed!" |
-| [llfuse](https://github.com/python-llfuse/python-llfuse/)        | LGPL | [2](https://www.wheelodex.org/projects/llfuse/rdepends/) | ReadMe contains: ["Warning - no longer developed!"](https://github.com/python-llfuse/python-llfuse/issues/67), but last release was 2 months ago. |
+| [pyfuse3](https://github.com/libfuse/pyfuse3)                    | LGPL | [9](https://www.wheelodex.org/projects/pyfuse3/rdepends/) | ReadMe contains: "Warning - no longer developed!", and last release was 11 months ago. |
+| [llfuse](https://github.com/python-llfuse/python-llfuse/)        | LGPL | [2](https://www.wheelodex.org/projects/llfuse/rdepends/) | ReadMe contains: ["Warning - no longer developed!"](https://github.com/python-llfuse/python-llfuse/issues/67), and last release was 11 months ago. |
 | [arvados-llfuse](https://github.com/arvados/python-llfuse/)      | LGPL | [1](https://www.wheelodex.org/projects/arvados-llfuse/rdepends/) | Fork of llfuse, but less up to date? |
 | [aliyundrive-fuse](https://github.com/messense/aliyundrive-fuse) | MIT  | [0](https://www.wheelodex.org/projects/aliyundrive-fuse/rdepends/) | Alibaba Cloud Disk FUSE disk mount "This repository has been archived by the owner on Mar 28, 2023". Only Chinese documentation. Only read support. Multiple fizzled out forks: [pikpak-fuse](https://github.com/ykxVK8yL5L/pikpak-fuse/), [alist-fuse](https://github.com/ykxVK8yL5L/alist-fuse) |
 
@@ -86,6 +112,15 @@ While FUSE is (at least in the Unix world) a [Kernel feature](https://man7.org/l
  - [librefuse](https://github.com/NetBSD/src/tree/netbsd-8/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [2](https://github.com/NetBSD/src/blob/netbsd-8/lib/librefuse/fuse.h))
  - [FUSE for macOS](https://github.com/osxfuse/osxfuse) (OSX) (fuse.h [2](https://github.com/osxfuse/fuse/blob/master/include/fuse.h))
  - [MacFUSE](https://code.google.com/archive/p/macfuse/) (OSX), no longer maintained
+ - [MacFUSE](https://macfuse.github.io/) (OSX), [Github](https://github.com/macfuse/library)
+ - [FUSE-T](https://www.fuse-t.org/) (OSX), [Github](https://github.com/macos-fuse-t/fuse-t)
  - [WinFsp](https://github.com/billziss-gh/winfsp) (Windows) (fuse.h [2](https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h) [3](https://github.com/winfsp/winfsp/blob/master/inc/fuse3/fuse.h))
  - [Dokany](https://github.com/dokan-dev/dokany) (Windows) (fuse.h [2](https://github.com/dokan-dev/dokany/blob/master/dokan_fuse/include/fuse.h))
  - [Dokan](https://code.google.com/archive/p/dokan/) (Windows), no longer maintained
+
+
+# Known Dependants
+
+ - [Megatron-Energon](https://github.com/NVIDIA/Megatron-Energon)
+ - [ninfs](https://github.com/ihaveamac/ninfs)
+ - [ratarmount](https://github.com/mxmlnkn/ratarmount)
