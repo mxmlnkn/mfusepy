@@ -19,6 +19,7 @@
 
 import ctypes
 import errno
+import functools
 import inspect
 import logging
 import os
@@ -39,22 +40,9 @@ from ctypes import (
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import Optional
+from typing import List, Optional, Sequence, Tuple, Type, Union
 
-try:
-    from functools import partial
-except ImportError:
-    # http://docs.python.org/library/functools.html#functools.partial
-    def partial(func, *args, **keywords):
-        def newfunc(*fargs, **fkeywords):
-            newkeywords = keywords.copy()
-            newkeywords.update(fkeywords)
-            return func(*(args + fargs), **newkeywords)
-
-        newfunc.func = func
-        newfunc.args = args
-        newfunc.keywords = keywords
-        return newfunc
+FieldsEntry = Union[Tuple[str, Type], Tuple[str, Type, int]]
 
 
 log = logging.getLogger("fuse")
@@ -71,27 +59,16 @@ if _system == 'Windows' or _system.startswith('CYGWIN'):
     # Cygwin (and UNIX) sizes when run on Windows.
     import sys
 
-    if sys.maxsize > 0xFFFFFFFF:
-        c_win_long = ctypes.c_int64
-        c_win_ulong = ctypes.c_uint64
-    else:
-        c_win_long = ctypes.c_int32
-        c_win_ulong = ctypes.c_uint32
+    c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
+    c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
 
-if _system == 'Windows' or _system.startswith('CYGWIN'):
 
-    class c_timespec(ctypes.Structure):
+class c_timespec(ctypes.Structure):
+    if _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-
-elif _system == 'OpenBSD':
-    c_time_t = ctypes.c_int64
-
-    class c_timespec(ctypes.Structure):
-        _fields_ = [('tv_sec', c_time_t), ('tv_nsec', ctypes.c_long)]
-
-else:
-
-    class c_timespec(ctypes.Structure):
+    elif _system == 'OpenBSD':
+        _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
+    else:
         _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
 
 
@@ -229,14 +206,14 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linu
 if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
     ENOTSUP = 45
 
-    c_dev_t = ctypes.c_int32
-    c_fsblkcnt_t = ctypes.c_ulong
-    c_fsfilcnt_t = ctypes.c_ulong
-    c_gid_t = ctypes.c_uint32
-    c_mode_t = ctypes.c_uint16
-    c_off_t = ctypes.c_int64
-    c_pid_t = ctypes.c_int32
-    c_uid_t = ctypes.c_uint32
+    c_dev_t: Type = ctypes.c_int32
+    c_fsblkcnt_t: Type = ctypes.c_ulong
+    c_fsfilcnt_t: Type = ctypes.c_ulong
+    c_gid_t: Type = ctypes.c_uint32
+    c_mode_t: Type = ctypes.c_uint16
+    c_off_t: Type = ctypes.c_int64
+    c_pid_t: Type = ctypes.c_int32
+    c_uid_t: Type = ctypes.c_uint32
     setxattr_t = ctypes.CFUNCTYPE(
         ctypes.c_int,
         ctypes.c_char_p,
@@ -255,7 +232,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
         ctypes.c_uint32,
     )
     if _system == 'Darwin':
-        _c_stat__fields_ = [
+        _c_stat__fields_: Sequence[FieldsEntry] = [
             ('st_dev', c_dev_t),
             ('st_mode', c_mode_t),
             ('st_nlink', ctypes.c_uint16),
@@ -560,8 +537,10 @@ if _system == 'FreeBSD':
         ctypes.c_size_t,
     )
 
-    # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e56632e13711/sys/sys/statvfs.h#L57-L68
-    class c_statvfs(ctypes.Structure):
+
+class c_statvfs(ctypes.Structure):
+    if _system == 'FreeBSD':
+        # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e56632e13711/sys/sys/statvfs.h#L57-L68
         _fields_ = [
             ('f_bavail', c_fsblkcnt_t),
             ('f_bfree', c_fsblkcnt_t),
@@ -573,10 +552,7 @@ if _system == 'FreeBSD':
             ('f_flag', ctypes.c_ulong),
             ('f_frsize', ctypes.c_ulong),
         ]
-
-elif _system == 'Windows' or _system.startswith('CYGWIN'):
-
-    class c_statvfs(ctypes.Structure):
+    elif _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [
             ('f_bsize', c_win_ulong),
             ('f_frsize', c_win_ulong),
@@ -590,10 +566,8 @@ elif _system == 'Windows' or _system.startswith('CYGWIN'):
             ('f_flag', c_win_ulong),
             ('f_namemax', c_win_ulong),
         ]
-
-else:
-    # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
-    class c_statvfs(ctypes.Structure):
+    else:
+        # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
         _fields_ = [
             ('f_bsize', ctypes.c_ulong),
             ('f_frsize', ctypes.c_ulong),
@@ -611,7 +585,7 @@ else:
 
 if _system == 'Linux':
     # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/include/uapi/asm-generic/fcntl.h#L195
-    class c_flock_t(ctypes.Structure):
+    class c_flock_t(ctypes.Structure):  # type: ignore
         _fields_ = [
             ('l_type', ctypes.c_short),
             ('l_whence', ctypes.c_short),
@@ -623,7 +597,7 @@ if _system == 'Linux':
 
 elif _system == 'OpenBSD':
     # https://github.com/openbsd/src/blob/a465f6177bcfdb2ffa9f98c7ca0780392688fc0d/sys/sys/fcntl.h#L180
-    class c_flock_t(ctypes.Structure):
+    class c_flock_t(ctypes.Structure):  # type: ignore
         _fields_ = [
             ('l_start', c_off_t),  # starting offset
             ('l_len', c_off_t),  # len = 0 means until end of file
@@ -633,7 +607,7 @@ elif _system == 'OpenBSD':
         ]
 
 else:
-    c_flock_t = ctypes.c_void_p
+    c_flock_t = ctypes.c_void_p  # type: ignore
 
 
 # fuse_file_info as defined in fuse_common.h. Changes in FUSE 3:
@@ -656,7 +630,7 @@ else:
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
 if fuse_version_major == 2:
-    _fuse_file_info_fields_ = [
+    _fuse_file_info_fields_: List[FieldsEntry] = [
         ('flags', ctypes.c_int),
         ('fh_old', ctypes.c_ulong),
         ('writepage', ctypes.c_int),
@@ -774,7 +748,7 @@ class fuse_bufvec(ctypes.Structure):
 
 
 # fuse_conn_info struct as defined and documented in fuse_common.h
-_fuse_conn_info_fields = [
+_fuse_conn_info_fields: List[FieldsEntry] = [
     ('proto_major', ctypes.c_uint),
     ('proto_minor', ctypes.c_uint),
 ]
@@ -826,7 +800,7 @@ if (fuse_version_major, fuse_version_minor) >= (3, 17):
 # 3.14.1 -> 3.16.2: no change
 # 3.16.2 -> 3.17.0: Changed all types to uint32_t, added reserved bytes, reverted order to 3.10.
 # https://github.com/libfuse/libfuse/pull/1081
-_fuse_config_fields_ = [
+_fuse_config_fields_: List[FieldsEntry] = [
     ('set_gid', _fuse_int32),
     ('gid', _fuse_uint32),
     ('set_uid', _fuse_int32),
@@ -937,7 +911,7 @@ _fuse_operations_fields_2_9 = [
 ]
 
 if fuse_version_major == 2:
-    _fuse_operations_fields = [
+    _fuse_operations_fields: List[FieldsEntry] = [
         ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat))),
         ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
         ('getdir', c_void_p),  # Deprecated, use readdir
@@ -1082,13 +1056,13 @@ else:
     fuse_main_real = _libfuse.fuse_main_real
 
 
-def time_of_timespec(ts, use_ns=False):
+def time_of_timespec(ts, use_ns: bool = False) -> float:
     if use_ns:
         return ts.tv_sec * 10**9 + ts.tv_nsec
     return ts.tv_sec + ts.tv_nsec / 1e9
 
 
-def set_st_attrs(st, attrs, use_ns=False):
+def set_st_attrs(st, attrs, use_ns: bool = False) -> None:
     for key, val in attrs.items():
         if key in ('st_atime', 'st_mtime', 'st_ctime', 'st_birthtime'):
             timespec = getattr(st, key + 'spec', None)
@@ -1104,7 +1078,7 @@ def set_st_attrs(st, attrs, use_ns=False):
             setattr(st, key, val)
 
 
-def fuse_get_context():
+def fuse_get_context() -> Tuple[int, int, int]:
     'Returns a (uid, gid, pid) tuple'
 
     ctxp = _libfuse.fuse_get_context()
@@ -1112,7 +1086,7 @@ def fuse_get_context():
     return ctx.uid, ctx.gid, ctx.pid
 
 
-def fuse_exit():
+def fuse_exit() -> None:
     '''
     This will shutdown the FUSE mount and cause the call to FUSE(...) to
     return, similar to sending SIGINT to the process.
@@ -1205,7 +1179,7 @@ class FUSE:
             # getattr(operations, name) above but are dynamically
             # invoked using self.operations(name)
             if hasattr(prototype, 'argtypes'):
-                val = prototype(partial(self._wrapper, getattr(self, name)))
+                val = prototype(functools.partial(self._wrapper, getattr(self, name)))
 
             setattr(fuse_ops, name, val)
 
@@ -1290,7 +1264,7 @@ class FUSE:
 
     elif fuse_version_major == 3:
 
-        def getattr(self, path: bytes, buf, fip):
+        def getattr(self, path: bytes, buf, fip):  # type: ignore
             return self.fgetattr(path, buf, None)
 
     def readlink(self, path: bytes, buf, bufsize: int) -> int:
@@ -1326,7 +1300,7 @@ class FUSE:
         rename = _rename
     elif fuse_version_major == 3:
 
-        def rename(self, old: bytes, new: bytes, flags: int) -> int:
+        def rename(self, old: bytes, new: bytes, flags: int) -> int:  # type: ignore
             return self._rename(old, new)
 
     def link(self, source: bytes, target: bytes):
@@ -1341,7 +1315,7 @@ class FUSE:
 
     elif fuse_version_major == 3:
 
-        def chmod(self, path: Optional[bytes], mode: int, fip) -> int:
+        def chmod(self, path: Optional[bytes], mode: int, fip) -> int:  # type: ignore
             return self.operations('chmod', None if path is None else path.decode(self.encoding), mode)
 
     def _chown(self, path: Optional[bytes], uid: int, gid: int) -> int:
@@ -1360,7 +1334,7 @@ class FUSE:
 
     elif fuse_version_major == 3:
 
-        def chown(self, path: bytes, uid: int, gid: int, fip) -> int:
+        def chown(self, path: bytes, uid: int, gid: int, fip) -> int:  # type: ignore
             return self._chown(path, uid, gid)
 
     if fuse_version_major == 2:
@@ -1370,7 +1344,7 @@ class FUSE:
 
     elif fuse_version_major == 3:
 
-        def truncate(self, path: Optional[bytes], length: int, fip) -> int:
+        def truncate(self, path: Optional[bytes], length: int, fip) -> int:  # type: ignore
             return self.operations('truncate', None if path is None else path.decode(self.encoding), length)
 
     def open(self, path: bytes, fip) -> int:
@@ -1552,7 +1526,7 @@ class FUSE:
                     st = None
 
             if fuse_version_major == 2:
-                if filler(buf, name.encode(self.encoding), st, offset) != 0:
+                if filler(buf, name.encode(self.encoding), st, offset) != 0:  # type: ignore
                     break
             elif fuse_version_major == 3:
                 if filler(buf, name.encode(self.encoding), st, offset, 0) != 0:
@@ -1567,7 +1541,7 @@ class FUSE:
 
     elif fuse_version_major == 3:
 
-        def readdir(self, path: Optional[bytes], buf, filler, offset, fip, flags) -> int:
+        def readdir(self, path: Optional[bytes], buf, filler, offset, fip, flags) -> int:  # type: ignore
             # TODO if bit 0 (FUSE_READDIR_PLUS) is set in flags, then we might want to gather more metadata
             #      and return it in "filler" with bit 1 (FUSE_FILL_DIR_PLUS) being set.
             # Ignore raw_fi
@@ -1598,7 +1572,7 @@ class FUSE:
 
     else:
 
-        def init(self, conn, config) -> None:
+        def init(self, conn, config) -> None:  # type: ignore
             if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
                 config.contents.nullpath_ok = True
             self._init(conn, config)
@@ -1611,14 +1585,14 @@ class FUSE:
 
     def create(self, path: bytes, mode: int, fip) -> int:
         fi = fip.contents
-        path = path.decode(self.encoding)
+        decoded_path = path.decode(self.encoding)
 
         if self.raw_fi:
-            return self.operations('create', path, mode, fi)
+            return self.operations('create', decoded_path, mode, fi)
         if len(inspect.signature(self.operations.create).parameters) == 2:
-            fi.fh = self.operations('create', path, mode)
+            fi.fh = self.operations('create', decoded_path, mode)
         else:
-            fi.fh = self.operations('create', path, mode, fi.flags)
+            fi.fh = self.operations('create', decoded_path, mode, fi.flags)
         return 0
 
     def ftruncate(self, path: Optional[bytes], length: int, fip) -> int:
@@ -1653,7 +1627,7 @@ class FUSE:
         utimens = _utimens
     elif fuse_version_major == 3:
 
-        def utimens(self, path: Optional[bytes], buf, fip) -> int:
+        def utimens(self, path: Optional[bytes], buf, fip) -> int:  # type: ignore
             return self._utimens(path, buf)
 
     def bmap(self, path: bytes, blocksize: int, idx) -> int:
@@ -1772,7 +1746,7 @@ class Operations:
     # That particular location seems to have been fixed in 2.8.0 and 2.7.0, but not in 2.6.5.
     # It seems to have been fixed only by accident in feature commit:
     # https://github.com/libfuse/libfuse/commit/3a7c00ec0c156123c47b53ec1cd7ead001fa4dfb
-    def getattr(self, path: str, fh=None):
+    def getattr(self, path: str, fh: Optional[int] = None):
         '''
         Returns a dictionary with keys identical to the stat C structure of
         stat(2).
@@ -1932,7 +1906,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def truncate(self, path: str, length: int, fh=None):
+    def truncate(self, path: str, length: int, fh: Optional[int] = None):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
@@ -1940,7 +1914,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def utimens(self, path: str, times=None):
+    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None):
         'Times is a (atime, mtime) tuple. If None use current time.'
 
         return 0
