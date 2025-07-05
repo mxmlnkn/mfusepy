@@ -47,6 +47,7 @@ from ctypes.util import find_library
 from platform import machine, system
 from signal import signal, SIGINT, SIG_DFL, SIGTERM
 from stat import S_IFDIR
+from typing import Optional
 
 
 try:
@@ -1299,7 +1300,7 @@ class FUSE:
             fuse_exit()
             return -errno.EFAULT
 
-    def _decode_optional_path(self, path):
+    def _decode_optional_path(self, path: Optional[bytes]):
         # NB: this method is intended for fuse operations that
         #     allow the path argument to be NULL,
         #     *not* as a generic path decoding method
@@ -1309,15 +1310,15 @@ class FUSE:
 
     if fuse_version_major == 2:
 
-        def getattr(self, path, buf):
+        def getattr(self, path: bytes, buf):
             return self.fgetattr(path, buf, None)
 
     elif fuse_version_major == 3:
 
-        def getattr(self, path, buf, fip):
+        def getattr(self, path: bytes, buf, fip):
             return self.fgetattr(path, buf, None)
 
-    def readlink(self, path, buf, bufsize):
+    def readlink(self, path: bytes, buf, bufsize):
         ret = self.operations('readlink', path.decode(self.encoding)).encode(self.encoding)
 
         # copies a string into the given buffer
@@ -1326,49 +1327,49 @@ class FUSE:
         ctypes.memmove(buf, data, len(data))
         return 0
 
-    def mknod(self, path, mode, dev):
+    def mknod(self, path: bytes, mode, dev):
         return self.operations('mknod', path.decode(self.encoding), mode, dev)
 
-    def mkdir(self, path, mode):
+    def mkdir(self, path: bytes, mode):
         return self.operations('mkdir', path.decode(self.encoding), mode)
 
-    def unlink(self, path):
+    def unlink(self, path: bytes):
         return self.operations('unlink', path.decode(self.encoding))
 
-    def rmdir(self, path):
+    def rmdir(self, path: bytes):
         return self.operations('rmdir', path.decode(self.encoding))
 
-    def symlink(self, source, target):
+    def symlink(self, source: bytes, target: bytes):
         'creates a symlink `target -> source` (e.g. ln -s source target)'
 
         return self.operations('symlink', target.decode(self.encoding), source.decode(self.encoding))
 
-    def _rename(self, old, new):
+    def _rename(self, old: bytes, new: bytes):
         return self.operations('rename', old.decode(self.encoding), new.decode(self.encoding))
 
     if fuse_version_major == 2:
         rename = _rename
     elif fuse_version_major == 3:
 
-        def rename(self, old, new, flags):
+        def rename(self, old: bytes, new: bytes, flags):
             return self._rename(old, new)
 
-    def link(self, source, target):
+    def link(self, source: bytes, target: bytes):
         'creates a hard link `target -> source` (e.g. ln source target)'
 
         return self.operations('link', target.decode(self.encoding), source.decode(self.encoding))
 
     if fuse_version_major == 2:
 
-        def chmod(self, path, mode):
+        def chmod(self, path: Optional[bytes], mode):
             return self.operations('chmod', None if path is None else path.decode(self.encoding), mode)
 
     elif fuse_version_major == 3:
 
-        def chmod(self, path, mode, fip):
+        def chmod(self, path: Optional[bytes], mode, fip):
             return self.operations('chmod', None if path is None else path.decode(self.encoding), mode)
 
-    def _chown(self, path, uid, gid):
+    def _chown(self, path: Optional[bytes], uid, gid):
         # Check if any of the arguments is a -1 that has overflowed
         if c_uid_t(uid + 1).value == 0:
             uid = -1
@@ -1379,32 +1380,32 @@ class FUSE:
 
     if fuse_version_major == 2:
 
-        def chown(self, path, uid, gid):
+        def chown(self, path: bytes, uid, gid):
             return self._chown(path, uid, gid)
 
     elif fuse_version_major == 3:
 
-        def chown(self, path, uid, gid, fip):
+        def chown(self, path: bytes, uid, gid, fip):
             return self._chown(path, uid, gid)
 
     if fuse_version_major == 2:
 
-        def truncate(self, path, length):
+        def truncate(self, path: Optional[bytes], length):
             return self.operations('truncate', None if path is None else path.decode(self.encoding), length)
 
     elif fuse_version_major == 3:
 
-        def truncate(self, path, length, fip):
+        def truncate(self, path: Optional[bytes], length, fip):
             return self.operations('truncate', None if path is None else path.decode(self.encoding), length)
 
-    def open(self, path, fip):
+    def open(self, path: bytes, fip):
         fi = fip.contents
         if self.raw_fi:
             return self.operations('open', path.decode(self.encoding), fi)
         fi.fh = self.operations('open', path.decode(self.encoding), fi.flags)
         return 0
 
-    def read(self, path, buf, size, offset, fip):
+    def read(self, path: Optional[bytes], buf, size, offset, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         ret = self.operations('read', self._decode_optional_path(path), size, offset, fh)
 
@@ -1417,12 +1418,12 @@ class FUSE:
         ctypes.memmove(buf, ret, retsize)
         return retsize
 
-    def write(self, path, buf, size, offset, fip):
+    def write(self, path: Optional[bytes], buf, size, offset, fip):
         data = ctypes.string_at(buf, size)
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('write', self._decode_optional_path(path), data, offset, fh)
 
-    def statfs(self, path, buf):
+    def statfs(self, path: bytes, buf):
         stv = buf.contents
         attrs = self.operations('statfs', path.decode(self.encoding))
         for key, val in attrs.items():
@@ -1431,19 +1432,19 @@ class FUSE:
 
         return 0
 
-    def flush(self, path, fip):
+    def flush(self, path: Optional[bytes], fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('flush', self._decode_optional_path(path), fh)
 
-    def release(self, path, fip):
+    def release(self, path: Optional[bytes], fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('release', self._decode_optional_path(path), fh)
 
-    def fsync(self, path, datasync, fip):
+    def fsync(self, path: Optional[bytes], datasync, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('fsync', self._decode_optional_path(path), datasync, fh)
 
-    def setxattr(self, path, name, value, size, options, *args):
+    def setxattr(self, path: bytes, name: bytes, value, size, options, *args):
         return self.operations(
             'setxattr',
             path.decode(self.encoding),
@@ -1453,7 +1454,7 @@ class FUSE:
             *args,
         )
 
-    def getxattr(self, path, name, value, size, *args):
+    def getxattr(self, path: bytes, name: bytes, value, size, *args):
         ret = self.operations('getxattr', path.decode(self.encoding), name.decode(self.encoding), *args)
 
         retsize = len(ret)
@@ -1471,7 +1472,7 @@ class FUSE:
 
         return retsize
 
-    def listxattr(self, path, namebuf, size):
+    def listxattr(self, path: bytes, namebuf, size):
         attrs = self.operations('listxattr', path.decode(self.encoding)) or ''
         ret = '\x00'.join(attrs).encode(self.encoding)
         if len(ret) > 0:
@@ -1491,10 +1492,10 @@ class FUSE:
 
         return retsize
 
-    def removexattr(self, path, name):
+    def removexattr(self, path: bytes, name: bytes):
         return self.operations('removexattr', path.decode(self.encoding), name.decode(self.encoding))
 
-    def opendir(self, path, fip):
+    def opendir(self, path: bytes, fip):
         # Ignore raw_fi
         fip.contents.fh = self.operations('opendir', path.decode(self.encoding))
         return 0
@@ -1560,7 +1561,7 @@ class FUSE:
     # fuse_entry_out entry_out in the fuse_direntplus struct. fuse_attr has 16 members.
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
     #     fuse.h#L263C1-L280C3
-    def _readdir(self, path, buf, filler, offset, fip):
+    def _readdir(self, path: Optional[bytes], buf, filler, offset, fip):
         # Ignore raw_fi
         for item in self.operations('readdir', self._decode_optional_path(path), fip.contents.fh):
             if isinstance(item, str):
@@ -1586,22 +1587,22 @@ class FUSE:
 
     if fuse_version_major == 2:
 
-        def readdir(self, path, buf, filler, offset, fip):
+        def readdir(self, path: Optional[bytes], buf, filler, offset, fip):
             return self._readdir(path, buf, filler, offset, fip)
 
     elif fuse_version_major == 3:
 
-        def readdir(self, path, buf, filler, offset, fip, flags):
+        def readdir(self, path: Optional[bytes], buf, filler, offset, fip, flags):
             # TODO if bit 0 (FUSE_READDIR_PLUS) is set in flags, then we might want to gather more metadata
             #      and return it in "filler" with bit 1 (FUSE_FILL_DIR_PLUS) being set.
             # Ignore raw_fi
             return self._readdir(path, buf, filler, offset, fip)
 
-    def releasedir(self, path, fip):
+    def releasedir(self, path: Optional[bytes], fip):
         # Ignore raw_fi
         return self.operations('releasedir', self._decode_optional_path(path), fip.contents.fh)
 
-    def fsyncdir(self, path, datasync, fip):
+    def fsyncdir(self, path: Optional[bytes], datasync, fip):
         # Ignore raw_fi
         return self.operations('fsyncdir', self._decode_optional_path(path), datasync, fip.contents.fh)
 
@@ -1628,10 +1629,10 @@ class FUSE:
     def destroy(self, private_data):
         return self.operations('destroy', '/')
 
-    def access(self, path, amode):
+    def access(self, path: bytes, amode):
         return self.operations('access', path.decode(self.encoding), amode)
 
-    def create(self, path, mode, fip):
+    def create(self, path: bytes, mode, fip):
         fi = fip.contents
         path = path.decode(self.encoding)
 
@@ -1643,11 +1644,11 @@ class FUSE:
             fi.fh = self.operations('create', path, mode, fi.flags)
         return 0
 
-    def ftruncate(self, path, length, fip):
+    def ftruncate(self, path: Optional[bytes], length, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('truncate', self._decode_optional_path(path), length, fh)
 
-    def fgetattr(self, path, buf, fip):
+    def fgetattr(self, path: Optional[bytes], buf, fip):
         ctypes.memset(buf, 0, ctypes.sizeof(c_stat))
 
         st = buf.contents
@@ -1660,11 +1661,11 @@ class FUSE:
         set_st_attrs(st, attrs, use_ns=self.use_ns)
         return 0
 
-    def lock(self, path, fip, cmd, lock):
+    def lock(self, path: Optional[bytes], fip, cmd, lock):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('lock', self._decode_optional_path(path), fh, cmd, lock)
 
-    def _utimens(self, path, buf):
+    def _utimens(self, path: Optional[bytes], buf):
         if buf:
             atime = time_of_timespec(buf.contents.actime, use_ns=self.use_ns)
             mtime = time_of_timespec(buf.contents.modtime, use_ns=self.use_ns)
@@ -1678,33 +1679,33 @@ class FUSE:
         utimens = _utimens
     elif fuse_version_major == 3:
 
-        def utimens(self, path, buf, fip):
+        def utimens(self, path: Optional[bytes], buf, fip):
             return self._utimens(path, buf)
 
-    def bmap(self, path, blocksize, idx):
+    def bmap(self, path: bytes, blocksize, idx):
         return self.operations('bmap', path.decode(self.encoding), blocksize, idx)
 
-    def ioctl(self, path, cmd, arg, fip, flags, data):
+    def ioctl(self, path: Optional[bytes], cmd, arg, fip, flags, data):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('ioctl', None if path is None else path.decode(self.encoding), cmd, arg, fh, flags, data)
 
-    def poll(self, path, fip, ph, reventsp):
+    def poll(self, path: Optional[bytes], fip, ph, reventsp):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('poll', None if path is None else path.decode(self.encoding), fh, ph, reventsp)
 
-    def write_buf(self, path, buf, offset, fip):
+    def write_buf(self, path: bytes, buf, offset, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('write_buf', path.decode(self.encoding), buf, offset, fh)
 
-    def read_buf(self, path, bufpp, size, offset, fip):
+    def read_buf(self, path: bytes, bufpp, size, offset, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('read_buf', path.decode(self.encoding), bufpp, size, offset, fh)
 
-    def flock(self, path, fip, op):
+    def flock(self, path: bytes, fip, op):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations('flock', path.decode(self.encoding), fh, op)
 
-    def fallocate(self, path, mode, offset, size, fip):
+    def fallocate(self, path: Optional[bytes], mode, offset, size, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations(
             'fallocate', None if path is None else path.decode(self.encoding), mode, offset, size, fh
@@ -1747,23 +1748,23 @@ class Operations:
         return getattr(self, op)(*args)
 
     @_nullable_dummy_function
-    def access(self, path, amode):
+    def access(self, path: str, amode):
         return 0
 
     @_nullable_dummy_function
-    def bmap(self, path, blocksize, idx):
+    def bmap(self, path: str, blocksize, idx):
         pass
 
     @_nullable_dummy_function
-    def chmod(self, path, mode):
+    def chmod(self, path: str, mode):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def chown(self, path, uid, gid):
+    def chown(self, path: str, uid, gid):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def create(self, path, mode, fi=None):
+    def create(self, path: str, mode, fi=None):
         '''
         When raw_fi is False (default case), create should return a
         numerical file handle and the signature of create becomes:
@@ -1776,19 +1777,19 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def destroy(self, path):
+    def destroy(self, path: str):
         'Called on filesystem destruction. Path is always /'
 
     @_nullable_dummy_function
-    def flush(self, path, fh):
+    def flush(self, path: str, fh):
         return 0
 
     @_nullable_dummy_function
-    def fsync(self, path, datasync, fh):
+    def fsync(self, path: str, datasync, fh):
         return 0
 
     @_nullable_dummy_function
-    def fsyncdir(self, path, datasync, fh):
+    def fsyncdir(self, path: str, datasync, fh):
         return 0
 
     # Either fgetattr or getattr must be non-null or else libfuse 2.6 will segfault
@@ -1797,7 +1798,7 @@ class Operations:
     # That particular location seems to have been fixed in 2.8.0 and 2.7.0, but not in 2.6.5.
     # It seems to have been fixed only by accident in feature commit:
     # https://github.com/libfuse/libfuse/commit/3a7c00ec0c156123c47b53ec1cd7ead001fa4dfb
-    def getattr(self, path, fh=None):
+    def getattr(self, path: str, fh=None):
         '''
         Returns a dictionary with keys identical to the stat C structure of
         stat(2).
@@ -1814,7 +1815,7 @@ class Operations:
         return {'st_mode': (S_IFDIR | 0o755), 'st_nlink': 2}
 
     @_nullable_dummy_function
-    def init(self, path):
+    def init(self, path: str):
         '''
         Called on filesystem initialization. (Path is always /)
 
@@ -1831,17 +1832,17 @@ class Operations:
         '''
 
     @_nullable_dummy_function
-    def ioctl(self, path, cmd, arg, fh, flags, data):
+    def ioctl(self, path: str, cmd, arg, fh, flags, data):
         raise FuseOSError(errno.ENOTTY)
 
     @_nullable_dummy_function
-    def link(self, target, source):
+    def link(self, target: str, source: str):
         'creates a hard link `target -> source` (e.g. ln source target)'
 
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def listxattr(self, path):
+    def listxattr(self, path: str):
         '''
         Return all extended file attribute keys for the specified path.
         Should return an iterable of text strings.
@@ -1849,7 +1850,7 @@ class Operations:
         return []
 
     @_nullable_dummy_function
-    def getxattr(self, path, name, position=0):
+    def getxattr(self, path: str, name, position=0):
         '''
         Return the extended file attribute value to the specified (key) name and path.
         Should return a bytes object.
@@ -1864,19 +1865,19 @@ class Operations:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
-    def lock(self, path, fh, cmd, lock):
+    def lock(self, path: str, fh, cmd, lock):
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def mkdir(self, path, mode):
+    def mkdir(self, path: str, mode):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def mknod(self, path, mode, dev):
+    def mknod(self, path: str, mode, dev):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def open(self, path, flags):
+    def open(self, path: str, flags):
         '''
         When raw_fi is False (default case), open should return a numerical
         file handle.
@@ -1890,19 +1891,19 @@ class Operations:
         return 0
 
     @_nullable_dummy_function
-    def opendir(self, path):
+    def opendir(self, path: str):
         'Returns a numerical file handle.'
 
         return 0
 
     @_nullable_dummy_function
-    def read(self, path, size, offset, fh):
+    def read(self, path: str, size, offset, fh):
         'Returns a string containing the data requested.'
 
         raise FuseOSError(errno.EIO)
 
     @_nullable_dummy_function
-    def readdir(self, path, fh):
+    def readdir(self, path: str, fh):
         '''
         Can return either a list of names, or a list of (name, attrs, offset)
         tuples. attrs is a dict as in getattr.
@@ -1911,35 +1912,35 @@ class Operations:
         return ['.', '..']
 
     @_nullable_dummy_function
-    def readlink(self, path):
+    def readlink(self, path: str):
         raise FuseOSError(errno.ENOENT)
 
     @_nullable_dummy_function
-    def release(self, path, fh):
+    def release(self, path: str, fh):
         return 0
 
     @_nullable_dummy_function
-    def releasedir(self, path, fh):
+    def releasedir(self, path: str, fh):
         return 0
 
     @_nullable_dummy_function
-    def removexattr(self, path, name):
+    def removexattr(self, path: str, name):
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
-    def rename(self, old, new):
+    def rename(self, old: str, new: str):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def rmdir(self, path):
+    def rmdir(self, path: str):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def setxattr(self, path, name, value, options, position=0):
+    def setxattr(self, path: str, name, value, options, position=0):
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
-    def statfs(self, path):
+    def statfs(self, path: str):
         '''
         Returns a dictionary with keys identical to the statvfs C structure of
         statvfs(3).
@@ -1951,47 +1952,47 @@ class Operations:
         return {}
 
     @_nullable_dummy_function
-    def symlink(self, target, source):
+    def symlink(self, target: str, source: str):
         'creates a symlink `target -> source` (e.g. ln -s source target)'
 
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def truncate(self, path, length, fh=None):
+    def truncate(self, path: str, length, fh=None):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def unlink(self, path):
+    def unlink(self, path: str):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def utimens(self, path, times=None):
+    def utimens(self, path: str, times=None):
         'Times is a (atime, mtime) tuple. If None use current time.'
 
         return 0
 
     @_nullable_dummy_function
-    def write(self, path, data, offset, fh):
+    def write(self, path: str, data, offset, fh):
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def poll(self, path, fh, ph, reventsp):
+    def poll(self, path: str, fh, ph, reventsp):
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def write_buf(self, path, buf, offset, fh):
+    def write_buf(self, path: str, buf, offset, fh):
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def read_buf(self, path, bufpp, size, offset, fh):
+    def read_buf(self, path: str, bufpp, size, offset, fh):
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def flock(self, path, fh, op):
+    def flock(self, path: str, fh, op):
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def fallocate(self, path, mode, offset, size, fh):
+    def fallocate(self, path: str, mode, offset, size, fh):
         raise FuseOSError(errno.ENOSYS)
 
 
