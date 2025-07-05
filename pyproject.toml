@@ -39,28 +39,3 @@ content-type = "text/markdown"
 
 [tool.setuptools]
 py-modules = ["mfusepy"]
-
-[tool.flake8]
-# W503 "line break before binary operator" is directly in opposition to how black breaks lines!
-extend-ignore = ["C901", "E201", "E202", "E203", "E211", "E221", "E251", "E266", "E501", "W503"]
-max-line-length = 120
-max-complexity = 18
-select = ["B", "C", "E", "F", "W", "T4", "B9"]
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-    "broad-except",
-    "too-many-arguments",
-    "too-many-instance-attributes",
-    "too-many-locals",
-    "too-many-lines",
-    "too-many-positional-arguments",
-    # I don't need the style checker to bother me with missing docstrings and todos.
-    "missing-class-docstring",
-    "missing-function-docstring",
-    "missing-module-docstring",
-    "fixme",
-]
-
-[tool.mypy]
-ignore_missing_imports = true

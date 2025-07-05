@@ -1,0 +1,10 @@
+black
+codespell
+flake8
+ioctl-opt
+paramiko
+types-paramiko
+ruff
+pylint
+pytest
+pytype mypy

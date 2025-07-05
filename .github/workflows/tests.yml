@@ -18,10 +18,14 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Install Dependencies
+        run: |
+          python3 -m pip install ioctl-opt paramiko types-paramiko pytest
+
       - name: Style Check With Black
         run: |
           python3 -m pip install black
-          black -q --diff --line-length 120 --skip-string-normalization *.py > black.diff
+          black -q --diff --line-length 120 --skip-string-normalization $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
           if [ -s black.diff ]; then
               cat black.diff
               exit 123
@@ -30,28 +34,28 @@ jobs:
       - name: Lint With Codespell
         run: |
           python3 -m pip install codespell
-          codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)' )
+          codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)$' )
 
       - name: Lint With Flake8
         run: |
-          python3 -m pip install flake8 Flake8-pyproject
-          flake8 *.py
+          python3 -m pip install flake8
+          flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Pylint
         run: |
           python3 -m pip install pylint
-          pylint --rcfile tests/.pylintrc *.py | tee pylint.log
+          pylint --rcfile tests/.pylintrc $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
           ! 'egrep' ': E[0-9]{4}: ' pylint.log
 
       - name: Lint With Pytype
         run: |
           python3 -m pip install pytype
-          pytype -d import-error *.py
+          pytype -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Mypy
         run: |
           yes | python3 -m pip install --upgrade-strategy eager --upgrade types-dataclasses mypy
-          mypy *.py
+          mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
     runs-on: ${{ matrix.os }}
