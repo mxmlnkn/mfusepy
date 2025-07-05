@@ -13,42 +13,33 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-# mypy: ignore-errors
-# pylint: disable=too-many-public-methods,missing-module-docstring,line-too-long
-# pylint: disable=invalid-name,missing-function-docstring,missing-class-docstring,
-# pylint: disable=too-few-public-methods,unused-argument,too-many-arguments,too-many-lines
-
 # Note that for ABI forward compatibility and other issues, most C-types should be initialized
 # to 0 and the ctypes module does that for us out of the box!
 # https://github.com/python/cpython/blob/f8a736b8e14ab839e1193cb1d3955b61c316d048/Lib/test/test_ctypes/test_numbers.py#L95
-
-from __future__ import print_function, absolute_import, division
 
 import ctypes
 import errno
 import inspect
 import logging
 import os
+import platform
 import warnings
-
 from ctypes import (
     CFUNCTYPE,
     POINTER,
-    c_char_p,
     c_byte,
+    c_char_p,
+    c_int,
     c_size_t,
     c_ssize_t,
-    c_int,
     c_uint,
     c_uint64,
     c_void_p,
 )
 from ctypes.util import find_library
-from platform import machine, system
-from signal import signal, SIGINT, SIG_DFL, SIGTERM
+from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
 from typing import Optional
-
 
 try:
     from functools import partial
@@ -67,8 +58,8 @@ except ImportError:
 
 
 log = logging.getLogger("fuse")
-_system = system()
-_machine = machine()
+_system = platform.system()
+_machine = platform.machine()
 
 if _system == 'Windows' or _system.startswith('CYGWIN'):
     # NOTE:
@@ -137,21 +128,21 @@ if not _libfuse_path:
         except ImportError:
             import winreg as reg  # pytype: disable=import-error
 
-        def Reg32GetValue(rootkey, keyname, valname):
+        def reg32_get_value(rootkey, keyname, valname):
             key, val = None, None
             try:
                 key = reg.OpenKey(
                     rootkey, keyname, 0, reg.KEY_READ | reg.KEY_WOW64_32KEY
                 )  # pytype: disable=import-error
                 val = str(reg.QueryValueEx(key, valname)[0])
-            except WindowsError:  # pylint: disable=undefined-variable  # pytype: disable=name-error
+            except OSError:  # pylint: disable=undefined-variable  # pytype: disable=name-error
                 pass
             finally:
                 if key is not None:
                     reg.CloseKey(key)
             return val
 
-        _libfuse_path = Reg32GetValue(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WinFsp", r"InstallDir")
+        _libfuse_path = reg32_get_value(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WinFsp", r"InstallDir")
         if _libfuse_path:
             arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
             _libfuse_path += f"bin\\winfsp-{arch}.dll"
@@ -162,7 +153,7 @@ if not _libfuse_path:
             _libfuse_path = find_library('fuse3')
 
 if not _libfuse_path:
-    raise EnvironmentError('Unable to find libfuse')
+    raise OSError('Unable to find libfuse')
 _libfuse = ctypes.CDLL(_libfuse_path)
 
 if _system == 'Darwin' and hasattr(_libfuse, 'macfuse_version'):
@@ -186,7 +177,7 @@ if fuse_version_major == 2 and fuse_version_minor < 6:
     )
 if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linux'):
     raise AttributeError(
-        f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. " "Expected FUSE 2!"
+        f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. Expected FUSE 2!"
     )
 
 
@@ -946,23 +937,19 @@ _fuse_operations_fields_2_9 = [
 ]
 
 if fuse_version_major == 2:
-    _fuse_operations_fields = (
-        [
-            ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat))),
-            ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
-            ('getdir', c_void_p),  # Deprecated, use readdir
-        ]
-        + _fuse_operations_fields_mknod_to_symlink
-        + [
-            ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-            ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-            ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
-            ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t)),
-            ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t)),
-            ('utime', c_void_p),  # Deprecated, use utimens
-        ]
-        + _fuse_operations_fields_open_to_removexattr
-    )
+    _fuse_operations_fields = [
+        ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat))),
+        ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
+        ('getdir', c_void_p),  # Deprecated, use readdir
+        *_fuse_operations_fields_mknod_to_symlink,
+        ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
+        ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),
+        ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
+        ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t)),
+        ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t)),
+        ('utime', c_void_p),  # Deprecated, use utimens
+        *_fuse_operations_fields_open_to_removexattr,
+    ]
     if fuse_version_minor >= 3:
         _fuse_operations_fields += [
             ('opendir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
@@ -1046,13 +1033,13 @@ elif fuse_version_major == 3:
     _fuse_operations_fields = [
         ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), POINTER(fuse_file_info))),         # Added file info
         ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),                       # Same as v2.9
-    ] + _fuse_operations_fields_mknod_to_symlink + [
+        *_fuse_operations_fields_mknod_to_symlink,
         ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
         ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
         ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, POINTER(fuse_file_info))),                  # Added file info
         ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, POINTER(fuse_file_info))),          # Added file info
         ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, POINTER(fuse_file_info))),                # Added file info
-    ] + _fuse_operations_fields_open_to_removexattr + [
+        *_fuse_operations_fields_open_to_removexattr,
         ('opendir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),                          # Same as v2.9
         ('readdir', CFUNCTYPE(
             c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, POINTER(fuse_file_info),
@@ -1069,7 +1056,7 @@ elif fuse_version_major == 3:
         ('ioctl', CFUNCTYPE(                                                                       # Argument type
             c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
             POINTER(fuse_file_info), c_uint, c_void_p)),
-    ] + _fuse_operations_fields_2_9 + [
+        *_fuse_operations_fields_2_9,
         (
             'copy_file_range',                                                                     # New
             CFUNCTYPE(
@@ -1183,6 +1170,7 @@ class FUSE:
                 'True in your operations class or set your fusepy '
                 'requirements to <4.',
                 DeprecationWarning,
+                stacklevel=2,
             )
 
         args = ['fuse']
@@ -1270,22 +1258,17 @@ class FUSE:
                         exc_info=True,
                     )
                     return -e.errno
-                log.error(
+                log.exception(
                     "FUSE operation %s raised an OSError with negative errno %s, returning errno.EINVAL.",
                     func.__name__,
                     e.errno,
-                    exc_info=True,
                 )
                 return -errno.EINVAL
 
             except Exception as e:
                 if func.__name__ == "init":
                     raise e
-                log.error(
-                    "Uncaught exception from FUSE operation %s, returning errno.EINVAL.",
-                    func.__name__,
-                    exc_info=True,
-                )
+                log.exception("Uncaught exception from FUSE operation %s, returning errno.EINVAL.", func.__name__)
                 return -errno.EINVAL
 
         except BaseException as e:
@@ -1564,7 +1547,7 @@ class FUSE:
                     st = c_stat()
                     # ONLY THE MODE IS USED BY FUSE! The caller may skip everything else.
                     if 'st_mode' in attrs:
-                        setattr(st, 'st_mode', attrs['st_mode'])
+                        st.st_mode = attrs['st_mode']
                 else:
                     st = None
 
@@ -1646,10 +1629,7 @@ class FUSE:
         ctypes.memset(buf, 0, ctypes.sizeof(c_stat))
 
         st = buf.contents
-        if fip:
-            fh = fip.contents if self.raw_fi else fip.contents.fh
-        else:
-            fh = fip
+        fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else fip
 
         attrs = self.operations('getattr', None if path is None else path.decode(self.encoding), fh)
         set_st_attrs(st, attrs, use_ns=self.use_ns)
