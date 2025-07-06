@@ -9,7 +9,7 @@ import paramiko
 import mfusepy
 
 
-class SFTP(mfusepy.LoggingMixIn, mfusepy.Operations):
+class SFTP(mfusepy.Operations):
     '''
     A simple SFTP filesystem. Requires paramiko: http://www.lag.net/paramiko/
 

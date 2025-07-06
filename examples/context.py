@@ -9,7 +9,7 @@ import time
 import mfusepy
 
 
-class Context(mfusepy.LoggingMixIn, mfusepy.Operations):
+class Context(mfusepy.Operations):
     'Example filesystem to demonstrate fuse_get_context()'
 
     def getattr(self, path, fh=None):

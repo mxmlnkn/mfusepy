@@ -13,7 +13,7 @@ from typing import Any, Dict
 import mfusepy as fuse
 
 
-# LoggingMixIn should not be used anymore! This is only here for downwards compatibility tests.
+# Use log_callback instead of LoggingMixIn! This is only here for downwards compatibility tests.
 class Memory(fuse.LoggingMixIn, fuse.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
