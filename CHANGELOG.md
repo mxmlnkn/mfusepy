@@ -1,4 +1,22 @@
 
+# Version 3.0.0 built on 2025-07-09
+
+Version 2 was skipped because the git tags would have clashed with the original fusepy tags.
+
+## API
+
+ - Add type-hints.
+ - `Operation.__call__` is not used anymore. Use decorators instead.
+ - `readdir` may now also return only a triple of (name, mode, offset).
+ - `init_with_config` arguments are now always structs. Prior, they were ctypes pointers to the struct.
+ - As the old warning stated, `use_ns` will be removed in version 4 and all timestamps will use nanoseconds then.
+
+## Features
+
+ - Add `overrides` decorator.
+ - Add `log_callback` decorator.
+
+
 # Version 1.1.1 built on 2025-07-07
 
 ## Fixes
