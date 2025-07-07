@@ -1123,7 +1123,7 @@ class FUSE:
         ('nothreads', '-s'),
     )
 
-    def __init__(self, operations, mountpoint, raw_fi=False, encoding='utf-8', **kwargs):
+    def __init__(self, operations, mountpoint: str, raw_fi: bool = False, encoding: str = 'utf-8', **kwargs) -> None:
         '''
         Setting raw_fi to True will cause FUSE to pass the fuse_file_info
         class as is to Operations, instead of just the fh field.
@@ -1164,8 +1164,8 @@ class FUSE:
         args.append(','.join(self._normalize_fuse_options(**kwargs)))
         args.append(mountpoint)
 
-        args = [arg.encode(encoding) for arg in args]
-        argv = (ctypes.c_char_p * len(args))(*args)
+        argsb = [arg.encode(encoding) for arg in args]
+        argv = (ctypes.c_char_p * len(argsb))(*argsb)
 
         fuse_ops = fuse_operations()
         callbacks_to_always_add = {'init'}
@@ -1187,9 +1187,22 @@ class FUSE:
 
             # Wrap functions into try-except statements.
             if is_function:
-                method = getattr(self, name, None)
+                method: Optional[Any] = None
+                if fuse_version_major == 2:
+                    method = getattr(self, name + '_fuse_2', None)
+                elif fuse_version_major == 3:
+                    method = getattr(self, name + '_fuse_3', None)
+
+                if method is not None and hasattr(self, name):
+                    raise RuntimeError(
+                        "Internal Error: Only either suffixed or non-suffixed methods must exist!"
+                        f"Found both for '{name}'."
+                    )
+
                 if method is None:
-                    raise RuntimeError(f"Internal Error: Method wrapper for FUSE callback '{name}' is missing!")
+                    method = getattr(self, name, None)
+                    if method is None:
+                        raise RuntimeError(f"Internal Error: Method wrapper for FUSE callback '{name}' is missing!")
 
                 log.debug("Set libFUSE callback for '%s' to wrapped %s wrapping %s", name, method, value)
                 value = prototype(functools.partial(self._wrapper, method))
@@ -1203,7 +1216,7 @@ class FUSE:
         except ValueError:
             old_handler = SIG_DFL
 
-        err = fuse_main_real(len(args), argv, ctypes.pointer(fuse_ops), ctypes.sizeof(fuse_ops), None)
+        err = fuse_main_real(len(argsb), argv, ctypes.pointer(fuse_ops), ctypes.sizeof(fuse_ops), None)
 
         try:
             signal(SIGINT, old_handler)
@@ -1272,15 +1285,11 @@ class FUSE:
             fuse_exit()
             return -errno.EFAULT
 
-    if fuse_version_major == 2:
+    def getattr_fuse_2(self, path: bytes, buf):
+        return self.fgetattr(path, buf, None)
 
-        def getattr(self, path: bytes, buf):
-            return self.fgetattr(path, buf, None)
-
-    elif fuse_version_major == 3:
-
-        def getattr(self, path: bytes, buf, fip):  # type: ignore
-            return self.fgetattr(path, buf, None)
+    def getattr_fuse_3(self, path: bytes, buf, fip):
+        return self.fgetattr(path, buf, None)
 
     def readlink(self, path: bytes, buf, bufsize: int) -> int:
         ret = self.operations.readlink(path.decode(self.encoding)).encode(self.encoding)
@@ -1308,30 +1317,22 @@ class FUSE:
 
         return self.operations.symlink(target.decode(self.encoding), source.decode(self.encoding))
 
-    def _rename(self, old: bytes, new: bytes) -> int:
+    def rename_fuse_2(self, old: bytes, new: bytes) -> int:
         return self.operations.rename(old.decode(self.encoding), new.decode(self.encoding))
 
-    if fuse_version_major == 2:
-        rename = _rename
-    elif fuse_version_major == 3:
-
-        def rename(self, old: bytes, new: bytes, flags: int) -> int:  # type: ignore
-            return self._rename(old, new)
+    def rename_fuse_3(self, old: bytes, new: bytes, flags: int) -> int:
+        return self.rename_fuse_2(old, new)
 
     def link(self, source: bytes, target: bytes):
         'creates a hard link `target -> source` (e.g. ln source target)'
 
         return self.operations.link(target.decode(self.encoding), source.decode(self.encoding))
 
-    if fuse_version_major == 2:
+    def chmod_fuse_2(self, path: Optional[bytes], mode: int) -> int:
+        return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
 
-        def chmod(self, path: Optional[bytes], mode: int) -> int:
-            return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
-
-    elif fuse_version_major == 3:
-
-        def chmod(self, path: Optional[bytes], mode: int, fip) -> int:  # type: ignore
-            return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
+    def chmod_fuse_3(self, path: Optional[bytes], mode: int, fip) -> int:
+        return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
 
     def _chown(self, path: Optional[bytes], uid: int, gid: int) -> int:
         # Check if any of the arguments is a -1 that has overflowed
@@ -1342,25 +1343,17 @@ class FUSE:
 
         return self.operations.chown(None if path is None else path.decode(self.encoding), uid, gid)
 
-    if fuse_version_major == 2:
+    def chown_fuse_2(self, path: Optional[bytes], uid: int, gid: int) -> int:
+        return self._chown(path, uid, gid)
 
-        def chown(self, path: Optional[bytes], uid: int, gid: int) -> int:
-            return self._chown(path, uid, gid)
+    def chown_fuse_3(self, path: Optional[bytes], uid: int, gid: int, fip) -> int:
+        return self._chown(path, uid, gid)
 
-    elif fuse_version_major == 3:
+    def truncate_fuse_2(self, path: Optional[bytes], length: int) -> int:
+        return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
 
-        def chown(self, path: Optional[bytes], uid: int, gid: int, fip) -> int:  # type: ignore
-            return self._chown(path, uid, gid)
-
-    if fuse_version_major == 2:
-
-        def truncate(self, path: Optional[bytes], length: int) -> int:
-            return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
-
-    elif fuse_version_major == 3:
-
-        def truncate(self, path: Optional[bytes], length: int, fip) -> int:  # type: ignore
-            return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
+    def truncate_fuse_3(self, path: Optional[bytes], length: int, fip) -> int:
+        return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
 
     def open(self, path: bytes, fip) -> int:
         fi = fip.contents
@@ -1548,18 +1541,14 @@ class FUSE:
 
         return 0
 
-    if fuse_version_major == 2:
+    def readdir_fuse_2(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
+        return self._readdir(path, buf, filler, offset, fip)
 
-        def readdir(self, path: Optional[bytes], buf, filler, offset, fip) -> int:
-            return self._readdir(path, buf, filler, offset, fip)
-
-    elif fuse_version_major == 3:
-
-        def readdir(self, path: Optional[bytes], buf, filler, offset, fip, flags) -> int:  # type: ignore
-            # TODO if bit 0 (FUSE_READDIR_PLUS) is set in flags, then we might want to gather more metadata
-            #      and return it in "filler" with bit 1 (FUSE_FILL_DIR_PLUS) being set.
-            # Ignore raw_fi
-            return self._readdir(path, buf, filler, offset, fip)
+    def readdir_fuse_3(self, path: Optional[bytes], buf, filler, offset: int, fip, flags: int) -> int:
+        # TODO if bit 0 (FUSE_READDIR_PLUS) is set in flags, then we might want to gather more metadata
+        #      and return it in "filler" with bit 1 (FUSE_FILL_DIR_PLUS) being set.
+        # Ignore raw_fi
+        return self._readdir(path, buf, filler, offset, fip)
 
     def releasedir(self, path: Optional[bytes], fip) -> int:
         # Ignore raw_fi
@@ -1577,17 +1566,13 @@ class FUSE:
         elif hasattr(self.operations, "init") and not getattr(self.operations.init, "libfuse_ignore", False):
             self.operations.init("/")
 
-    if fuse_version_major == 2:
+    def init_fuse_2(self, conn) -> None:
+        self._init(conn, fuse_config())
 
-        def init(self, conn) -> None:
-            self._init(conn, fuse_config())
-
-    else:
-
-        def init(self, conn, config) -> None:  # type: ignore
-            if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
-                config.contents.nullpath_ok = True
-            self._init(conn, config)
+    def init_fuse_3(self, conn, config) -> None:
+        if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
+            config.contents.nullpath_ok = True
+        self._init(conn, config)
 
     def destroy(self, private_data) -> None:
         return self.operations.destroy('/')
@@ -1625,7 +1610,7 @@ class FUSE:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.lock(None if path is None else path.decode(self.encoding), fh, cmd, lock)
 
-    def _utimens(self, path: Optional[bytes], buf) -> int:
+    def utimens_fuse_2(self, path: Optional[bytes], buf) -> int:
         if buf:
             atime = time_of_timespec(buf.contents.actime, use_ns=self.use_ns)
             mtime = time_of_timespec(buf.contents.modtime, use_ns=self.use_ns)
@@ -1635,12 +1620,8 @@ class FUSE:
 
         return self.operations.utimens(None if path is None else path.decode(self.encoding), times)
 
-    if fuse_version_major == 2:
-        utimens = _utimens
-    elif fuse_version_major == 3:
-
-        def utimens(self, path: Optional[bytes], buf, fip) -> int:  # type: ignore
-            return self._utimens(path, buf)
+    def utimens_fuse_3(self, path: Optional[bytes], buf, fip) -> int:
+        return self.utimens_fuse_2(path, buf)
 
     def bmap(self, path: bytes, blocksize: int, idx) -> int:
         return self.operations.bmap(path.decode(self.encoding), blocksize, idx)
