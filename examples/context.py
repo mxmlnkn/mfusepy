@@ -1,50 +1,49 @@
 #!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
 
+import argparse
+import errno
 import logging
+import stat
+import time
 
-from errno import ENOENT
-from stat import S_IFDIR, S_IFREG
-from time import time
-
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
+import mfusepy
 
 
-class Context(LoggingMixIn, Operations):
+class Context(mfusepy.LoggingMixIn, mfusepy.Operations):
     'Example filesystem to demonstrate fuse_get_context()'
 
     def getattr(self, path, fh=None):
-        uid, gid, pid = fuse_get_context()
+        uid, gid, pid = mfusepy.fuse_get_context()
         if path == '/':
-            st = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
+            st = {'st_mode': (stat.S_IFDIR | 0o755), 'st_nlink': 2}
         elif path == '/uid':
-            size = len('%s\n' % uid)
-            st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
+            size = len(f'{uid}\n')
+            st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}
         elif path == '/gid':
-            size = len('%s\n' % gid)
-            st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
+            size = len(f'{gid}\n')
+            st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}
         elif path == '/pid':
-            size = len('%s\n' % pid)
-            st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
+            size = len(f'{pid}\n')
+            st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}
         else:
-            raise FuseOSError(ENOENT)
-        st['st_ctime'] = st['st_mtime'] = st['st_atime'] = time()
+            raise mfusepy.FuseOSError(errno.ENOENT)
+        st['st_ctime'] = st['st_mtime'] = st['st_atime'] = time.time()
         return st
 
     def read(self, path, size, offset, fh):
-        uid, gid, pid = fuse_get_context()
+        uid, gid, pid = mfusepy.fuse_get_context()
 
         def encoded(x):
-            return ('%s\n' % x).encode('utf-8')
+            return (f'{x}\n').encode()
 
         if path == '/uid':
             return encoded(uid)
-        elif path == '/gid':
+        if path == '/gid':
             return encoded(gid)
-        elif path == '/pid':
+        if path == '/pid':
             return encoded(pid)
 
-        raise RuntimeError('unexpected path: %r' % path)
+        raise RuntimeError(f'unexpected path: {path!r}')
 
     def readdir(self, path, fh):
         return ['.', '..', 'uid', 'gid', 'pid']
@@ -61,12 +60,14 @@ class Context(LoggingMixIn, Operations):
     statfs = None
 
 
-if __name__ == '__main__':
-    import argparse
+def cli(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('mount')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    fuse = FUSE(
-        Context(), args.mount, foreground=True, ro=True, allow_other=True)
+    mfusepy.FUSE(Context(), args.mount, foreground=True, ro=True)
+
+
+if __name__ == '__main__':
+    cli()

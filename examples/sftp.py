@@ -1,15 +1,15 @@
 #!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
 
+import argparse
+import errno
 import logging
+
 import paramiko
 
-from errno import ENOENT
-
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+import mfusepy
 
 
-class SFTP(LoggingMixIn, Operations):
+class SFTP(mfusepy.LoggingMixIn, mfusepy.Operations):
     '''
     A simple SFTP filesystem. Requires paramiko: http://www.lag.net/paramiko/
 
@@ -42,11 +42,10 @@ class SFTP(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         try:
             st = self.sftp.lstat(path)
-        except IOError:
-            raise FuseOSError(ENOENT)
+        except OSError:
+            raise mfusepy.FuseOSError(errno.ENOENT)
 
-        return dict((key, getattr(st, key)) for key in (
-            'st_atime', 'st_gid', 'st_mode', 'st_mtime', 'st_size', 'st_uid'))
+        return {key: getattr(st, key) for key in ('st_atime', 'st_gid', 'st_mode', 'st_mtime', 'st_size', 'st_uid')}
 
     def mkdir(self, path, mode):
         return self.sftp.mkdir(path, mode)
@@ -59,8 +58,7 @@ class SFTP(LoggingMixIn, Operations):
         return buf
 
     def readdir(self, path, fh):
-        return ['.', '..'] + [name.encode('utf-8')
-                              for name in self.sftp.listdir(path)]
+        return ['.', '..'] + [name.encode('utf-8') for name in self.sftp.listdir(path)]
 
     def readlink(self, path):
         return self.sftp.readlink(path)
@@ -91,13 +89,12 @@ class SFTP(LoggingMixIn, Operations):
         return len(data)
 
 
-if __name__ == '__main__':
-    import argparse
+def cli(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-l', dest='login')
     parser.add_argument('host')
     parser.add_argument('mount')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
 
@@ -105,9 +102,8 @@ if __name__ == '__main__':
         if '@' in args.host:
             args.login, _, args.host = args.host.partition('@')
 
-    fuse = FUSE(
-        SFTP(args.host, username=args.login),
-        args.mount,
-        foreground=True,
-        nothreads=True,
-        allow_other=True)
+    mfusepy.FUSE(SFTP(args.host, username=args.login), args.mount, foreground=True, nothreads=True)
+
+
+if __name__ == '__main__':
+    cli()

@@ -1,22 +1,20 @@
 #!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
 
+import argparse
+import collections
 import ctypes
+import errno
 import logging
+import stat
 import struct
+import time
 
-from collections import defaultdict
-from errno import ENOENT, ENOTTY
 from ioctl_opt import IOWR
-from stat import S_IFDIR, S_IFREG
-from time import time
 
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+import mfusepy
 
-if not hasattr(__builtins__, 'bytes'):
-    bytes = str
 
-class Ioctl(LoggingMixIn, Operations):
+class Ioctl(mfusepy.LoggingMixIn, mfusepy.Operations):
     '''
     Example filesystem based on memory.py to demonstrate ioctl().
 
@@ -33,31 +31,33 @@ class Ioctl(LoggingMixIn, Operations):
 
     def __init__(self):
         self.files = {}
-        self.data = defaultdict(bytes)
+        self.data = collections.defaultdict(bytes)
         self.fd = 0
-        now = time()
-        self.files['/'] = dict(
-            st_mode=(S_IFDIR | 0o755),
-            st_ctime=now,
-            st_mtime=now,
-            st_atime=now,
-            st_nlink=2)
+        now = time.time()
+        self.files['/'] = {
+            'st_mode': (stat.S_IFDIR | 0o755),
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
+            'st_nlink': 2,
+        }
 
     def create(self, path, mode):
-        self.files[path] = dict(
-            st_mode=(S_IFREG | mode),
-            st_nlink=1,
-            st_size=0,
-            st_ctime=time(),
-            st_mtime=time(),
-            st_atime=time())
+        self.files[path] = {
+            'st_mode': (stat.S_IFREG | mode),
+            'st_nlink': 1,
+            'st_size': 0,
+            'st_ctime': time.time(),
+            'st_mtime': time.time(),
+            'st_atime': time.time(),
+        }
 
         self.fd += 1
         return self.fd
 
     def getattr(self, path, fh=None):
         if path not in self.files:
-            raise FuseOSError(ENOENT)
+            raise mfusepy.FuseOSError(errno.ENOENT)
 
         return self.files[path]
 
@@ -71,7 +71,7 @@ class Ioctl(LoggingMixIn, Operations):
             outbuf = struct.pack('<I', data_out)
             ctypes.memmove(data, outbuf, 4)
         else:
-            raise FuseOSError(ENOTTY)
+            raise mfusepy.FuseOSError(errno.ENOTTY)
         return 0
 
     def open(self, path, flags):
@@ -79,17 +79,20 @@ class Ioctl(LoggingMixIn, Operations):
         return self.fd
 
     def read(self, path, size, offset, fh):
-        return self.data[path][offset:offset + size]
+        return self.data[path][offset : offset + size]
 
     def readdir(self, path, fh):
         return ['.', '..'] + [x[1:] for x in self.files if x != '/']
 
 
-if __name__ == '__main__':
-    import argparse
+def cli(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('mount')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    fuse = FUSE(Ioctl(), args.mount, foreground=True, allow_other=True)
+    mfusepy.FUSE(Ioctl(), args.mount, foreground=True)
+
+
+if __name__ == '__main__':
+    cli()

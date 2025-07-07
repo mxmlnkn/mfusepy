@@ -1,27 +1,26 @@
 #!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
 
+import argparse
+import errno
 import logging
 import os
-
-from errno import EACCES
+import threading
 from os.path import realpath
-from threading import Lock
 
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+import mfusepy
 
 
-class Loopback(LoggingMixIn, Operations):
+class Loopback(mfusepy.LoggingMixIn, mfusepy.Operations):
     def __init__(self, root):
         self.root = realpath(root)
-        self.rwlock = Lock()
+        self.rwlock = threading.Lock()
 
     def __call__(self, op, path, *args):
-        return super(Loopback, self).__call__(op, self.root + path, *args)
+        return super().__call__(op, self.root + path, *args)
 
     def access(self, path, mode):
         if not os.access(path, mode):
-            raise FuseOSError(EACCES)
+            raise mfusepy.FuseOSError(errno.EACCES)
 
     chmod = os.chmod
     chown = os.chown
@@ -35,14 +34,14 @@ class Loopback(LoggingMixIn, Operations):
     def fsync(self, path, datasync, fh):
         if datasync != 0:
             return os.fdatasync(fh)
-        else:
-            return os.fsync(fh)
+        return os.fsync(fh)
 
     def getattr(self, path, fh=None):
         st = os.lstat(path)
-        return dict((key, getattr(st, key)) for key in (
-            'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime',
-            'st_nlink', 'st_size', 'st_uid'))
+        return {
+            key: getattr(st, key)
+            for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid')
+        }
 
     getxattr = None
 
@@ -60,7 +59,7 @@ class Loopback(LoggingMixIn, Operations):
             return os.read(fh, size)
 
     def readdir(self, path, fh):
-        return ['.', '..'] + os.listdir(path)
+        return ['.', '..', *os.listdir(path)]
 
     readlink = os.readlink
 
@@ -74,9 +73,21 @@ class Loopback(LoggingMixIn, Operations):
 
     def statfs(self, path):
         stv = os.statvfs(path)
-        return dict((key, getattr(stv, key)) for key in (
-            'f_bavail', 'f_bfree', 'f_blocks', 'f_bsize', 'f_favail',
-            'f_ffree', 'f_files', 'f_flag', 'f_frsize', 'f_namemax'))
+        return {
+            key: getattr(stv, key)
+            for key in (
+                'f_bavail',
+                'f_bfree',
+                'f_blocks',
+                'f_bsize',
+                'f_favail',
+                'f_ffree',
+                'f_files',
+                'f_flag',
+                'f_frsize',
+                'f_namemax',
+            )
+        }
 
     def symlink(self, target, source):
         return os.symlink(source, target)
@@ -94,13 +105,15 @@ class Loopback(LoggingMixIn, Operations):
             return os.write(fh, data)
 
 
-if __name__ == '__main__':
-    import argparse
+def cli(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('root')
     parser.add_argument('mount')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    fuse = FUSE(
-        Loopback(args.root), args.mount, foreground=True, allow_other=True)
+    mfusepy.FUSE(Loopback(args.root), args.mount, foreground=True)
+
+
+if __name__ == '__main__':
+    cli()
