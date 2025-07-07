@@ -59,7 +59,7 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         try:
             return attrs[name]
         except KeyError:
-            return ''
+            return b''
 
     def listxattr(self, path):
         attrs = self.files[path].get('attrs', {})
