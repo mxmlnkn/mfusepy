@@ -3,7 +3,6 @@
 import argparse
 import collections
 import errno
-import logging
 import stat
 import time
 from typing import Any, Dict
@@ -11,11 +10,16 @@ from typing import Any, Dict
 import mfusepy
 
 
-class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
+class Memory(mfusepy.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
+    flag_nullpath_ok = True
+    flag_nopath = True
+
     def __init__(self):
+        self.files = {}
         self.data = collections.defaultdict(bytes)
+        self.fd = 0
         now = time.time()
         self.files: Dict[str, Dict[str, Any]] = {
             '/': {
@@ -26,6 +30,12 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
                 'st_nlink': 2,
             }
         }
+        self._opened: Dict[int, str] = {}
+
+    def init_with_config(self, conn_info, config_3) -> None:
+        # This only works for FUSE 3 while the flag_nullpath_ok and flag_nopath class members work for FUSE 2 and 3!
+        if config_3:
+            config_3.nullpath_ok = True
 
     def chmod(self, path, mode):
         self.files[path]['st_mode'] &= 0o770000
@@ -45,9 +55,14 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
             'st_mtime': time.time(),
             'st_atime': time.time(),
         }
-        return 0
+
+        self.fd += 1
+        self._opened[self.fd] = path
+        return self.fd
 
     def getattr(self, path, fh=None):
+        if fh is not None and fh in self._opened:
+            path = self._opened[fh]
         if path not in self.files:
             raise mfusepy.FuseOSError(errno.ENOENT)
         return self.files[path]
@@ -76,11 +91,28 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
 
         self.files['/']['st_nlink'] += 1
 
+    def open(self, path, flags):
+        self.fd += 1
+        self._opened[self.fd] = path
+        return self.fd
+
     def read(self, path, size, offset, fh):
-        return self.data[path][offset : offset + size]
+        return self.data[self._opened[fh]][offset : offset + size]
+
+    def release(self, path, fh):
+        del self._opened[fh]
+
+    def opendir(self, path):
+        self.fd += 1
+        self._opened[self.fd] = path
+        return self.fd
 
     def readdir(self, path, fh):
+        path = self._opened[fh]
         return ['.', '..'] + [x[1:] for x in self.files if x.startswith(path) and len(x) > len(path)]
+
+    def releasedir(self, path, fh):
+        del self._opened[fh]
 
     def readlink(self, path):
         return self.data[path]
@@ -119,6 +151,8 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         self.data[target] = source
 
     def truncate(self, path, length, fh=None):
+        if fh is not None and fh in self._opened:
+            path = self._opened[fh]
         # make sure extending the file fills in zero bytes
         self.data[path] = self.data[path][:length].ljust(length, '\x00'.encode('ascii'))
         self.files[path]['st_size'] = length
@@ -134,6 +168,7 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         self.files[path]['st_mtime'] = mtime
 
     def write(self, path, data, offset, fh):
+        path = self._opened[fh]
         self.data[path] = (
             # make sure the data gets inserted at the right offset
             self.data[path][:offset].ljust(offset, '\x00'.encode('ascii'))
@@ -150,7 +185,6 @@ def cli(args=None):
     parser.add_argument('mount')
     args = parser.parse_args(args)
 
-    logging.basicConfig(level=logging.DEBUG)
     mfusepy.FUSE(Memory(), args.mount, foreground=True)
 
 

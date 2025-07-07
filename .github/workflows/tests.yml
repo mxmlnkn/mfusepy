@@ -106,7 +106,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install --upgrade wheel
           python3 -m pip install --upgrade setuptools
-          python3 -m pip install --upgrade-strategy eager --upgrade twine build
+          python3 -m pip install --upgrade-strategy eager --upgrade twine build pytest
 
       - name: Test Installation From Tarball
         run: |
@@ -121,3 +121,16 @@ jobs:
       - name: Test Import
         run: |
           python3 -c 'import mfusepy'
+
+      - name: Unit Tests (FUSE 2)
+        if: startsWith( matrix.os, 'ubuntu' )
+        run: |
+          python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+          python3 -m pytest tests
+
+      - name: Unit Tests (FUSE 3)
+        if: startsWith( matrix.os, 'ubuntu' )
+        run: |
+          export FUSE_LIBRARY_PATH=$( dpkg -L libfuse3-3 | 'grep' -F .so | head -1 )
+          python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 3'
+          python3 -m pytest tests
