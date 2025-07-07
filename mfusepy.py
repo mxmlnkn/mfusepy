@@ -26,6 +26,7 @@ from __future__ import print_function, absolute_import, division
 
 import ctypes
 import errno
+import inspect
 import logging
 import os
 import warnings
@@ -1625,7 +1626,10 @@ class FUSE:
 
         if self.raw_fi:
             return self.operations('create', path, mode, fi)
-        fi.fh = self.operations('create', path, mode, fi.flags)
+        if len(inspect.signature(self.operations.create).parameters) == 2:
+            fi.fh = self.operations('create', path, mode)
+        else:
+            fi.fh = self.operations('create', path, mode, fi.flags)
         return 0
 
     def ftruncate(self, path, length, fip):
