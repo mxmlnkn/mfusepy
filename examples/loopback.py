@@ -43,12 +43,9 @@ class Loopback(fuse.LoggingMixIn, fuse.Operations):
             for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid')
         }
 
-    getxattr = None
-
     def link(self, target, source):
         return os.link(self.root + source, target)
 
-    listxattr = None
     mkdir = os.mkdir
     mknod = os.mknod
     open = os.open

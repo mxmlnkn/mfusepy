@@ -48,17 +48,6 @@ class Context(mfusepy.LoggingMixIn, mfusepy.Operations):
     def readdir(self, path, fh):
         return ['.', '..', 'uid', 'gid', 'pid']
 
-    # Disable unused operations:
-    access = None
-    flush = None
-    getxattr = None
-    listxattr = None
-    open = None
-    opendir = None
-    release = None
-    releasedir = None
-    statfs = None
-
 
 def cli(args=None):
     parser = argparse.ArgumentParser()
