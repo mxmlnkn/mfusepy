@@ -1361,12 +1361,12 @@ class FUSE:
     if fuse_version_major == 2:
 
         def chmod(self, path, mode):
-            return self.operations('chmod', path.decode(self.encoding), mode)
+            return self.operations('chmod', None if path is None else path.decode(self.encoding), mode)
 
     elif fuse_version_major == 3:
 
         def chmod(self, path, mode, fip):
-            return self.operations('chmod', path.decode(self.encoding), mode)
+            return self.operations('chmod', None if path is None else path.decode(self.encoding), mode)
 
     def _chown(self, path, uid, gid):
         # Check if any of the arguments is a -1 that has overflowed
@@ -1375,7 +1375,7 @@ class FUSE:
         if c_gid_t(gid + 1).value == 0:
             gid = -1
 
-        return self.operations('chown', path.decode(self.encoding), uid, gid)
+        return self.operations('chown', None if path is None else path.decode(self.encoding), uid, gid)
 
     if fuse_version_major == 2:
 
@@ -1390,12 +1390,12 @@ class FUSE:
     if fuse_version_major == 2:
 
         def truncate(self, path, length):
-            return self.operations('truncate', path.decode(self.encoding), length)
+            return self.operations('truncate', None if path is None else path.decode(self.encoding), length)
 
     elif fuse_version_major == 3:
 
         def truncate(self, path, length, fip):
-            return self.operations('truncate', path.decode(self.encoding), length)
+            return self.operations('truncate', None if path is None else path.decode(self.encoding), length)
 
     def open(self, path, fip):
         fi = fip.contents
@@ -1672,7 +1672,7 @@ class FUSE:
         else:
             times = None
 
-        return self.operations('utimens', path.decode(self.encoding), times)
+        return self.operations('utimens', None if path is None else path.decode(self.encoding), times)
 
     if fuse_version_major == 2:
         utimens = _utimens
@@ -1686,11 +1686,11 @@ class FUSE:
 
     def ioctl(self, path, cmd, arg, fip, flags, data):
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations('ioctl', path.decode(self.encoding), cmd, arg, fh, flags, data)
+        return self.operations('ioctl', None if path is None else path.decode(self.encoding), cmd, arg, fh, flags, data)
 
     def poll(self, path, fip, ph, reventsp):
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations('poll', path.decode(self.encoding), fh, ph, reventsp)
+        return self.operations('poll', None if path is None else path.decode(self.encoding), fh, ph, reventsp)
 
     def write_buf(self, path, buf, offset, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
@@ -1706,7 +1706,9 @@ class FUSE:
 
     def fallocate(self, path, mode, offset, size, fip):
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations('fallocate', path.decode(self.encoding), mode, offset, size, fh)
+        return self.operations(
+            'fallocate', None if path is None else path.decode(self.encoding), mode, offset, size, fh
+        )
 
 
 def _nullable_dummy_function(method):
