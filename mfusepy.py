@@ -862,6 +862,14 @@ if fuse_version_major == 3:
     _fuse_config_fields_ += [
         ('ac_attr_timeout_set', _fuse_int32),
         ('ac_attr_timeout', ctypes.c_double),
+        # If this option is given the file-system handlers for the
+        # following operations will not receive path information:
+        # read, write, flush, release, fallocate, fsync, readdir,
+        # releasedir, fsyncdir, lock, ioctl and poll.
+        #
+        # For the truncate, getattr, chmod, chown and utimens
+        # operations the path will be provided only if the struct
+        # fuse_file_info argument is NULL.
         ('nullpath_ok', _fuse_int32),
     ]
 
@@ -1189,6 +1197,7 @@ class FUSE:
         argv = (ctypes.c_char_p * len(args))(*args)
 
         fuse_ops = fuse_operations()
+        callbacks_to_always_add = {'init'}
         for ent in fuse_operations._fields_:
             name, prototype = ent[:2]
 
@@ -1200,7 +1209,7 @@ class FUSE:
                 check_name = check_name[1:]
 
             val = getattr(operations, check_name, None)
-            if val is None or getattr(val, 'libfuse_ignore', False):
+            if (val is None or getattr(val, 'libfuse_ignore', False)) and check_name not in callbacks_to_always_add:
                 continue
 
             # Function pointer members are tested for using the
@@ -1601,8 +1610,8 @@ class FUSE:
             self.operations.init_with_config, "libfuse_ignore", False
         ):
             self.operations.init_with_config(conn, config)
-        else:
-            self.operations("init", "/")
+        elif hasattr(self.operations, "init") and not getattr(self.operations.init, "libfuse_ignore", False):
+            self.operations.init("/")
 
     if fuse_version_major == 2:
 
@@ -1612,6 +1621,8 @@ class FUSE:
     else:
 
         def init(self, conn, config):
+            if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
+                config.contents.nullpath_ok = True
             self._init(conn, config)
 
     def destroy(self, private_data):
