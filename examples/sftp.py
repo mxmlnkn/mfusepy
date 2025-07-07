@@ -29,7 +29,7 @@ class SFTP(mfusepy.LoggingMixIn, mfusepy.Operations):
     def chown(self, path, uid, gid):
         return self.sftp.chown(path, uid, gid)
 
-    def create(self, path, mode):
+    def create(self, path, mode, fi=None):
         f = self.sftp.open(path, 'w')
         f.chmod(mode)
         f.close()

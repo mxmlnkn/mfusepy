@@ -18,14 +18,14 @@ class Loopback(mfusepy.LoggingMixIn, mfusepy.Operations):
     def __call__(self, op, path, *args):
         return super().__call__(op, self.root + path, *args)
 
-    def access(self, path, mode):
-        if not os.access(path, mode):
+    def access(self, path, amode):
+        if not os.access(path, amode):
             raise mfusepy.FuseOSError(errno.EACCES)
 
     chmod = os.chmod
     chown = os.chown
 
-    def create(self, path, mode):
+    def create(self, path, mode, fi=None):
         return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
 
     def flush(self, path, fh):

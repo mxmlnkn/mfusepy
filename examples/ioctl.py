@@ -42,7 +42,7 @@ class Ioctl(mfusepy.LoggingMixIn, mfusepy.Operations):
             'st_nlink': 2,
         }
 
-    def create(self, path, mode):
+    def create(self, path, mode, fi=None):
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,

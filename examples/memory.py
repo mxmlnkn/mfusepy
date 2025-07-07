@@ -18,13 +18,15 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         self.data = collections.defaultdict(bytes)
         self.fd = 0
         now = time.time()
-        self.files: Dict[str, Dict[str, Any]] = { '/': {
-            'st_mode': (stat.S_IFDIR | 0o755),
-            'st_ctime': now,
-            'st_mtime': now,
-            'st_atime': now,
-            'st_nlink': 2,
-        }}
+        self.files: Dict[str, Dict[str, Any]] = {
+            '/': {
+                'st_mode': (stat.S_IFDIR | 0o755),
+                'st_ctime': now,
+                'st_mtime': now,
+                'st_atime': now,
+                'st_nlink': 2,
+            }
+        }
 
     def chmod(self, path, mode):
         self.files[path]['st_mode'] &= 0o770000
@@ -35,7 +37,7 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         self.files[path]['st_uid'] = uid
         self.files[path]['st_gid'] = gid
 
-    def create(self, path, mode, flags=None):
+    def create(self, path, mode, fi=None):
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
