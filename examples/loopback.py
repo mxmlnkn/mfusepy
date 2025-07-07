@@ -7,10 +7,10 @@ import os
 import threading
 from os.path import realpath
 
-import mfusepy
+import mfusepy as fuse
 
 
-class Loopback(mfusepy.LoggingMixIn, mfusepy.Operations):
+class Loopback(fuse.LoggingMixIn, fuse.Operations):
     def __init__(self, root):
         self.root = realpath(root)
         self.rwlock = threading.Lock()
@@ -20,7 +20,7 @@ class Loopback(mfusepy.LoggingMixIn, mfusepy.Operations):
 
     def access(self, path, amode):
         if not os.access(path, amode):
-            raise mfusepy.FuseOSError(errno.EACCES)
+            raise fuse.FuseOSError(errno.EACCES)
 
     chmod = os.chmod
     chown = os.chown
@@ -112,7 +112,7 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    mfusepy.FUSE(Loopback(args.root), args.mount, foreground=True)
+    fuse.FUSE(Loopback(args.root), args.mount, foreground=True)
 
 
 if __name__ == '__main__':

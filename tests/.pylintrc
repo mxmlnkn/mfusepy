@@ -16,11 +16,13 @@ max-line-length=120
 disable=broad-except,
         invalid-name,
         too-many-arguments,
+        too-many-branches,
         too-many-instance-attributes,
         too-many-locals,
         too-many-lines,
         too-many-positional-arguments,
         too-many-public-methods,
+        too-many-statements,
         too-few-public-methods,
         # I don't need the style checker to bother me with missing docstrings and todos.
         missing-class-docstring,
@@ -28,4 +30,7 @@ disable=broad-except,
         missing-module-docstring,
         fixme,
         unused-argument,
-        R0801
+        comparison-with-callable,
+        R0801,
+        global-statement,
+        chained-comparison,  # Only Since Python 3.8

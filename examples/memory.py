@@ -8,10 +8,11 @@ import stat
 import time
 from typing import Any, Dict
 
-import mfusepy
+import mfusepy as fuse
 
 
-class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
+# LoggingMixIn should not be used anymore! This is only here for downwards compatibility tests.
+class Memory(fuse.LoggingMixIn, fuse.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
     def __init__(self):
@@ -49,7 +50,7 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
 
     def getattr(self, path, fh=None):
         if path not in self.files:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         return self.files[path]
 
     def getxattr(self, path, name, position=0):
@@ -97,7 +98,7 @@ class Memory(mfusepy.LoggingMixIn, mfusepy.Operations):
         if old in self.data:  # Directories have no data.
             self.data[new] = self.data.pop(old)
         if old not in self.files:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         self.files[new] = self.files.pop(old)
 
     def rmdir(self, path):
@@ -151,7 +152,7 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    mfusepy.FUSE(Memory(), args.mount, foreground=True)
+    fuse.FUSE(Memory(), args.mount, foreground=True)
 
 
 if __name__ == '__main__':

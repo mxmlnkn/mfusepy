@@ -1,6 +1,7 @@
 # pylint: disable=wrong-import-position
 # pylint: disable=protected-access
 
+import errno
 import io
 import os
 import subprocess
@@ -13,15 +14,16 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
 
+from loopback import cli as cli_loopback  # noqa: E402
 from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
 
 
 class RunCLI:
-    def __init__(self, cli, mount_point):
+    def __init__(self, cli, mount_point, arguments):
         self.timeout = 4
         self.mount_point = str(mount_point)
-        self.args = [self.mount_point]
+        self.args = [*arguments, self.mount_point]
         self.thread = threading.Thread(target=cli, args=(self.args,))
 
         self._stdout = None
@@ -49,8 +51,8 @@ class RunCLI:
             output = stdout.read()
             errors = stderr.read()
 
-            problematicWords = ['[Warning]', '[Error]']
-            if any(word in output or word in errors for word in problematicWords):
+            problematic_words = ['[Warning]', '[Error]']
+            if any(word in output or word in errors for word in problematic_words):
                 print("===== stdout =====\n", output)
                 print("===== stderr =====\n", errors)
                 raise AssertionError("There were warnings or errors!")
@@ -60,20 +62,20 @@ class RunCLI:
             self.thread.join(self.timeout)
 
     def get_stdout(self):
-        oldPosition = sys.stdout.tell()
+        old_position = sys.stdout.tell()
         try:
             sys.stdout.seek(0)
             return sys.stdout.read()
         finally:
-            sys.stdout.seek(oldPosition)
+            sys.stdout.seek(old_position)
 
     def get_stderr(self):
-        oldPosition = sys.stderr.tell()
+        old_position = sys.stderr.tell()
         try:
             sys.stderr.seek(0)
             return sys.stderr.read()
         finally:
-            sys.stderr.seek(oldPosition)
+            sys.stderr.seek(old_position)
 
     def wait_for_mount_point(self):
         t0 = time.time()
@@ -111,43 +113,60 @@ class RunCLI:
             time.sleep(0.1)
 
 
-@pytest.mark.parametrize('cli', [cli_memory, cli_memory_nullpath])
-def test_memory_file_system(cli, tmpdir):
-    mount_point = tmpdir
-    with RunCLI(cli, mount_point):
+@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
+def test_read_write_file_system(cli, tmp_path):
+    if cli == cli_loopback:
+        mount_source = tmp_path / "folder"
+        mount_point = tmp_path / "mounted"
+        mount_source.mkdir()
+        mount_point.mkdir()
+        arguments = [str(mount_source)]
+    else:
+        mount_point = tmp_path
+        arguments = []
+    with RunCLI(cli, mount_point, arguments):
         assert os.path.isdir(mount_point)
         assert not os.path.isdir(mount_point / "foo")
 
         path = mount_point / "foo"
-        with open(path, 'wb') as file:
-            assert file.write(b"bar") == 3
+        assert path.write_bytes(b"bar") == 3
 
         assert os.path.exists(path)
         assert os.path.isfile(path)
         assert not os.path.isdir(path)
 
-        with open(path, 'rb') as file:
-            assert file.read() == b"bar"
+        assert path.read_bytes() == b"bar"
 
         os.truncate(path, 2)
-        with open(path, 'rb') as file:
-            assert file.read() == b"ba"
+        assert path.read_bytes() == b"ba"
 
         os.chmod(path, 0)
         assert os.stat(path).st_mode & 0o777 == 0
         os.chmod(path, 0o777)
         assert os.stat(path).st_mode & 0o777 == 0o777
 
-        os.chown(path, 12345, 23456)
-        assert os.stat(path).st_uid == 12345
-        assert os.stat(path).st_gid == 23456
+        try:
+            # Only works for memory file systems.
+            os.chown(path, 12345, 23456)
+            assert os.stat(path).st_uid == 12345
+            assert os.stat(path).st_gid == 23456
+        except PermissionError:
+            assert cli == cli_loopback
 
-        assert not os.listxattr(path)
-        os.setxattr(path, b"user.tag-test", b"FOO-RESULT")
-        assert os.listxattr(path)
-        assert os.getxattr(path, b"user.tag-test") == b"FOO-RESULT"
-        os.removexattr(path, b"user.tag-test")
-        assert not os.listxattr(path)
+        os.chown(path, os.getuid(), os.getgid())
+        assert os.stat(path).st_uid == os.getuid()
+        assert os.stat(path).st_gid == os.getgid()
+
+        try:
+            assert not os.listxattr(path)
+            os.setxattr(path, b"user.tag-test", b"FOO-RESULT")
+            assert os.listxattr(path)
+            assert os.getxattr(path, b"user.tag-test") == b"FOO-RESULT"
+            os.removexattr(path, b"user.tag-test")
+            assert not os.listxattr(path)
+        except OSError as exception:
+            assert cli == cli_loopback
+            assert exception.errno == errno.ENOTSUP
 
         os.utime(path, (1.5, 12.5))
         assert os.stat(path).st_atime == 1.5
@@ -178,10 +197,11 @@ def test_memory_file_system(cli, tmpdir):
         # assert os.path.isfile(path)  # Does not have a follow_symlink argument but it seems to be True, see below.
         assert os.path.isdir(path)
         assert os.path.islink(path)
-        assert os.readlink(path) == mount_point / "bar"
+        assert os.readlink(path) == str(mount_point / "bar")
 
         os.rmdir(mount_point / "bar")
         assert not os.path.exists(mount_point / "bar")
 
-        assert os.statvfs(mount_point).f_bsize == 512
-        assert os.statvfs(mount_point).f_bavail == 2048
+        if cli != cli_loopback:
+            assert os.statvfs(mount_point).f_bsize == 512
+            assert os.statvfs(mount_point).f_bavail == 2048

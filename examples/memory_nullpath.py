@@ -7,10 +7,10 @@ import stat
 import time
 from typing import Any, Dict
 
-import mfusepy
+import mfusepy as fuse
 
 
-class Memory(mfusepy.Operations):
+class Memory(fuse.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
     flag_nullpath_ok = True
@@ -64,7 +64,7 @@ class Memory(mfusepy.Operations):
         if fh is not None and fh in self._opened:
             path = self._opened[fh]
         if path not in self.files:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         return self.files[path]
 
     def getxattr(self, path, name, position=0):
@@ -129,7 +129,7 @@ class Memory(mfusepy.Operations):
         if old in self.data:  # Directories have no data.
             self.data[new] = self.data.pop(old)
         if old not in self.files:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         self.files[new] = self.files.pop(old)
 
     def rmdir(self, path):
@@ -185,7 +185,7 @@ def cli(args=None):
     parser.add_argument('mount')
     args = parser.parse_args(args)
 
-    mfusepy.FUSE(Memory(), args.mount, foreground=True)
+    fuse.FUSE(Memory(), args.mount, foreground=True)
 
 
 if __name__ == '__main__':

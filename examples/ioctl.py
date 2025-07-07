@@ -11,10 +11,10 @@ import time
 
 from ioctl_opt import IOWR
 
-import mfusepy
+import mfusepy as fuse
 
 
-class Ioctl(mfusepy.LoggingMixIn, mfusepy.Operations):
+class Ioctl(fuse.Operations):
     '''
     Example filesystem based on memory.py to demonstrate ioctl().
 
@@ -57,7 +57,7 @@ class Ioctl(mfusepy.LoggingMixIn, mfusepy.Operations):
 
     def getattr(self, path, fh=None):
         if path not in self.files:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
 
         return self.files[path]
 
@@ -71,7 +71,7 @@ class Ioctl(mfusepy.LoggingMixIn, mfusepy.Operations):
             outbuf = struct.pack('<I', data_out)
             ctypes.memmove(data, outbuf, 4)
         else:
-            raise mfusepy.FuseOSError(errno.ENOTTY)
+            raise fuse.FuseOSError(errno.ENOTTY)
         return 0
 
     def open(self, path, flags):
@@ -91,7 +91,7 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    mfusepy.FUSE(Ioctl(), args.mount, foreground=True)
+    fuse.FUSE(Ioctl(), args.mount, foreground=True)
 
 
 if __name__ == '__main__':
