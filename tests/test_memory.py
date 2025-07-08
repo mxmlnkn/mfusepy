@@ -1,15 +1,19 @@
 # pylint: disable=wrong-import-position
 # pylint: disable=protected-access
 
+import ctypes
 import errno
+import fcntl
 import io
 import os
+import struct
 import subprocess
 import sys
 import threading
 import time
 
 import pytest
+from ioctl_opt import IOWR
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
@@ -136,6 +140,14 @@ def test_read_write_file_system(cli, tmp_path):
         assert not os.path.isdir(path)
 
         assert path.read_bytes() == b"bar"
+
+        if cli == cli_memory:
+            with open(path, 'rb') as file:
+                # Test simple ioctl command that returns the argument incremented by one.
+                argument = 123
+                iowr_m = IOWR(ord('M'), 1, ctypes.c_uint32)
+                result = fcntl.ioctl(file, iowr_m, struct.pack('I', argument))
+                assert struct.unpack('I', result)[0] == argument + 1
 
         os.truncate(path, 2)
         assert path.read_bytes() == b"ba"

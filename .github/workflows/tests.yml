@@ -106,7 +106,10 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install --upgrade wheel
           python3 -m pip install --upgrade setuptools
-          python3 -m pip install --upgrade-strategy eager --upgrade twine build pytest
+          # https://github.com/pyca/pynacl/issues/839
+          # https://github.com/pyca/pynacl/pull/848
+          python3 -m pip install --upgrade git+https://github.com/pyca/pynacl.git
+          python3 -m pip install --upgrade-strategy eager --upgrade twine build pytest ioctl-opt paramiko types-paramiko
 
       - name: Test Installation From Tarball
         run: |

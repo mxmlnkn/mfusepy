@@ -2,9 +2,11 @@
 
 import argparse
 import collections
+import ctypes
 import errno
 import logging
 import stat
+import struct
 import time
 from typing import Any, Dict
 
@@ -144,6 +146,25 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         )
         self.files[path]['st_size'] = len(self.data[path])
         return len(data)
+
+    def ioctl(self, path: str, cmd: int, arg, fh: int, flags: int, data) -> int:
+        """
+        An example ioctl implementation that defines a command with integer code corresponding to 'M' in ASCII,
+        which returns the 32-bit integer argument incremented by 1.
+        """
+        from ioctl_opt import IOWR
+
+        iowr_m = IOWR(ord('M'), 1, ctypes.c_uint32)
+        if cmd == iowr_m:
+            inbuf = ctypes.create_string_buffer(4)
+            ctypes.memmove(inbuf, data, 4)
+            data_in = struct.unpack('<I', inbuf)[0]
+            data_out = data_in + 1
+            outbuf = struct.pack('<I', data_out)
+            ctypes.memmove(data, outbuf, 4)
+        else:
+            raise fuse.FuseOSError(errno.ENOTTY)
+        return 0
 
 
 def cli(args=None):
