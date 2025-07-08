@@ -78,6 +78,8 @@ jobs:
         - os: ubuntu-22.04
           python-version: '3.8'
 
+    env:
+      MFUSEPY_CHECK_OVERRIDES: 1
     defaults:
       run:
         # This is especially important for windows because it seems to default to powershell
@@ -129,6 +131,13 @@ jobs:
       - name: Test Import
         run: |
           python3 -c 'import mfusepy'
+
+      - name: Examples
+        run: |
+          # Simply parsing the source runs the @overrides check!
+          for file in examples/*.py; do
+              python3 "$file" -h
+          done
 
       - name: Unit Tests (FUSE 2)
         if: startsWith( matrix.os, 'ubuntu' )

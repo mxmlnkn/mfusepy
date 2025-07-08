@@ -5,6 +5,7 @@ import errno
 import logging
 import os
 import threading
+from typing import Any, Dict, Optional
 
 import mfusepy as fuse
 
@@ -24,35 +25,46 @@ def static_with_root_path(func):
 
 
 class Loopback(fuse.Operations):
+    use_ns = True
+
     def __init__(self, root):
         self.root = os.path.realpath(root)
         self.rwlock = threading.Lock()
 
     @with_root_path
-    def access(self, path, amode):
+    @fuse.overrides(fuse.Operations)
+    def access(self, path: str, amode: int) -> int:
         if not os.access(path, amode):
             raise fuse.FuseOSError(errno.EACCES)
+        return 0
 
     chmod = static_with_root_path(os.chmod)
     chown = static_with_root_path(os.chown)
 
     @with_root_path
-    def create(self, path, mode, fi=None):
+    @fuse.overrides(fuse.Operations)
+    def create(self, path: str, mode: int, fi=None) -> int:
         return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
 
     @with_root_path
-    def flush(self, path, fh):
-        return os.fsync(fh)
+    @fuse.overrides(fuse.Operations)
+    def flush(self, path: str, fh: int) -> int:
+        os.fsync(fh)
+        return 0
 
     @with_root_path
-    def fsync(self, path, datasync, fh):
+    @fuse.overrides(fuse.Operations)
+    def fsync(self, path: str, datasync: int, fh: int) -> int:
         if datasync != 0:
-            return os.fdatasync(fh)
-        return os.fsync(fh)
+            os.fdatasync(fh)
+        else:
+            os.fsync(fh)
+        return 0
 
     @fuse.log_callback
     @with_root_path
-    def getattr(self, path, fh=None):
+    @fuse.overrides(fuse.Operations)
+    def getattr(self, path: str, fh: Optional[int] = None) -> Dict[str, Any]:
         st = os.lstat(path)
         return {
             key: getattr(st, key)
@@ -60,7 +72,8 @@ class Loopback(fuse.Operations):
         }
 
     @with_root_path
-    def link(self, target, source):
+    @fuse.overrides(fuse.Operations)
+    def link(self, target: str, source: str):
         return os.link(self.root + source, target)
 
     mkdir = static_with_root_path(os.mkdir)
@@ -68,29 +81,35 @@ class Loopback(fuse.Operations):
     open = static_with_root_path(os.open)
 
     @with_root_path
-    def read(self, path, size, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
         with self.rwlock:
             os.lseek(fh, offset, 0)
             return os.read(fh, size)
 
     @with_root_path
+    @fuse.overrides(fuse.Operations)
     def readdir(self, path, fh):
         return ['.', '..', *os.listdir(path)]
 
     readlink = static_with_root_path(os.readlink)
 
     @with_root_path
-    def release(self, path, fh):
-        return os.close(fh)
+    @fuse.overrides(fuse.Operations)
+    def release(self, path: str, fh: int) -> int:
+        os.close(fh)
+        return 0
 
     @with_root_path
-    def rename(self, old, new):
+    @fuse.overrides(fuse.Operations)
+    def rename(self, old: str, new: str):
         return os.rename(old, self.root + new)
 
     rmdir = static_with_root_path(os.rmdir)
 
     @with_root_path
-    def statfs(self, path):
+    @fuse.overrides(fuse.Operations)
+    def statfs(self, path: str) -> Dict[str, int]:
         stv = os.statvfs(path)
         return {
             key: getattr(stv, key)
@@ -109,20 +128,24 @@ class Loopback(fuse.Operations):
         }
 
     @with_root_path
-    def symlink(self, target, source):
+    @fuse.overrides(fuse.Operations)
+    def symlink(self, target: str, source: str):
         return os.symlink(source, target)
 
     @with_root_path
-    def truncate(self, path, length, fh=None):
-        with open(path, 'r+') as f:
+    @fuse.overrides(fuse.Operations)
+    def truncate(self, path: str, length: int, fh: Optional[int] = None) -> int:
+        with open(path, 'rb+') as f:
             f.truncate(length)
+        return 0
 
     unlink = static_with_root_path(os.unlink)
     utimens = static_with_root_path(os.utime)
 
     @fuse.log_callback
     @with_root_path
-    def write(self, path, data, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def write(self, path: str, data, offset: int, fh: int) -> int:
         with self.rwlock:
             os.lseek(fh, offset, 0)
             return os.write(fh, data)

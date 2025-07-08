@@ -5,17 +5,19 @@ import errno
 import logging
 import stat
 import time
+from typing import Any, Dict, Optional
 
-import mfusepy
+import mfusepy as fuse
 
 
-class Context(mfusepy.Operations):
+class Context(fuse.Operations):
     'Example filesystem to demonstrate fuse_get_context()'
 
-    def getattr(self, path, fh=None):
-        uid, gid, pid = mfusepy.fuse_get_context()
+    @fuse.overrides(fuse.Operations)
+    def getattr(self, path: str, fh: Optional[int] = None) -> Dict[str, Any]:
+        uid, gid, pid = fuse.fuse_get_context()
         if path == '/':
-            st = {'st_mode': (stat.S_IFDIR | 0o755), 'st_nlink': 2}
+            st: Dict[str, Any] = {'st_mode': (stat.S_IFDIR | 0o755), 'st_nlink': 2}
         elif path == '/uid':
             size = len(f'{uid}\n')
             st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}
@@ -26,12 +28,13 @@ class Context(mfusepy.Operations):
             size = len(f'{pid}\n')
             st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}
         else:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         st['st_ctime'] = st['st_mtime'] = st['st_atime'] = time.time()
         return st
 
-    def read(self, path, size, offset, fh):
-        uid, gid, pid = mfusepy.fuse_get_context()
+    @fuse.overrides(fuse.Operations)
+    def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
+        uid, gid, pid = fuse.fuse_get_context()
 
         def encoded(x):
             return (f'{x}\n').encode()
@@ -45,7 +48,8 @@ class Context(mfusepy.Operations):
 
         raise RuntimeError(f'unexpected path: {path!r}')
 
-    def readdir(self, path, fh):
+    @fuse.overrides(fuse.Operations)
+    def readdir(self, path: str, fh: int):
         return ['.', '..', 'uid', 'gid', 'pid']
 
 
@@ -55,7 +59,7 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    mfusepy.FUSE(Context(), args.mount, foreground=True, ro=True)
+    fuse.FUSE(Context(), args.mount, foreground=True, ro=True)
 
 
 if __name__ == '__main__':

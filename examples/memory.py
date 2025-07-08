@@ -8,7 +8,7 @@ import logging
 import stat
 import struct
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import mfusepy as fuse
 
@@ -17,8 +17,8 @@ import mfusepy as fuse
 class Memory(fuse.LoggingMixIn, fuse.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
-    def __init__(self):
-        self.data = collections.defaultdict(bytes)
+    def __init__(self) -> None:
+        self.data: Dict[str, bytes] = collections.defaultdict(bytes)
         now = time.time()
         self.files: Dict[str, Dict[str, Any]] = {
             '/': {
@@ -30,16 +30,20 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             }
         }
 
-    def chmod(self, path, mode):
+    @fuse.overrides(fuse.Operations)
+    def chmod(self, path: str, mode: int) -> int:
         self.files[path]['st_mode'] &= 0o770000
         self.files[path]['st_mode'] |= mode
         return 0
 
-    def chown(self, path, uid, gid):
+    @fuse.overrides(fuse.Operations)
+    def chown(self, path: str, uid: int, gid: int) -> int:
         self.files[path]['st_uid'] = uid
         self.files[path]['st_gid'] = gid
+        return 0
 
-    def create(self, path, mode, fi=None):
+    @fuse.overrides(fuse.Operations)
+    def create(self, path: str, mode: int, fi=None) -> int:
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
@@ -50,93 +54,120 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         }
         return 0
 
-    def getattr(self, path, fh=None):
+    @fuse.overrides(fuse.Operations)
+    def getattr(self, path: str, fh=None) -> Dict[str, Any]:
         if path not in self.files:
             raise fuse.FuseOSError(errno.ENOENT)
         return self.files[path]
 
-    def getxattr(self, path, name, position=0):
-        attrs = self.files[path].get('attrs', {})
+    @fuse.overrides(fuse.Operations)
+    def getxattr(self, path: str, name: str, position=0) -> bytes:
+        attrs: Dict[str, bytes] = self.files[path].get('attrs', {})
 
         try:
             return attrs[name]
         except KeyError:
             return b''
 
-    def listxattr(self, path):
+    @fuse.overrides(fuse.Operations)
+    def listxattr(self, path: str) -> Iterable[str]:
         attrs = self.files[path].get('attrs', {})
         return attrs.keys()
 
-    def mkdir(self, path, mode):
+    @fuse.overrides(fuse.Operations)
+    def mkdir(self, path: str, mode: int) -> int:
+        now = int(time.time() * 1e9)
         self.files[path] = {
             'st_mode': (stat.S_IFDIR | mode),
             'st_nlink': 2,
             'st_size': 0,
-            'st_ctime': time.time(),
-            'st_mtime': time.time(),
-            'st_atime': time.time(),
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
         }
 
         self.files['/']['st_nlink'] += 1
+        return 0
 
-    def read(self, path, size, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
         return self.data[path][offset : offset + size]
 
-    def readdir(self, path, fh):
+    @fuse.overrides(fuse.Operations)
+    def readdir(self, path: str, fh):
         return ['.', '..'] + [x[1:] for x in self.files if x.startswith(path) and len(x) > len(path)]
 
-    def readlink(self, path):
-        return self.data[path]
+    @fuse.overrides(fuse.Operations)
+    def readlink(self, path: str) -> str:
+        return self.data[path].decode()
 
-    def removexattr(self, path, name):
-        attrs = self.files[path].get('attrs', {})
+    @fuse.overrides(fuse.Operations)
+    def removexattr(self, path: str, name: str) -> int:
+        attrs: Dict[str, bytes] = self.files[path].get('attrs', {})
 
         try:
             del attrs[name]
         except KeyError:
             pass
 
-    def rename(self, old, new):
+        return 0
+
+    @fuse.overrides(fuse.Operations)
+    def rename(self, old: str, new: str) -> int:
         if old in self.data:  # Directories have no data.
             self.data[new] = self.data.pop(old)
         if old not in self.files:
             raise fuse.FuseOSError(errno.ENOENT)
         self.files[new] = self.files.pop(old)
+        return 0
 
-    def rmdir(self, path):
+    @fuse.overrides(fuse.Operations)
+    def rmdir(self, path: str) -> int:
         # with multiple level support, need to raise ENOTEMPTY if contains any files
         self.files.pop(path)
         self.files['/']['st_nlink'] -= 1
+        return 0
 
-    def setxattr(self, path, name, value, options, position=0):
+    @fuse.overrides(fuse.Operations)
+    def setxattr(self, path: str, name: str, value, options: int, position: int = 0) -> int:
         # Ignore options
-        attrs = self.files[path].setdefault('attrs', {})
+        attrs: Dict[str, bytes] = self.files[path].setdefault('attrs', {})
         attrs[name] = value
+        return 0
 
-    def statfs(self, path):
+    @fuse.overrides(fuse.Operations)
+    def statfs(self, path: str) -> Dict[str, int]:
         return {'f_bsize': 512, 'f_blocks': 4096, 'f_bavail': 2048}
 
-    def symlink(self, target, source):
+    @fuse.overrides(fuse.Operations)
+    def symlink(self, target: str, source: str) -> int:
         self.files[target] = {'st_mode': (stat.S_IFLNK | 0o777), 'st_nlink': 1, 'st_size': len(source)}
+        self.data[target] = source.encode()
+        return 0
 
-        self.data[target] = source
-
-    def truncate(self, path, length, fh=None):
+    @fuse.overrides(fuse.Operations)
+    def truncate(self, path: str, length: int, fh=None) -> int:
         # make sure extending the file fills in zero bytes
         self.data[path] = self.data[path][:length].ljust(length, '\x00'.encode('ascii'))
         self.files[path]['st_size'] = length
+        return 0
 
-    def unlink(self, path):
+    @fuse.overrides(fuse.Operations)
+    def unlink(self, path: str) -> int:
         self.data.pop(path)
         self.files.pop(path)
+        return 0
 
-    def utimens(self, path, times=None):
+    @fuse.overrides(fuse.Operations)
+    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
         now = time.time()
-        atime, mtime = times if times else (now, now)
+        atime, mtime = times or (now, now)
         self.files[path]['st_atime'] = atime
         self.files[path]['st_mtime'] = mtime
+        return 0
 
-    def write(self, path, data, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def write(self, path: str, data, offset: int, fh: int) -> int:
         self.data[path] = (
             # make sure the data gets inserted at the right offset
             self.data[path][:offset].ljust(offset, '\x00'.encode('ascii'))
@@ -147,6 +178,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         self.files[path]['st_size'] = len(self.data[path])
         return len(data)
 
+    @fuse.overrides(fuse.Operations)
     def ioctl(self, path: str, cmd: int, arg, fh: int, flags: int, data) -> int:
         """
         An example ioctl implementation that defines a command with integer code corresponding to 'M' in ASCII,

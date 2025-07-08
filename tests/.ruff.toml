@@ -14,7 +14,6 @@ ignore = [
     "F401",     # Wants to from .version import __version__ as __version__ which clashes with pylint errors!
     "B904",
     "N801",     # Some class names are snake_case to match ctypes
-    "N806",     # Variable names are camelCase instead of snake_case (1100+ errors).
     "COM812",   # Do not force trailing commas where it makes no sense, e.g., function calls for which I'll
                 # never add more arguments.
     "PLW0603",  # Cannot live without global statements, especially for subprocessing.

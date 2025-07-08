@@ -40,7 +40,7 @@ from ctypes import (
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union, get_type_hints
 
 FieldsEntry = Union[Tuple[str, Type], Tuple[str, Type, int]]
 
@@ -1168,9 +1168,7 @@ class FUSE:
         args.extend(flag for arg, flag in self.OPTIONS if kwargs.pop(arg, False))
 
         kwargs.setdefault('fsname', self.operations.__class__.__name__)
-        args.append('-o')
-        args.append(','.join(self._normalize_fuse_options(**kwargs)))
-        args.append(mountpoint)
+        args.extend(('-o', ','.join(self._normalize_fuse_options(**kwargs)), mountpoint))
 
         argsb = [arg.encode(encoding) for arg in args]
         argv = (ctypes.c_char_p * len(argsb))(*argsb)
@@ -1890,7 +1888,7 @@ class Operations:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
-    def statfs(self, path: str) -> Dict[str, Any]:
+    def statfs(self, path: str) -> Dict[str, int]:
         '''
         Returns a dictionary with keys identical to the statvfs C structure of
         statvfs(3).
@@ -1989,3 +1987,34 @@ def log_callback(method):
         return _log_method_call(method, *args)
 
     return wrap_method_call
+
+
+def overrides(parent_class):
+    """Simple decorator that checks that a method with the same name exists in the parent class"""
+    # I tried typing.override (Python 3.12+), but support for it does not seem to be ideal (yet)
+    # and portability also is an issue. https://github.com/google/pytype/issues/1915 Maybe in 3 years.
+
+    def overrider(method):
+        if platform.python_implementation() == 'PyPy':
+            return method
+
+        assert method.__name__ in dir(parent_class)
+        parent_method = getattr(parent_class, method.__name__)
+        assert callable(parent_method)
+
+        if os.getenv('MFUSEPY_CHECK_OVERRIDES', '').lower() not in ('1', 'yes', 'on', 'enable', 'enabled'):
+            return method
+
+        # Example return of get_type_hints:
+        # {'path': <class 'str'>,
+        #  'return': typing.Union[typing.Iterable[str], typing.Dict[str, bytes, NoneType]}
+        parent_types = get_type_hints(parent_method)
+        # If the parent is not typed, e.g., fusepy, then do not show errors for the typed derived class.
+        for argument, argument_type in get_type_hints(method).items():
+            if argument in parent_types:
+                parent_type = parent_types[argument]
+                assert argument_type == parent_type, f"{method.__name__}: {argument}: {argument_type} != {parent_type}"
+
+        return method
+
+    return overrider

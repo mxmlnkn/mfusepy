@@ -3,13 +3,14 @@
 import argparse
 import errno
 import logging
+from typing import Optional, Tuple
 
 import paramiko
 
-import mfusepy
+import mfusepy as fuse
 
 
-class SFTP(mfusepy.Operations):
+class SFTP(fuse.Operations):
     '''
     A simple SFTP filesystem. Requires paramiko: http://www.lag.net/paramiko/
 
@@ -23,65 +24,81 @@ class SFTP(mfusepy.Operations):
         self.client.connect(host, port=port, username=username)
         self.sftp = self.client.open_sftp()
 
-    def chmod(self, path, mode):
+    @fuse.overrides(fuse.Operations)
+    def chmod(self, path: str, mode: int) -> int:
         return self.sftp.chmod(path, mode)
 
-    def chown(self, path, uid, gid):
+    @fuse.overrides(fuse.Operations)
+    def chown(self, path: str, uid: int, gid: int) -> int:
         return self.sftp.chown(path, uid, gid)
 
-    def create(self, path, mode, fi=None):
+    @fuse.overrides(fuse.Operations)
+    def create(self, path: str, mode, fi=None) -> int:
         f = self.sftp.open(path, 'w')
         f.chmod(mode)
         f.close()
         return 0
 
-    def destroy(self, path):
+    @fuse.overrides(fuse.Operations)
+    def destroy(self, path: str) -> None:
         self.sftp.close()
         self.client.close()
 
-    def getattr(self, path, fh=None):
+    @fuse.overrides(fuse.Operations)
+    def getattr(self, path: str, fh: Optional[int] = None):
         try:
             st = self.sftp.lstat(path)
         except OSError:
-            raise mfusepy.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
 
         return {key: getattr(st, key) for key in ('st_atime', 'st_gid', 'st_mode', 'st_mtime', 'st_size', 'st_uid')}
 
-    def mkdir(self, path, mode):
+    @fuse.overrides(fuse.Operations)
+    def mkdir(self, path: str, mode: int) -> int:
         return self.sftp.mkdir(path, mode)
 
-    def read(self, path, size, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
         f = self.sftp.open(path)
         f.seek(offset, 0)
         buf = f.read(size)
         f.close()
         return buf
 
-    def readdir(self, path, fh):
+    @fuse.overrides(fuse.Operations)
+    def readdir(self, path: str, fh: int):
         return ['.', '..'] + [name.encode('utf-8') for name in self.sftp.listdir(path)]
 
-    def readlink(self, path):
+    @fuse.overrides(fuse.Operations)
+    def readlink(self, path: str) -> str:
         return self.sftp.readlink(path)
 
-    def rename(self, old, new):
+    @fuse.overrides(fuse.Operations)
+    def rename(self, old: str, new: str) -> int:
         return self.sftp.rename(old, new)
 
-    def rmdir(self, path):
+    @fuse.overrides(fuse.Operations)
+    def rmdir(self, path: str) -> int:
         return self.sftp.rmdir(path)
 
-    def symlink(self, target, source):
+    @fuse.overrides(fuse.Operations)
+    def symlink(self, target: str, source: str) -> int:
         return self.sftp.symlink(source, target)
 
-    def truncate(self, path, length, fh=None):
+    @fuse.overrides(fuse.Operations)
+    def truncate(self, path: str, length: int, fh: Optional[int] = None) -> int:
         return self.sftp.truncate(path, length)
 
-    def unlink(self, path):
+    @fuse.overrides(fuse.Operations)
+    def unlink(self, path: str) -> int:
         return self.sftp.unlink(path)
 
-    def utimens(self, path, times=None):
+    @fuse.overrides(fuse.Operations)
+    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
         return self.sftp.utime(path, times)
 
-    def write(self, path, data, offset, fh):
+    @fuse.overrides(fuse.Operations)
+    def write(self, path: str, data: bytes, offset: int, fh: int) -> int:
         f = self.sftp.open(path, 'r+')
         f.seek(offset, 0)
         f.write(data)
@@ -102,7 +119,7 @@ def cli(args=None):
         if '@' in args.host:
             args.login, _, args.host = args.host.partition('@')
 
-    mfusepy.FUSE(SFTP(args.host, username=args.login), args.mount, foreground=True, nothreads=True)
+    fuse.FUSE(SFTP(args.host, username=args.login), args.mount, foreground=True, nothreads=True)
 
 
 if __name__ == '__main__':
