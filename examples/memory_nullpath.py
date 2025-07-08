@@ -5,7 +5,7 @@ import collections
 import errno
 import stat
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import mfusepy as fuse
 
@@ -32,7 +32,7 @@ class Memory(fuse.Operations):
         }
         self._opened: Dict[int, str] = {}
 
-    def init_with_config(self, conn_info, config_3) -> None:
+    def init_with_config(self, conn_info: Optional[fuse.fuse_conn_info], config_3: Optional[fuse.fuse_config]) -> None:
         # This only works for FUSE 3 while the flag_nullpath_ok and flag_nopath class members work for FUSE 2 and 3!
         if config_3:
             config_3.nullpath_ok = True

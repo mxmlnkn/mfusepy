@@ -40,7 +40,7 @@ from ctypes import (
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 FieldsEntry = Union[Tuple[str, Type], Tuple[str, Type, int]]
 
@@ -866,6 +866,14 @@ class fuse_config(ctypes.Structure):
     _fields_ = _fuse_config_fields_
 
 
+if TYPE_CHECKING:
+    FuseConfigPointer = ctypes._Pointer[fuse_config]
+    FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
+else:
+    FuseConfigPointer = ctypes.POINTER(fuse_config)
+    FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
+
+
 fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
 
 
@@ -1558,18 +1566,20 @@ class FUSE:
         # Ignore raw_fi
         return self.operations.fsyncdir(None if path is None else path.decode(self.encoding), datasync, fip.contents.fh)
 
-    def _init(self, conn, config) -> None:
+    def _init(self, conn: FuseConnInfoPointer, config: Optional[FuseConfigPointer]) -> None:
         if hasattr(self.operations, "init_with_config") and not getattr(
             self.operations.init_with_config, "libfuse_ignore", False
         ):
-            self.operations.init_with_config(conn, config)
+            self.operations.init_with_config(
+                None if conn is None else conn.contents, None if config is None else config.contents
+            )
         elif hasattr(self.operations, "init") and not getattr(self.operations.init, "libfuse_ignore", False):
             self.operations.init("/")
 
-    def init_fuse_2(self, conn) -> None:
-        self._init(conn, fuse_config())
+    def init_fuse_2(self, conn: FuseConnInfoPointer) -> None:
+        self._init(conn, None)
 
-    def init_fuse_3(self, conn, config) -> None:
+    def init_fuse_3(self, conn: FuseConnInfoPointer, config: FuseConfigPointer) -> None:
         if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
             config.contents.nullpath_ok = True
         self._init(conn, config)
@@ -1762,7 +1772,7 @@ class Operations:
         '''
 
     @_nullable_dummy_function
-    def init_with_config(self, conn_info, config_3) -> None:
+    def init_with_config(self, conn_info: Optional[fuse_conn_info], config_3: Optional[fuse_config]) -> None:
         '''
         Called on filesystem initialization. Same function as 'init' but with more parameters.
         Only either 'init' or 'init_with_config' should be overridden.
