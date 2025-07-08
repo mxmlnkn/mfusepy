@@ -1149,8 +1149,7 @@ class FUSE:
             warnings.warn(
                 'Time as floating point seconds for utimens is deprecated!\n'
                 'To enable time as nanoseconds set the property "use_ns" to '
-                'True in your operations class or set your fusepy '
-                'requirements to <4.',
+                'True in your operations class or set your fusepy requirements to <4.',
                 DeprecationWarning,
                 stacklevel=2,
             )

@@ -15,11 +15,12 @@ class Memory(fuse.Operations):
 
     flag_nullpath_ok = True
     flag_nopath = True
+    use_ns = True
 
     def __init__(self) -> None:
         self.data: Dict[str, bytes] = collections.defaultdict(bytes)
         self.fd = 0
-        now = time.time()
+        now = int(time.time() * 1e9)
         self.files: Dict[str, Dict[str, Any]] = {
             '/': {
                 'st_mode': (stat.S_IFDIR | 0o755),
@@ -51,13 +52,14 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
+        now = int(time.time() * 1e9)
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
             'st_size': 0,
-            'st_ctime': time.time(),
-            'st_mtime': time.time(),
-            'st_atime': time.time(),
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
         }
 
         self.fd += 1
@@ -88,13 +90,14 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def mkdir(self, path: str, mode: int) -> int:
+        now = int(time.time() * 1e9)
         self.files[path] = {
             'st_mode': (stat.S_IFDIR | mode),
             'st_nlink': 2,
             'st_size': 0,
-            'st_ctime': time.time(),
-            'st_mtime': time.time(),
-            'st_atime': time.time(),
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
         }
 
         self.files['/']['st_nlink'] += 1
@@ -200,7 +203,7 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
-        now = time.time()
+        now = int(time.time() * 1e9)
         atime, mtime = times or (now, now)
         self.files[path]['st_atime'] = atime
         self.files[path]['st_mtime'] = mtime

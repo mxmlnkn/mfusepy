@@ -17,9 +17,11 @@ import mfusepy as fuse
 class Memory(fuse.LoggingMixIn, fuse.Operations):
     'Example memory filesystem. Supports only one level of files.'
 
+    use_ns = True
+
     def __init__(self) -> None:
         self.data: Dict[str, bytes] = collections.defaultdict(bytes)
-        now = time.time()
+        now = int(time.time() * 1e9)
         self.files: Dict[str, Dict[str, Any]] = {
             '/': {
                 'st_mode': (stat.S_IFDIR | 0o755),
@@ -44,13 +46,14 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
+        now = int(time.time() * 1e9)
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
             'st_size': 0,
-            'st_ctime': time.time(),
-            'st_mtime': time.time(),
-            'st_atime': time.time(),
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
         }
         return 0
 
@@ -164,7 +167,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
-        now = time.time()
+        now = int(time.time() * 1e9)
         atime, mtime = times or (now, now)
         self.files[path]['st_atime'] = atime
         self.files[path]['st_mtime'] = mtime
