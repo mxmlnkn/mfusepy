@@ -49,7 +49,7 @@ class Context(fuse.Operations):
         raise RuntimeError(f'unexpected path: {path!r}')
 
     @fuse.overrides(fuse.Operations)
-    def readdir(self, path: str, fh: int):
+    def readdir(self, path: str, fh: int) -> fuse.ReadDirResult:
         return ['.', '..', 'uid', 'gid', 'pid']
 
 

@@ -66,7 +66,7 @@ class SFTP(fuse.Operations):
         return buf
 
     @fuse.overrides(fuse.Operations)
-    def readdir(self, path: str, fh: int):
+    def readdir(self, path: str, fh: int) -> fuse.ReadDirResult:
         return ['.', '..'] + [name.encode('utf-8') for name in self.sftp.listdir(path)]
 
     @fuse.overrides(fuse.Operations)

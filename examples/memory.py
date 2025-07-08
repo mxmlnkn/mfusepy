@@ -94,8 +94,12 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         return self.data[path][offset : offset + size]
 
     @fuse.overrides(fuse.Operations)
-    def readdir(self, path: str, fh):
-        return ['.', '..'] + [x[1:] for x in self.files if x.startswith(path) and len(x) > len(path)]
+    def readdir(self, path: str, fh) -> fuse.ReadDirResult:
+        yield '.'
+        yield '..'
+        for x in self.files:
+            if x.startswith(path) and len(x) > len(path):
+                yield x[1:]
 
     @fuse.overrides(fuse.Operations)
     def readlink(self, path: str) -> str:

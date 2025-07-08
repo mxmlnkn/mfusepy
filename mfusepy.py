@@ -43,7 +43,7 @@ from stat import S_IFDIR
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union, get_type_hints
 
 FieldsEntry = Union[Tuple[str, Type], Tuple[str, Type, int]]
-
+ReadDirResult = Iterable[Union[str, Tuple[str, Dict[str, int], int], Tuple[str, int, int]]]
 
 log = logging.getLogger("fuse")
 _system = platform.system()
@@ -1525,24 +1525,28 @@ class FUSE:
     #     fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
         # Ignore raw_fi
+        st = c_stat()
         for item in self.operations.readdir(None if path is None else path.decode(self.encoding), fip.contents.fh):
+            has_stat = False
             if isinstance(item, str):
-                name, st, offset = item, None, 0
+                has_stat = True
+                name = item
+                offset = 0
             else:
                 name, attrs, offset = item
-                if attrs:
-                    st = c_stat()
+                if isinstance(attrs, int):
+                    st.st_mode = attrs
+                    has_stat = True
+                elif attrs and 'st_mode' in attrs:
                     # ONLY THE MODE IS USED BY FUSE! The caller may skip everything else.
-                    if 'st_mode' in attrs:
-                        st.st_mode = attrs['st_mode']
-                else:
-                    st = None
+                    st.st_mode = attrs['st_mode']
+                    has_stat = True
 
             if fuse_version_major == 2:
-                if filler(buf, name.encode(self.encoding), st, offset) != 0:  # type: ignore
+                if filler(buf, name.encode(self.encoding), st if has_stat else None, offset) != 0:  # type: ignore
                     break
             elif fuse_version_major == 3:
-                if filler(buf, name.encode(self.encoding), st, offset, 0) != 0:
+                if filler(buf, name.encode(self.encoding), st if has_stat else None, offset, 0) != 0:
                     break
 
         return 0
@@ -1850,7 +1854,7 @@ class Operations:
         raise FuseOSError(errno.EIO)
 
     @_nullable_dummy_function
-    def readdir(self, path: str, fh: int) -> Iterable[Union[str, Tuple[str, Dict[str, int], int]]]:
+    def readdir(self, path: str, fh: int) -> ReadDirResult:
         '''
         Can return either a list of names, or a list of (name, attrs, offset)
         tuples. attrs is a dict as in getattr.

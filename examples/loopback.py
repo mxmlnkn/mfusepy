@@ -89,7 +89,7 @@ class Loopback(fuse.Operations):
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
-    def readdir(self, path, fh):
+    def readdir(self, path: str, fh: int) -> fuse.ReadDirResult:
         return ['.', '..', *os.listdir(path)]
 
     readlink = static_with_root_path(os.readlink)

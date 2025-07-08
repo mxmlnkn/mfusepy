@@ -122,9 +122,13 @@ class Memory(fuse.Operations):
         return self.fd
 
     @fuse.overrides(fuse.Operations)
-    def readdir(self, path: str, fh: int):
+    def readdir(self, path: str, fh: int) -> fuse.ReadDirResult:
         path = self._opened[fh]
-        return ['.', '..'] + [x[1:] for x in self.files if x.startswith(path) and len(x) > len(path)]
+        return [('.', stat.S_IFDIR | 0o755, 0), ('..', stat.S_IFDIR | 0o755, 0)] + [
+            (x[1:], info['st_mode'] | stat.S_IFREG, 0)
+            for x, info in self.files.items()
+            if x.startswith(path) and len(x) > len(path)
+        ]
 
     @fuse.overrides(fuse.Operations)
     def releasedir(self, path: str, fh: int) -> int:
