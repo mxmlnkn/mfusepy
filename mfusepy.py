@@ -25,6 +25,7 @@ import logging
 import os
 import platform
 import warnings
+from collections.abc import Iterable, Sequence
 from ctypes import (
     CFUNCTYPE,
     POINTER,
@@ -40,10 +41,10 @@ from ctypes import (
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union, get_type_hints
+from typing import TYPE_CHECKING, Any, Optional, Union, get_type_hints
 
-FieldsEntry = Union[Tuple[str, Type], Tuple[str, Type, int]]
-ReadDirResult = Iterable[Union[str, Tuple[str, Dict[str, int], int], Tuple[str, int, int]]]
+FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
+ReadDirResult = Iterable[Union[str, tuple[str, dict[str, int], int], tuple[str, int, int]]]
 
 log = logging.getLogger("fuse")
 _system = platform.system()
@@ -206,14 +207,14 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linu
 if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
     ENOTSUP = 45
 
-    c_dev_t: Type = ctypes.c_int32
-    c_fsblkcnt_t: Type = ctypes.c_ulong
-    c_fsfilcnt_t: Type = ctypes.c_ulong
-    c_gid_t: Type = ctypes.c_uint32
-    c_mode_t: Type = ctypes.c_uint16
-    c_off_t: Type = ctypes.c_int64
-    c_pid_t: Type = ctypes.c_int32
-    c_uid_t: Type = ctypes.c_uint32
+    c_dev_t: type = ctypes.c_int32
+    c_fsblkcnt_t: type = ctypes.c_ulong
+    c_fsfilcnt_t: type = ctypes.c_ulong
+    c_gid_t: type = ctypes.c_uint32
+    c_mode_t: type = ctypes.c_uint16
+    c_off_t: type = ctypes.c_int64
+    c_pid_t: type = ctypes.c_int32
+    c_uid_t: type = ctypes.c_uint32
     setxattr_t = ctypes.CFUNCTYPE(
         ctypes.c_int,
         ctypes.c_char_p,
@@ -630,7 +631,7 @@ else:
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
 if fuse_version_major == 2:
-    _fuse_file_info_fields_: List[FieldsEntry] = [
+    _fuse_file_info_fields_: list[FieldsEntry] = [
         ('flags', ctypes.c_int),
         ('fh_old', ctypes.c_ulong),
         ('writepage', ctypes.c_int),
@@ -748,7 +749,7 @@ class fuse_bufvec(ctypes.Structure):
 
 
 # fuse_conn_info struct as defined and documented in fuse_common.h
-_fuse_conn_info_fields: List[FieldsEntry] = [
+_fuse_conn_info_fields: list[FieldsEntry] = [
     ('proto_major', ctypes.c_uint),
     ('proto_minor', ctypes.c_uint),
 ]
@@ -800,7 +801,7 @@ if (fuse_version_major, fuse_version_minor) >= (3, 17):
 # 3.14.1 -> 3.16.2: no change
 # 3.16.2 -> 3.17.0: Changed all types to uint32_t, added reserved bytes, reverted order to 3.10.
 # https://github.com/libfuse/libfuse/pull/1081
-_fuse_config_fields_: List[FieldsEntry] = [
+_fuse_config_fields_: list[FieldsEntry] = [
     ('set_gid', _fuse_int32),
     ('gid', _fuse_uint32),
     ('set_uid', _fuse_int32),
@@ -919,7 +920,7 @@ _fuse_operations_fields_2_9 = [
 ]
 
 if fuse_version_major == 2:
-    _fuse_operations_fields: List[FieldsEntry] = [
+    _fuse_operations_fields: list[FieldsEntry] = [
         ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat))),
         ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
         ('getdir', c_void_p),  # Deprecated, use readdir
@@ -1070,7 +1071,7 @@ def time_of_timespec(ts, use_ns: bool = False) -> float:
     return ts.tv_sec + ts.tv_nsec / 1e9
 
 
-def set_st_attrs(st, attrs: Dict[str, Any], use_ns: bool = False) -> None:
+def set_st_attrs(st, attrs: dict[str, Any], use_ns: bool = False) -> None:
     for key, val in attrs.items():
         if key in ('st_atime', 'st_mtime', 'st_ctime', 'st_birthtime'):
             timespec = getattr(st, key + 'spec', None)
@@ -1086,7 +1087,7 @@ def set_st_attrs(st, attrs: Dict[str, Any], use_ns: bool = False) -> None:
             setattr(st, key, val)
 
 
-def fuse_get_context() -> Tuple[int, int, int]:
+def fuse_get_context() -> tuple[int, int, int]:
     'Returns a (uid, gid, pid) tuple'
 
     ctxp = _libfuse.fuse_get_context()
@@ -1748,7 +1749,7 @@ class Operations:
     # That particular location seems to have been fixed in 2.8.0 and 2.7.0, but not in 2.6.5.
     # It seems to have been fixed only by accident in feature commit:
     # https://github.com/libfuse/libfuse/commit/3a7c00ec0c156123c47b53ec1cd7ead001fa4dfb
-    def getattr(self, path: str, fh: Optional[int] = None) -> Dict[str, Any]:
+    def getattr(self, path: str, fh: Optional[int] = None) -> dict[str, Any]:
         '''
         Returns a dictionary with keys identical to the stat C structure of
         stat(2).
@@ -1891,7 +1892,7 @@ class Operations:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
-    def statfs(self, path: str) -> Dict[str, int]:
+    def statfs(self, path: str) -> dict[str, int]:
         '''
         Returns a dictionary with keys identical to the statvfs C structure of
         statvfs(3).
@@ -1917,7 +1918,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
+    def utimens(self, path: str, times: Optional[tuple[int, int]] = None) -> int:
         'Times is a (atime, mtime) tuple. If None use current time.'
 
         return 0

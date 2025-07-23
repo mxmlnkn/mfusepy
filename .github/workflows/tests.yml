@@ -69,14 +69,10 @@ jobs:
       matrix:
         os: ['macos-latest', 'ubuntu-latest']
         # https://endoflife.date/python
-        python-version: ['3.9', '3.12', '3.13']
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
         include:
         - os: ubuntu-latest
-          python-version: '3.14.0-alpha.0'
-        - os: ubuntu-22.04
-          python-version: '3.7'
-        - os: ubuntu-22.04
-          python-version: '3.8'
+          python-version: '3.14.0-beta.4'
 
     env:
       MFUSEPY_CHECK_OVERRIDES: 1

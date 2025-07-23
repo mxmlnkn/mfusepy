@@ -5,7 +5,7 @@ import errno
 import logging
 import stat
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import mfusepy as fuse
 
@@ -14,10 +14,10 @@ class Context(fuse.Operations):
     'Example filesystem to demonstrate fuse_get_context()'
 
     @fuse.overrides(fuse.Operations)
-    def getattr(self, path: str, fh: Optional[int] = None) -> Dict[str, Any]:
+    def getattr(self, path: str, fh: Optional[int] = None) -> dict[str, Any]:
         uid, gid, pid = fuse.fuse_get_context()
         if path == '/':
-            st: Dict[str, Any] = {'st_mode': (stat.S_IFDIR | 0o755), 'st_nlink': 2}
+            st: dict[str, Any] = {'st_mode': (stat.S_IFDIR | 0o755), 'st_nlink': 2}
         elif path == '/uid':
             size = len(f'{uid}\n')
             st = {'st_mode': (stat.S_IFREG | 0o444), 'st_size': size}

@@ -5,7 +5,8 @@ import collections
 import errno
 import stat
 import time
-from typing import Any, Dict, Iterable, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any, Optional
 
 import mfusepy as fuse
 
@@ -18,10 +19,10 @@ class Memory(fuse.Operations):
     use_ns = True
 
     def __init__(self) -> None:
-        self.data: Dict[str, bytes] = collections.defaultdict(bytes)
+        self.data: dict[str, bytes] = collections.defaultdict(bytes)
         self.fd = 0
         now = int(time.time() * 1e9)
-        self.files: Dict[str, Dict[str, Any]] = {
+        self.files: dict[str, dict[str, Any]] = {
             '/': {
                 'st_mode': (stat.S_IFDIR | 0o755),
                 'st_ctime': now,
@@ -30,7 +31,7 @@ class Memory(fuse.Operations):
                 'st_nlink': 2,
             }
         }
-        self._opened: Dict[int, str] = {}
+        self._opened: dict[int, str] = {}
 
     @fuse.overrides(fuse.Operations)
     def init_with_config(self, conn_info: Optional[fuse.fuse_conn_info], config_3: Optional[fuse.fuse_config]) -> None:
@@ -67,7 +68,7 @@ class Memory(fuse.Operations):
         return self.fd
 
     @fuse.overrides(fuse.Operations)
-    def getattr(self, path: str, fh=None) -> Dict[str, Any]:
+    def getattr(self, path: str, fh=None) -> dict[str, Any]:
         if fh is not None and fh in self._opened:
             path = self._opened[fh]
         if path not in self.files:
@@ -76,7 +77,7 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def getxattr(self, path: str, name: str, position: int = 0) -> bytes:
-        attrs: Dict[str, bytes] = self.files[path].get('attrs', {})
+        attrs: dict[str, bytes] = self.files[path].get('attrs', {})
 
         try:
             return attrs[name]
@@ -144,7 +145,7 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def removexattr(self, path: str, name: str) -> int:
-        attrs: Dict[str, bytes] = self.files[path].get('attrs', {})
+        attrs: dict[str, bytes] = self.files[path].get('attrs', {})
 
         try:
             del attrs[name]
@@ -172,12 +173,12 @@ class Memory(fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def setxattr(self, path: str, name: str, value: bytes, options, position: int = 0) -> int:
         # Ignore options
-        attrs: Dict[str, bytes] = self.files[path].setdefault('attrs', {})
+        attrs: dict[str, bytes] = self.files[path].setdefault('attrs', {})
         attrs[name] = value
         return 0
 
     @fuse.overrides(fuse.Operations)
-    def statfs(self, path: str) -> Dict[str, int]:
+    def statfs(self, path: str) -> dict[str, int]:
         return {'f_bsize': 512, 'f_blocks': 4096, 'f_bavail': 2048}
 
     @fuse.overrides(fuse.Operations)
@@ -202,7 +203,7 @@ class Memory(fuse.Operations):
         return 0
 
     @fuse.overrides(fuse.Operations)
-    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
+    def utimens(self, path: str, times: Optional[tuple[int, int]] = None) -> int:
         now = int(time.time() * 1e9)
         atime, mtime = times or (now, now)
         self.files[path]['st_atime'] = atime

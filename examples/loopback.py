@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import mfusepy as fuse
 
@@ -65,10 +65,10 @@ class Loopback(fuse.Operations):
     @fuse.log_callback
     @with_root_path
     @fuse.overrides(fuse.Operations)
-    def getattr(self, path: str, fh: Optional[int] = None) -> Dict[str, Any]:
+    def getattr(self, path: str, fh: Optional[int] = None) -> dict[str, Any]:
         st = os.lstat(path)
         return {
-            key[:-3] if key.endswith('_ns') else key: getattr(st, key)
+            key.removesuffix('_ns'): getattr(st, key)
             for key in (
                 'st_atime_ns',
                 'st_ctime_ns',
@@ -119,7 +119,7 @@ class Loopback(fuse.Operations):
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
-    def statfs(self, path: str) -> Dict[str, int]:
+    def statfs(self, path: str) -> dict[str, int]:
         stv = os.statvfs(path)
         return {
             key: getattr(stv, key)
@@ -153,7 +153,7 @@ class Loopback(fuse.Operations):
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
-    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
+    def utimens(self, path: str, times: Optional[tuple[int, int]] = None) -> int:
         now = int(time.time() * 1e9)
         os.utime(path, ns=times or (now, now))
         return 0

@@ -3,7 +3,7 @@
 import argparse
 import errno
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 
 import paramiko
 
@@ -94,7 +94,7 @@ class SFTP(fuse.Operations):
         return self.sftp.unlink(path)
 
     @fuse.overrides(fuse.Operations)
-    def utimens(self, path: str, times: Optional[Tuple[int, int]] = None) -> int:
+    def utimens(self, path: str, times: Optional[tuple[int, int]] = None) -> int:
         return self.sftp.utime(path, times)
 
     @fuse.overrides(fuse.Operations)
