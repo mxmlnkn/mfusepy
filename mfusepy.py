@@ -17,6 +17,7 @@
 # to 0 and the ctypes module does that for us out of the box!
 # https://github.com/python/cpython/blob/f8a736b8e14ab839e1193cb1d3955b61c316d048/Lib/test/test_ctypes/test_numbers.py#L95
 
+import contextlib
 import ctypes
 import errno
 import functools
@@ -1258,12 +1259,22 @@ class FUSE:
                 if func.__name__ == "init":
                     raise e
                 if isinstance(e.errno, int) and e.errno > 0:
+                    is_valid_exception = (func.__name__.startswith("getattr") and e.errno == errno.ENOENT) or (
+                        func.__name__ == "getxattr" and e.errno == errno.ENODATA
+                    )
+
+                    error_string = ""
+                    with contextlib.suppress(ValueError):
+                        error_string = os.strerror(e.errno)
+
                     log.debug(
-                        "FUSE operation %s raised a %s, returning errno %s.",
+                        "FUSE operation %s (%s) raised a %s, returning errno %s (%s).",
                         func.__name__,
+                        args,
                         type(e),
                         e.errno,
-                        exc_info=True,
+                        error_string,
+                        exc_info=not is_valid_exception,
                     )
                     return -e.errno
                 log.exception(
