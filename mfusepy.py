@@ -1876,7 +1876,7 @@ class Operations:
         return 0
 
     @_nullable_dummy_function
-    def removexattr(self, path: str, name) -> int:
+    def removexattr(self, path: str, name: str) -> int:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
@@ -1888,7 +1888,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def setxattr(self, path: str, name, value, options, position=0) -> int:
+    def setxattr(self, path: str, name: str, value: bytes, options, position=0) -> int:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
