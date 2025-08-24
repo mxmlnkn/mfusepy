@@ -1306,7 +1306,7 @@ class FUSE:
         return self.fgetattr(path, buf, None)
 
     def getattr_fuse_3(self, path: bytes, buf, fip):
-        return self.fgetattr(path, buf, None)
+        return self.fgetattr(path, buf, fip)
 
     def readlink(self, path: bytes, buf, bufsize: int) -> int:
         ret = self.operations.readlink(path.decode(self.encoding)).encode(self.encoding)
