@@ -126,6 +126,8 @@ if not _libfuse_path:
             arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
             _libfuse_path += f"bin\\winfsp-{arch}.dll"
         # pytype: enable=module-attr
+    elif _libfuse_name := os.environ.get('FUSE_LIBRARY_NAME'):
+        _libfuse_path = find_library(_libfuse_name)
     else:
         _libfuse_path = find_library('fuse')
         if not _libfuse_path:
