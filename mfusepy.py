@@ -1646,7 +1646,7 @@ class FUSE:
     def utimens_fuse_3(self, path: Optional[bytes], buf, fip) -> int:
         return self.utimens_fuse_2(path, buf)
 
-    def bmap(self, path: bytes, blocksize: int, idx) -> int:
+    def bmap(self, path: bytes, blocksize: int, idx: int) -> int:
         return self.operations.bmap(path.decode(self.encoding), blocksize, idx)
 
     def ioctl(self, path: Optional[bytes], cmd: int, arg, fip, flags: int, data) -> int:
