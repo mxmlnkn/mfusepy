@@ -1544,6 +1544,7 @@ class FUSE:
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
     #     fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
+        req_offset = offset
         # Ignore raw_fi
         st = c_stat()
         for item in self.operations.readdir(None if path is None else path.decode(self.encoding), fip.contents.fh):
@@ -1554,6 +1555,8 @@ class FUSE:
                 offset = 0
             else:
                 name, attrs, offset = item
+                if req_offset != 0 and offset <= req_offset:
+                    continue
                 if isinstance(attrs, int):
                     st.st_mode = attrs
                     has_stat = True
