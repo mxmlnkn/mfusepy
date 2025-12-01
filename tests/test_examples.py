@@ -130,14 +130,14 @@ def test_read_write_file_system(cli, tmp_path):
         arguments = []
     with RunCLI(cli, mount_point, arguments):
         assert os.path.isdir(mount_point)
-        assert not os.path.isdir(mount_point / "foo")
 
         path = mount_point / "foo"
+        assert not path.is_dir()
         assert path.write_bytes(b"bar") == 3
 
-        assert os.path.exists(path)
-        assert os.path.isfile(path)
-        assert not os.path.isdir(path)
+        assert path.exists()
+        assert path.is_file()
+        assert not path.is_dir()
 
         assert path.read_bytes() == b"bar"
 
@@ -190,12 +190,12 @@ def test_read_write_file_system(cli, tmp_path):
 
         assert os.listdir(mount_point) == ["foo"]
         os.unlink(path)
-        assert not os.path.exists(path)
+        assert not path.exists()
 
         os.mkdir(path)
-        assert os.path.exists(path)
-        assert not os.path.isfile(path)
-        assert os.path.isdir(path)
+        assert path.exists()
+        assert not path.is_file()
+        assert path.is_dir()
 
         assert os.listdir(mount_point) == ["foo"]
         assert os.listdir(path) == []
@@ -205,9 +205,9 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.path.exists(mount_point / "bar")
 
         os.symlink(mount_point / "bar", path)
-        assert os.path.exists(path)
-        # assert os.path.isfile(path)  # Does not have a follow_symlink argument but it seems to be True, see below.
-        assert os.path.isdir(path)
+        assert path.exists()
+        # assert path.is_file()  # Does not have a follow_symlink argument but it seems to be True, see below.
+        assert path.is_dir()
         assert os.path.islink(path)
         assert os.readlink(path) == str(mount_point / "bar")
 
@@ -217,3 +217,13 @@ def test_read_write_file_system(cli, tmp_path):
         if cli != cli_loopback:
             assert os.statvfs(mount_point).f_bsize == 512
             assert os.statvfs(mount_point).f_bavail == 2048
+
+        for i in range(200):
+            path = mount_point / str(i)
+            assert not path.exists()
+            assert path.write_bytes(b"bar") == 3
+            assert len(os.listdir(mount_point)) == i + 2
+
+        for i in range(200):
+            path = mount_point / str(i)
+            path.unlink()

@@ -7,4 +7,5 @@ types-paramiko
 ruff
 pylint
 pytest
-pytype mypy
+pytype
+mypy

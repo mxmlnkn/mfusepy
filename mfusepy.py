@@ -1490,9 +1490,16 @@ class FUSE:
     #     and calls fuse_fs_readdir with the path.
     #  3. fuse_fs_readdir: calls the readdir callback if set, or the getdir callback with a "filler" callback.
     #  4. The filler callback is specified in readdir_fill and is simply fill_dir
-    #  5. fill_dir copies the full struct stat argument if given and calls fuse_add_direntry with it.
-    #  6. fuse_lowlevel.c:fuse_add_direntry -> fuse_add_dirent
-    #  7. fuse_add_dirent basically only copies the inode and the mode!!! NOTHING ELSE:
+    #  5. fill_dir copies the full struct stat argument if given and calls fuse_add_direntry_to_dh with it.
+    #  6. fuse_lowlevel.c:fuse_add_direntry_to_dh mallocs a new fuse_direntry, strdups the name and copies the
+    #     full stat object and appends it to the fuse_dh linked list!
+    #
+    # If offset != 0:
+    #  6. fuse.c:fill_dir checks whether the fuse_dh is filled and returns 1 if so.
+    #     May increase its size in extend_contents.
+    #  7. Calls fuse_lowlevel.c:fuse_add_direntry with offset argument
+    #  8. fuse_lowlevel.c:fuse_add_direntry -> fuse_add_dirent
+    #  9. fuse_add_dirent basically only copies the inode and the mode!!! NOTHING ELSE:
     #             struct fuse_dirent *dirent = (struct fuse_dirent *) buf;
     #       dirent->ino = stbuf->st_ino;
     #       dirent->off = off;
