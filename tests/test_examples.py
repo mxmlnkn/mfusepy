@@ -9,8 +9,10 @@ import os
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from ioctl_opt import IOWR
@@ -227,3 +229,10 @@ def test_read_write_file_system(cli, tmp_path):
         for i in range(200):
             path = mount_point / str(i)
             path.unlink()
+
+
+if __name__ == '__main__':
+    with tempfile.TemporaryDirectory() as directory:
+        # Directory argument must not be something in the current directory,
+        # or else it might lead to recursive calls into FUSE.
+        test_read_write_file_system(cli_memory_nullpath, Path(directory))

@@ -1625,21 +1625,21 @@ class FUSE:
         return 0
 
     def ftruncate(self, path: Optional[bytes], length: int, fip) -> int:
-        fh = fip.contents if self.raw_fi else fip.contents.fh
+        fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
         return self.operations.truncate(None if path is None else path.decode(self.encoding), length, fh)
 
     def fgetattr(self, path: Optional[bytes], buf, fip) -> int:
         ctypes.memset(buf, 0, ctypes.sizeof(c_stat))
 
         st = buf.contents
-        fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else fip
+        fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
 
         attrs = self.operations.getattr(None if path is None else path.decode(self.encoding), fh)
         set_st_attrs(st, attrs, use_ns=self.use_ns)
         return 0
 
     def lock(self, path: Optional[bytes], fip, cmd: int, lock) -> int:
-        fh = fip.contents if self.raw_fi else fip.contents.fh
+        fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
         return self.operations.lock(None if path is None else path.decode(self.encoding), fh, cmd, lock)
 
     def utimens_fuse_2(self, path: Optional[bytes], buf) -> int:
