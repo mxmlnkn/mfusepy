@@ -1544,7 +1544,11 @@ class FUSE:
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
     #     fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
-        req_offset = offset
+        # continuation_id is either:
+        # - 0 (no skipping), or
+        # - a potentially unordered, arbitrary 64bit value identifying the last element to skip
+        continuation_id = offset
+        skip = continuation_id != 0
         # Ignore raw_fi
         st = c_stat()
         for item in self.operations.readdir(None if path is None else path.decode(self.encoding), fip.contents.fh):
@@ -1555,7 +1559,9 @@ class FUSE:
                 offset = 0
             else:
                 name, attrs, offset = item
-                if req_offset != 0 and offset <= req_offset:
+                if skip:
+                    if offset == continuation_id:
+                        skip = False  # processing continues at the NEXT item
                     continue
                 if isinstance(attrs, int):
                     st.st_mode = attrs
