@@ -1566,9 +1566,14 @@ class FUSE:
                 if isinstance(attrs, int):
                     st.st_mode = attrs
                     has_stat = True
-                elif attrs and 'st_mode' in attrs:
-                    # ONLY THE MODE IS USED BY FUSE! The caller may skip everything else.
-                    st.st_mode = attrs['st_mode']
+                elif isinstance(attrs, dict):
+                    # Only the mode and ino (if use_ino is True) are used! The caller may skip everything else.
+                    # See the members in the fuse_dirent Linux kernel struct. Only those can be used, I think.
+                    # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
+                    #     fuse.h#L1005-L1010
+                    for key in ['st_mode', 'st_ino']:
+                        if key in attrs:
+                            setattr(st, key, attrs[key])
                     has_stat = True
 
             if fuse_version_major == 2:
