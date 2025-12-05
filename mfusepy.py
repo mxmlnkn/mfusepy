@@ -1121,6 +1121,20 @@ class FuseOSError(OSError):
         super().__init__(errno, os.strerror(errno))
 
 
+# See fuse_lib_opts in fuse.c
+_LIBFUSE_2_OPTIONS_REMOVED_IN_FUSE_3 = {"-h", "--help"}
+_LIBFUSE_2_OPTIONS_MOVED_INTO_FUSE_3_CONFIG = {
+    "hard_remove",
+    "use_ino",
+    "readdir_ino",
+    "direct_io",
+    "nopath",
+    "intr",
+    "intr_signal",
+}
+_LIBFUSE_3_ONLY_OPTIONS = {"no_rofd_flush", "fmask", "dmask", "parallel_direct_write"}
+
+
 class FUSE:
     '''
     This class is the lower level interface and should not be subclassed under
@@ -1172,6 +1186,9 @@ class FUSE:
 
         kwargs.setdefault('fsname', self.operations.__class__.__name__)
         args.extend(('-o', ','.join(self._normalize_fuse_options(**kwargs)), mountpoint))
+        self._libfuse2_options_moved_into_libfuse3_config = {
+            key: value for key, value in kwargs.items() if key in _LIBFUSE_2_OPTIONS_MOVED_INTO_FUSE_3_CONFIG
+        }
 
         argsb = [arg.encode(encoding) for arg in args]
         argv = (ctypes.c_char_p * len(argsb))(*argsb)
@@ -1241,6 +1258,17 @@ class FUSE:
     @staticmethod
     def _normalize_fuse_options(**kargs):
         for key, value in kargs.items():
+            if fuse_version_major == 2:
+                if key in _LIBFUSE_3_ONLY_OPTIONS:
+                    log.warning("Ignore libfuse3-only option: %s (%s)", key, value)
+                    continue
+            elif fuse_version_major == 3:
+                if key in _LIBFUSE_2_OPTIONS_REMOVED_IN_FUSE_3:
+                    log.warning("Ignore libfuse2-only option: %s (%s)", key, value)
+                    continue
+                if key in _LIBFUSE_2_OPTIONS_MOVED_INTO_FUSE_3_CONFIG:
+                    continue
+
             if isinstance(value, bool):
                 if value is True:
                     yield key
@@ -1618,6 +1646,9 @@ class FUSE:
     def init_fuse_3(self, conn: FuseConnInfoPointer, config: FuseConfigPointer) -> None:
         if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
             config.contents.nullpath_ok = True
+        if config:
+            for key, value in self._libfuse2_options_moved_into_libfuse3_config.items():
+                setattr(config.contents, key, value)
         self._init(conn, config)
 
     def destroy(self, private_data) -> None:
