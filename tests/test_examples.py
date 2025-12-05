@@ -231,6 +231,25 @@ def test_read_write_file_system(cli, tmp_path):
             path.unlink()
 
 
+@pytest.mark.parametrize('cli', [cli_memory_nullpath])
+def test_use_inode(cli, tmp_path):
+    mount_point = tmp_path
+    arguments = []
+    with RunCLI(cli, mount_point, arguments):
+        assert os.path.isdir(mount_point)
+        assert os.stat(mount_point).st_ino == 31
+
+        path = mount_point / "foo"
+        assert not path.is_dir()
+
+        assert path.write_bytes(b"bar") == 3
+        assert path.exists()
+        assert path.is_file()
+        assert not path.is_dir()
+
+        assert os.stat(path).st_ino == 100
+
+
 if __name__ == '__main__':
     with tempfile.TemporaryDirectory() as directory:
         # Directory argument must not be something in the current directory,

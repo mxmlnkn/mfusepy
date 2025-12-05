@@ -29,8 +29,10 @@ class Memory(fuse.Operations):
                 'st_mtime': now,
                 'st_atime': now,
                 'st_nlink': 2,
+                'st_ino': 31,
             }
         }
+        self._inode = 100
         self._opened: dict[int, str] = {}
 
     @fuse.overrides(fuse.Operations)
@@ -38,6 +40,7 @@ class Memory(fuse.Operations):
         # This only works for FUSE 3 while the flag_nullpath_ok and flag_nopath class members work for FUSE 2 and 3!
         if config_3:
             config_3.nullpath_ok = True
+            config_3.use_ino = True
 
     @fuse.overrides(fuse.Operations)
     def chmod(self, path: str, mode: int) -> int:
@@ -61,7 +64,9 @@ class Memory(fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_ino': self._inode,
         }
+        self._inode += 1
 
         self.fd += 1
         self._opened[self.fd] = path
@@ -99,7 +104,9 @@ class Memory(fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_ino': self._inode,
         }
+        self._inode += 1
 
         self.files['/']['st_nlink'] += 1
         return 0
@@ -128,10 +135,8 @@ class Memory(fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def readdir(self, path: str, fh: int) -> fuse.ReadDirResult:
         path = self._opened[fh]
-        return [('.', stat.S_IFDIR | 0o755, 0), ('..', stat.S_IFDIR | 0o755, 0)] + [
-            (x[1:], info['st_mode'] | stat.S_IFREG, 0)
-            for x, info in self.files.items()
-            if x.startswith(path) and len(x) > len(path)
+        return [('.', self.files['/'], 0), ('..', self.files['/'], 0)] + [
+            (x[1:], info, 0) for x, info in self.files.items() if x.startswith(path) and len(x) > len(path)
         ]
 
     @fuse.overrides(fuse.Operations)
@@ -229,7 +234,7 @@ def cli(args=None):
     parser.add_argument('mount')
     args = parser.parse_args(args)
 
-    fuse.FUSE(Memory(), args.mount, foreground=True)
+    fuse.FUSE(Memory(), args.mount, foreground=True, use_ino=True)
 
 
 if __name__ == '__main__':
