@@ -1193,6 +1193,11 @@ class FUSE:
         argsb = [arg.encode(encoding) for arg in args]
         argv = (ctypes.c_char_p * len(argsb))(*argsb)
 
+        alternative_callbacks = {
+            "readdir": ["readdir_with_offset"],
+        }
+
+        # Iterate over all libfuse operations struct methods and check for user-implemented ones in self.operations.
         fuse_ops = fuse_operations()
         callbacks_to_always_add = {'init'}
         for field in fuse_operations._fields_:
@@ -1207,9 +1212,17 @@ class FUSE:
                 check_name = check_name[1:]
 
             value = getattr(self.operations, check_name, None)
-            if (value is None or getattr(value, 'libfuse_ignore', False)) and check_name not in callbacks_to_always_add:
-                log.debug("Leave libFUSE %s for '%s' uninitialized.", 'callback' if is_function else 'value', name)
-                continue
+            if value is None or getattr(value, 'libfuse_ignore', False):
+                skip = check_name not in callbacks_to_always_add
+                if skip and check_name in alternative_callbacks:
+                    for alternative_name in alternative_callbacks[check_name]:
+                        value = getattr(self.operations, alternative_name, None)
+                        skip = value is None or getattr(value, 'libfuse_ignore', False)
+                        if not skip:
+                            break
+                if skip:
+                    log.debug("Leave libFUSE %s for '%s' uninitialized.", 'callback' if is_function else 'value', name)
+                    continue
 
             # Wrap functions into try-except statements.
             if is_function:
@@ -1572,14 +1585,21 @@ class FUSE:
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
     #     fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
-        # continuation_id is either:
-        # - 0 (no skipping), or
-        # - a potentially unordered, arbitrary 64bit value identifying the last element to skip
-        continuation_id = offset
-        skip = continuation_id != 0
         # Ignore raw_fi
         st = c_stat()
-        for item in self.operations.readdir(None if path is None else path.decode(self.encoding), fip.contents.fh):
+
+        decoded_path = None if path is None else path.decode(self.encoding)
+        use_readdir_with_offset = hasattr(self.operations, "readdir_with_offset") and not getattr(
+            self.operations.readdir_with_offset, "libfuse_ignore", False
+        )
+        items = (
+            self.operations.readdir_with_offset(decoded_path, offset, fip.contents.fh)
+            if use_readdir_with_offset
+            else self.operations.readdir(decoded_path, fip.contents.fh)
+        )
+
+        encountered_non_zero_offset = False
+        for item in items:
             has_stat = False
             if isinstance(item, str):
                 has_stat = True
@@ -1587,10 +1607,10 @@ class FUSE:
                 offset = 0
             else:
                 name, attrs, offset = item
-                if skip:
-                    if offset == continuation_id:
-                        skip = False  # processing continues at the NEXT item
-                    continue
+                if not use_readdir_with_offset and offset != 0:
+                    encountered_non_zero_offset = True
+                    offset = 0
+
                 if isinstance(attrs, int):
                     st.st_mode = attrs
                     has_stat = True
@@ -1610,6 +1630,9 @@ class FUSE:
             elif fuse_version_major == 3:
                 if filler(buf, name.encode(self.encoding), st if has_stat else None, offset, 0) != 0:
                     break
+
+        if encountered_non_zero_offset and not use_readdir_with_offset:
+            log.warning("When returning non-zero offsets from readdir, you should use readdir_with_offset instead.")
 
         return 0
 
@@ -1924,6 +1947,21 @@ class Operations:
         Can return either a list of names, or a list of (name, attrs, offset)
         tuples. attrs is a dict as in getattr.
         Only st_mode in attrs is used! In the future it may be possible to simply return the mode.
+        The 'offset' argument should almost always be 0. If you want to support non-zero offsets
+        to avoid memory issues for very large directories, implement readdir_with_offset instead!
+        '''
+
+        return ['.', '..']
+
+    @_nullable_dummy_function
+    def readdir_with_offset(self, path: str, offset: int, fh: int) -> ReadDirResult:
+        '''
+        Similar to readdir but takes an additional 'offset' argument, which is inaptly named in FUSE
+        because it also is known to contain inodes, hashes, pointers to B-Trees and whatever.
+        https://unix.stackexchange.com/questions/625899/correctly-implementing-seeking-in-fuse-readdir-operation
+        The user implementation should use this information to resume yieldings results for readdir
+        at the given offset. Not all of the values yielded by the generator might be used. If some
+        are not used, this function will be called again with a different offset.
         '''
 
         return ['.', '..']
