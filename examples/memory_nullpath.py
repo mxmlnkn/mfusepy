@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import collections
 import errno
 import stat
@@ -24,12 +25,16 @@ class Memory(fuse.Operations):
         now = int(time.time() * 1e9)
         self.files: dict[str, dict[str, Any]] = {
             '/': {
+                # writable by owner only
                 'st_mode': (stat.S_IFDIR | 0o755),
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
                 'st_nlink': 2,
                 'st_ino': 31,
+                # ensure the mount root is owned by the current user
+                'st_uid': os.getuid(),
+                'st_gid': os.getgid(),
             }
         }
         self._inode = 100
@@ -65,6 +70,9 @@ class Memory(fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             'st_ino': self._inode,
+            # ensure the file is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
         }
         self._inode += 1
 
@@ -105,6 +113,9 @@ class Memory(fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             'st_ino': self._inode,
+            # ensure the directory is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
         }
         self._inode += 1
 
