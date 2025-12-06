@@ -110,7 +110,8 @@ class RunCLI:
     def unmount(self):
         self.wait_for_mount_point()
 
-        subprocess.run(["fusermount", "-u", self.mount_point], check=True, capture_output=True)
+        cmd = ["umount", self.mount_point] if sys.platform == 'darwin' else ["fusermount", "-u", self.mount_point]
+        subprocess.run(cmd, check=True, capture_output=True)
 
         t0 = time.time()
         while True:
