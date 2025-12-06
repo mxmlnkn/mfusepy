@@ -5,6 +5,7 @@ import collections
 import ctypes
 import errno
 import logging
+import os
 import stat
 import struct
 import time
@@ -25,11 +26,15 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         now = int(time.time() * 1e9)
         self.files: dict[str, dict[str, Any]] = {
             '/': {
+                # writable by owner only
                 'st_mode': (stat.S_IFDIR | 0o755),
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
                 'st_nlink': 2,
+                # ensure the mount root is owned by the current user
+                'st_uid': os.getuid(),
+                'st_gid': os.getgid(),
             }
         }
 
@@ -55,6 +60,9 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            # ensure the file is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
         }
         return 0
 
@@ -88,6 +96,9 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            # ensure the directory is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
         }
 
         self.files['/']['st_nlink'] += 1
