@@ -167,12 +167,13 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.stat(path).st_mode & 0o777 == 0o777
 
         try:
-            # Only works for memory file systems.
+            # Only works for memory file systems on Linux, but not on macOS.
             os.chown(path, 12345, 23456)
             assert os.stat(path).st_uid == 12345
             assert os.stat(path).st_gid == 23456
         except PermissionError:
-            assert cli == cli_loopback
+            if sys.platform != 'darwin':
+                assert cli == cli_loopback
 
         os.chown(path, os.getuid(), os.getgid())
         assert os.stat(path).st_uid == os.getuid()
