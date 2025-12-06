@@ -1,49 +1,34 @@
 #!/usr/bin/env python3
-"""
-Minimal reproducer for mfusepy readdir offset bug.
 
-This demonstrates the infinite loop bug in mfusepy where readdir ignores
-the offset parameter, causing it to always restart iteration from the beginning.
-
-To reproduce:
-1. Install mfusepy: pip install mfusepy
-2. Run this script: python3 mfusepy_readdir_bug_reproducer.py /tmp/test_mount
-3. In another terminal: ls /tmp/test_mount
-4. The ls command will hang (infinite loop)
-
-The bug: mfusepy's _readdir method iterates over all items from operations.readdir
-but ignores the 'offset' parameter passed by FUSE. When the buffer fills up,
-FUSE calls readdir again with an offset to resume, but mfusepy sends the same
-items again, causing an infinite loop.
-"""
-
+import argparse
 import errno
-import os
+import logging
 import stat as stat_module
 import sys
 
-try:
-    import mfusepy as fuse
-except ImportError:
-    print("Error: mfusepy not installed. Install with: pip install mfusepy")
-    sys.exit(1)
+import mfusepy as fuse
+
+log = logging.getLogger("readdir with offset")
 
 
-class BuggyFS(fuse.Operations):
+class ReaddirWithOffset(fuse.Operations):
     """
-    Minimal filesystem that exposes the mfusepy readdir offset bug.
+    Minimal filesystem showing usage of readdir with offsets.
 
     We create a directory with many files to ensure the buffer fills up,
     triggering multiple readdir calls with different offsets.
     """
 
-    def __init__(self):
-        self.readdir_calls = 0
-        # Create enough files to fill the readdir buffer
-        self.num_files = 1000
+    use_ns = True
+
+    def __init__(self, readdir_call_limit=10):
+        self._readdir_calls = 0
+        # Create enough files to fill the readdir buffer. (In my tests the readdir buffer was ~10)
+        self._file_count = 1000
+        self._readdir_call_limit = readdir_call_limit
 
     def getattr(self, path, fh=None):
-        """Return file attributes."""
+        self._readdir_calls = 0
         if path == '/':
             # Root directory
             st = {
@@ -54,7 +39,7 @@ class BuggyFS(fuse.Operations):
                 'st_mtime': 0,
                 'st_atime': 0,
             }
-        elif path.startswith('/file'):
+        elif path.strip('/').isdigit():
             # Regular file
             st = {
                 'st_mode': stat_module.S_IFREG | 0o644,
@@ -71,14 +56,17 @@ class BuggyFS(fuse.Operations):
 
     def readdir(self, path, fh):
         """
-        Yield directory entries with incrementing offsets.
-
-        This is the CORRECT implementation - we yield entries with proper offsets.
-        However, mfusepy's _readdir method will IGNORE these offsets and always
-        restart iteration from the beginning, causing an infinite loop.
+        Yield directory entries with incrementing offsets starting at 1.
+        An offset of 0 should only be returned when the offsets should be ignored.
         """
-        self.readdir_calls += 1
-        print(f"[DEBUG] readdir called {self.readdir_calls} times for path={path}", file=sys.stderr)
+
+        # After ~10 entries, warn about the old bug.
+        self._readdir_calls += 1
+        if self._readdir_calls >= self._readdir_call_limit * self._file_count:
+            log.warning("If you see this message repeating, the FUSE wrapper bug is triggered!")
+            sys.exit(1)
+
+        log.debug("readdir called %s times for path=%s", self._readdir_calls, path)
 
         if path != '/':
             raise fuse.FuseOSError(errno.ENOENT)
@@ -91,46 +79,19 @@ class BuggyFS(fuse.Operations):
         offset += 1
 
         # Yield many files to ensure buffer fills up
-        for i in range(self.num_files):
-            filename = f'file{i:04d}.txt'
-            attrs = {'st_mode': stat_module.S_IFREG | 0o644}
-            print(f"[DEBUG] Yielding {filename} with offset {offset}", file=sys.stderr)
-            yield (filename, attrs, offset)
+        for i in range(self._file_count):
+            yield f'{i:04d}', {'st_mode': stat_module.S_IFREG | 0o644}, offset
             offset += 1
 
-            # After ~10 entries, warn about the bug
-            if i == 10:
-                print("\n[WARNING] If you see this message repeating, the bug is triggered!", file=sys.stderr)
-                print("[WARNING] mfusepy is ignoring offsets and restarting from the beginning.\n", file=sys.stderr)
 
-    def read(self, path, size, offset, fh):
-        """Read file data (empty files)."""
-        return b''
+def cli(args=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mount')
+    args = parser.parse_args(args)
 
-    def open(self, path, flags):
-        """Open file."""
-        return 0
-
-
-def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <mountpoint>")
-        print(f"Example: {sys.argv[0]} /tmp/test_mount")
-        sys.exit(1)
-
-    mountpoint = sys.argv[1]
-
-    # Create mountpoint if it doesn't exist
-    os.makedirs(mountpoint, exist_ok=True)
-
-    print(f"Mounting buggy filesystem at {mountpoint}")
-    print(f"In another terminal, run: ls {mountpoint}")
-    print("If the bug exists, 'ls' will hang in an infinite loop.")
-    print("Watch stderr for repeated '[WARNING]' messages.\n")
-
-    fs = BuggyFS()
-    fuse.FUSE(fs, mountpoint, foreground=True, allow_other=False)
+    logging.basicConfig(level=logging.DEBUG)
+    fuse.FUSE(ReaddirWithOffset(), args.mount, foreground=True)
 
 
 if __name__ == '__main__':
-    main()
+    cli()
