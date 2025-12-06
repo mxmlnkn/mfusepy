@@ -169,3 +169,64 @@ jobs:
           ninfs threedsx 3dsfetch.3dsx mounted-3dsx
           [[ "$( md5sum mounted-3dsx/icon.smdh )" =~ "a3d784b6f20182ebdf964589cbf427c2" ]]
           fusermount -u mounted-3dsx
+
+  VM-Tests:
+    # Run tests inside a VM using cross-platform-actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+     matrix:
+        include:
+          - os: freebsd
+            version: '14.3'
+            display_name: FreeBSD
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - name: Test on ${{ matrix.display_name }}
+        uses: cross-platform-actions/action@v0.29.0
+        with:
+          operating_system: ${{ matrix.os }}
+          version: ${{ matrix.version }}
+          shell: bash
+          run: |
+            set -euxo pipefail
+            case "${{ matrix.os }}" in
+              freebsd)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                sudo -E /bin/sh -c 'grep -q "freebsd\.local" /etc/hosts || echo "127.0.0.1 freebsd.local freebsd" >> /etc/hosts'
+                sudo -E hostname freebsd.local
+                hostname
+
+                # Keep pkg from aborting on minor version drift
+                export IGNORE_OSVERSION=yes
+
+                # Packages
+                sudo -E pkg update -f
+                sudo -E pkg install -y git fusefs-libs python3 python311 py311-pip
+
+                # Make FUSE work
+                sudo -E kldload fusefs
+                sudo -E sysctl vfs.usermount=1
+                sudo -E chmod 666 /dev/fuse
+
+                # Install pip Dependencies
+                python3 -m pip install --upgrade pip
+                python3 -m pip install --upgrade wheel
+                python3 -m pip install --upgrade setuptools
+                python3 -m pip install "pynacl==1.5.0"
+                python3 -m pip install pytest ioctl-opt
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+                python3 -m pytest -v -rs tests
+                ;;
+            esac
