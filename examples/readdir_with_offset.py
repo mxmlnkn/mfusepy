@@ -5,6 +5,7 @@ import errno
 import logging
 import stat as stat_module
 import sys
+from typing import Optional
 
 import mfusepy as fuse
 
@@ -27,7 +28,7 @@ class ReaddirWithOffset(fuse.Operations):
         self._file_count = 1000
         self._readdir_call_limit = readdir_call_limit
 
-    def getattr(self, path, fh=None):
+    def getattr(self, path: str, fh: Optional[int] = None):
         self._readdir_calls = 0
         if path == '/':
             # Root directory
@@ -54,7 +55,7 @@ class ReaddirWithOffset(fuse.Operations):
 
         return st
 
-    def readdir(self, path, fh):
+    def readdir_with_offset(self, path: str, offset: int, fh: int):
         """
         Yield directory entries with incrementing offsets starting at 1.
         An offset of 0 should only be returned when the offsets should be ignored.
@@ -72,16 +73,17 @@ class ReaddirWithOffset(fuse.Operations):
             raise fuse.FuseOSError(errno.ENOENT)
 
         # Yield . and ..
-        offset = 1
-        yield ('.', {'st_mode': stat_module.S_IFDIR | 0o755}, offset)
-        offset += 1
-        yield ('..', {'st_mode': stat_module.S_IFDIR | 0o755}, offset)
-        offset += 1
+        entry_id = 1
+        if offset == 0 or entry_id >= offset:
+            yield ('.', {'st_mode': stat_module.S_IFDIR | 0o755}, entry_id)
+        entry_id += 1
+        if offset == 0 or entry_id >= offset:
+            yield ('..', {'st_mode': stat_module.S_IFDIR | 0o755}, entry_id)
+        entry_id += 1
 
         # Yield many files to ensure buffer fills up
-        for i in range(self._file_count):
-            yield f'{i:04d}', {'st_mode': stat_module.S_IFREG | 0o644}, offset
-            offset += 1
+        for i in range(max(0, offset - 2), self._file_count):
+            yield f'{i:04d}', {'st_mode': stat_module.S_IFREG | 0o644}, entry_id + i
 
 
 def cli(args=None):
