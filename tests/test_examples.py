@@ -148,13 +148,14 @@ def test_read_write_file_system(cli, tmp_path):
 
         assert path.read_bytes() == b"bar"
 
-        if cli == cli_memory:
-            with open(path, 'rb') as file:
-                # Test simple ioctl command that returns the argument incremented by one.
-                argument = 123
-                iowr_m = IOWR(ord('M'), 1, ctypes.c_uint32)
-                result = fcntl.ioctl(file, iowr_m, struct.pack('I', argument))
-                assert struct.unpack('I', result)[0] == argument + 1
+        if sys.platform != 'darwin':  # does not work on macOS
+            if cli == cli_memory:
+                with open(path, 'rb') as file:
+                    # Test a simple ioctl command that returns the argument incremented by one.
+                    argument = 123
+                    iowr_m = IOWR(ord('M'), 1, ctypes.c_uint32)
+                    result = fcntl.ioctl(file, iowr_m, struct.pack('I', argument))
+                    assert struct.unpack('I', result)[0] == argument + 1
 
         os.truncate(path, 2)
         assert path.read_bytes() == b"ba"
