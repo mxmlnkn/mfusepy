@@ -9,7 +9,7 @@
 [![Discord](https://img.shields.io/discord/783411320354766878?label=discord)](https://discord.gg/Wra6t6akh2)
 [![Telegram](https://img.shields.io/badge/Chat-Telegram-%2330A3E6)](https://t.me/joinchat/FUdXxkXIv6c4Ib8bgaSxNg)
 
-`mfusepy` is a Python module that provides a simple interface to [FUSE](https://docs.kernel.org/filesystems/fuse.html) and [macFUSE](https://osxfuse.github.io/).
+`mfusepy` is a Python module that provides a simple interface to [FUSE](https://docs.kernel.org/filesystems/fuse.html) and [macFUSE](https://macfuse.github.io/).
 It's a single file implemented using `ctypes` to interface with [libfuse](https://github.com/libfuse/libfuse).
 
 
@@ -52,7 +52,7 @@ The main motivations for the fork are:
 
  - [x] FUSE 3 support. Based on the [libfuse changelog](https://github.com/libfuse/libfuse/blob/master/ChangeLog.rst#libfuse-300-2016-12-08), the amount of breaking changes should be fairly small. It should be possible to simply update these ~10 changed structs and functions in the existing fusepy.
  - [x] Translation layer performance. In benchmarks for a simple `find` call that lists all files, some callbacks such as `readdir` turned out to be significantly limited by converting Python dictionaries to `ctypes` structs. The idea is to expose the `ctypes` structs to the fusepy caller.
-   - Much of the performance was lost trying to populate the stat struct even though only the mode member is used by the kernel FUSE API.
+   - Much of the performance was lost trying to populate the stat struct even though only the mode and inode member are used by the kernel FUSE API.
 
 The prefix `m` in the name stands for anything you want it to: "multi" because multiple libfuse versions are supported, "modded", "modern", or "Maximilian".
 
@@ -110,9 +110,8 @@ While FUSE is (at least in the Unix world) a [kernel feature](https://man7.org/l
  - [libfuse](https://github.com/libfuse/libfuse) (Linux, FreeBSD) (fuse.h [2](https://github.com/libfuse/libfuse/blob/fuse-2_9_bugfix/include/fuse.h) [3](https://github.com/libfuse/libfuse/blob/master/include/fuse.h))
  - [libfuse](https://github.com/openbsd/src/tree/master/lib/libfuse) (OpenBSD) (fuse.h [2](https://github.com/openbsd/src/blob/master/lib/libfuse/fuse.h))
  - [librefuse](https://github.com/NetBSD/src/tree/netbsd-8/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [2](https://github.com/NetBSD/src/blob/netbsd-8/lib/librefuse/fuse.h))
- - [FUSE for macOS](https://github.com/osxfuse/osxfuse) (macOS) (fuse.h [2](https://github.com/osxfuse/fuse/blob/master/include/fuse.h))
+ - [macFUSE](https://github.com/macfuse/macfuse) (macOS), previously called osxfuse, (fuse.h see [library links there](https://github.com/macfuse/macfuse))
  - [MacFUSE](https://code.google.com/archive/p/macfuse/) (macOS), no longer maintained
- - [MacFUSE](https://macfuse.github.io/) (macOS), [GitHub](https://github.com/macfuse/library)
  - [FUSE-T](https://www.fuse-t.org/) (macOS), [GitHub](https://github.com/macos-fuse-t/fuse-t)
  - [WinFsp](https://github.com/billziss-gh/winfsp) (Windows) (fuse.h [2](https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h) [3](https://github.com/winfsp/winfsp/blob/master/inc/fuse3/fuse.h))
  - [Dokany](https://github.com/dokan-dev/dokany) (Windows) (fuse.h [2](https://github.com/dokan-dev/dokany/blob/master/dokan_fuse/include/fuse.h))
