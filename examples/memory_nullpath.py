@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import collections
 import errno
+import os
 import stat
 import time
 from collections.abc import Iterable

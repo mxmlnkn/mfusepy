@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import collections
 import ctypes
 import errno
 import logging
+import os
 import stat
 import struct
 import time
