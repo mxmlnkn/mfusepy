@@ -25,6 +25,9 @@ from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
 from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
 
+# Some Python interpreters, e.g. the macOS Python may lack os.*xattr APIs.
+os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
+
 
 class RunCLI:
     def __init__(self, cli, mount_point, arguments):
@@ -173,16 +176,17 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.stat(path).st_uid == os.getuid()
         assert os.stat(path).st_gid == os.getgid()
 
-        try:
-            assert not os.listxattr(path)
-            os.setxattr(path, b"user.tag-test", b"FOO-RESULT")
-            assert os.listxattr(path)
-            assert os.getxattr(path, b"user.tag-test") == b"FOO-RESULT"
-            os.removexattr(path, b"user.tag-test")
-            assert not os.listxattr(path)
-        except OSError as exception:
-            assert cli == cli_loopback
-            assert exception.errno == errno.ENOTSUP
+        if os_has_xattr_funcs:
+            try:
+                assert not os.listxattr(path)
+                os.setxattr(path, b"user.tag-test", b"FOO-RESULT")
+                assert os.listxattr(path)
+                assert os.getxattr(path, b"user.tag-test") == b"FOO-RESULT"
+                os.removexattr(path, b"user.tag-test")
+                assert not os.listxattr(path)
+            except OSError as exception:
+                assert cli == cli_loopback
+                assert exception.errno == errno.ENOTSUP
 
         os.utime(path, (1.5, 12.5))
         assert os.stat(path).st_atime == 1.5
