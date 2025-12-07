@@ -256,7 +256,31 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
             ('st_lspare', ctypes.c_int32),
             ('st_qspare', ctypes.c_int64),
         ]
+    elif _system == 'FreeBSD':
+        # FreeBSD amd64 struct stat layout
+        # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
+        _c_stat__fields_ = [
+            ('st_dev', ctypes.c_uint64),
+            ('st_ino', ctypes.c_uint64),
+            ('st_nlink', ctypes.c_uint64),
+            ('st_mode', c_mode_t),
+            ('st_padding0', ctypes.c_uint16),
+            ('st_uid', c_uid_t),
+            ('st_gid', c_gid_t),
+            ('st_padding1', ctypes.c_uint32),
+            ('st_rdev', ctypes.c_uint64),
+            ('st_atimespec', c_timespec),
+            ('st_mtimespec', c_timespec),
+            ('st_ctimespec', c_timespec),
+            ('st_birthtimespec', c_timespec),
+            ('st_size', c_off_t),
+            ('st_blocks', ctypes.c_int64),
+            ('st_blksize', ctypes.c_int32),
+            ('st_flags', ctypes.c_uint32),
+            ('st_gen', ctypes.c_uint32),
+        ]
     else:
+        # Darwin-MacFuse fallback (legacy)
         _c_stat__fields_ = [
             ('st_dev', c_dev_t),
             ('st_ino', ctypes.c_uint32),
