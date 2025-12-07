@@ -64,7 +64,7 @@ if _system == 'Windows' or _system.startswith('CYGWIN'):
 class c_timespec(ctypes.Structure):
     if _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-    elif _system in ('OpenBSD', 'FreeBSD'):
+    elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
         _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
     else:
         _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
@@ -531,6 +531,53 @@ elif _system == 'OpenBSD':
         ('st_gen', ctypes.c_uint32),
         ('st_birthtimespec', c_timespec),
     ]
+elif _system == 'NetBSD':
+    ENOTSUP = 45
+    c_dev_t = ctypes.c_uint64
+    c_uid_t = ctypes.c_uint32
+    c_gid_t = ctypes.c_uint32
+    c_mode_t = ctypes.c_uint32
+    c_off_t = ctypes.c_int64
+    c_pid_t = ctypes.c_int32
+    setxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_byte),
+        ctypes.c_size_t,
+        ctypes.c_int,
+    )
+    getxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int64,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_byte),
+        ctypes.c_size_t,
+    )
+    c_fsblkcnt_t = ctypes.c_uint64
+    c_fsfilcnt_t = ctypes.c_uint64
+    # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/stat.h#L59-L89
+    _c_stat__fields_ = [
+        ('st_dev', c_dev_t),
+        ('st_mode', c_mode_t),
+        ('_padding0', ctypes.c_uint32),  # alignment padding implied by the next member
+        ('st_ino', ctypes.c_uint64),
+        ('st_nlink', ctypes.c_uint32),
+        ('st_uid', c_uid_t),
+        ('st_gid', c_gid_t),
+        ('_padding1', ctypes.c_uint32),  # alignment padding implied by the next member
+        ('st_rdev', c_dev_t),
+        ('st_atimespec', c_timespec),
+        ('st_mtimespec', c_timespec),
+        ('st_ctimespec', c_timespec),
+        ('st_birthtimespec', c_timespec),
+        ('st_size', c_off_t),
+        ('st_blocks', ctypes.c_int64),
+        ('st_blksize', ctypes.c_uint32),
+        ('st_flags', ctypes.c_uint32),
+        ('st_gen', ctypes.c_uint32),
+        ('st_spare', ctypes.c_uint32 * 2),
+    ]
 else:
     raise NotImplementedError(_system + ' is not supported.')
 
@@ -588,6 +635,35 @@ class c_statvfs(ctypes.Structure):
             ('f_fsid', c_win_ulong),
             ('f_flag', c_win_ulong),
             ('f_namemax', c_win_ulong),
+        ]
+    elif _system == 'NetBSD':
+        # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/statvfs.h#L66-L100
+        _fields_ = [
+            ('f_flag', ctypes.c_ulong),
+            ('f_bsize', ctypes.c_ulong),
+            ('f_frsize', ctypes.c_ulong),
+            ('f_iosize', ctypes.c_ulong),
+            ('f_blocks', c_fsblkcnt_t),
+            ('f_bfree', c_fsblkcnt_t),
+            ('f_bavail', c_fsblkcnt_t),
+            ('f_bresvd', c_fsblkcnt_t),
+            ('f_files', c_fsfilcnt_t),
+            ('f_ffree', c_fsfilcnt_t),
+            ('f_favail', c_fsfilcnt_t),
+            ('f_fresvd', c_fsfilcnt_t),
+            ('f_syncreads', ctypes.c_uint64),
+            ('f_syncwrites', ctypes.c_uint64),
+            ('f_asyncreads', ctypes.c_uint64),
+            ('f_asyncwrites', ctypes.c_uint64),
+            ('f_fsidx', ctypes.c_int32 * 2),  # NetBSD compatible fsid
+            ('f_fsid', ctypes.c_ulong),  # POSIX compatible fsid
+            ('f_namemax', ctypes.c_ulong),
+            ('f_owner', c_uid_t),
+            ('f_spare', ctypes.c_uint64 * 4),
+            ('f_fstypename', ctypes.c_char * 32),
+            ('f_mntonname', ctypes.c_char * 1024),
+            ('f_mntfromname', ctypes.c_char * 1024),
+            ('f_mntfromlabel', ctypes.c_char * 1024),
         ]
     else:
         # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
