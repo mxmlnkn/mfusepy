@@ -198,7 +198,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         return len(data)
 
     @fuse.overrides(fuse.Operations)
-    def ioctl(self, path: str, cmd: int, arg, fh: int, flags: int, data) -> int:
+    def ioctl(self, path: str, cmd: int, arg: ctypes.c_void_p, fh: int, flags: int, data: ctypes.c_void_p) -> int:
         """
         An example ioctl implementation that defines a command with integer code corresponding to 'M' in ASCII,
         which returns the 32-bit integer argument incremented by 1.

@@ -27,18 +27,7 @@ import os
 import platform
 import warnings
 from collections.abc import Iterable, Sequence
-from ctypes import (
-    CFUNCTYPE,
-    POINTER,
-    c_byte,
-    c_char_p,
-    c_int,
-    c_size_t,
-    c_ssize_t,
-    c_uint,
-    c_uint64,
-    c_void_p,
-)
+from ctypes import CFUNCTYPE, POINTER, c_char_p, c_int, c_size_t, c_ssize_t, c_uint, c_void_p
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
@@ -46,6 +35,13 @@ from typing import TYPE_CHECKING, Any, Optional, Union, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
 ReadDirResult = Iterable[Union[str, tuple[str, dict[str, int], int], tuple[str, int, int]]]
+
+if TYPE_CHECKING:
+    c_byte_p = ctypes._Pointer[ctypes.c_byte]  # noqa: W212
+    c_uint64_p = ctypes._Pointer[ctypes.c_uint64]  # noqa: W212
+else:
+    c_byte_p = ctypes.POINTER(ctypes.c_byte)
+    c_uint64_p = ctypes.POINTER(ctypes.c_uint64)
 
 log = logging.getLogger("fuse")
 _system = platform.system()
@@ -222,7 +218,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
         ctypes.c_int,
         ctypes.c_uint32,
@@ -231,7 +227,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
         ctypes.c_uint32,
     )
@@ -313,11 +309,9 @@ elif _system == 'Linux':
 
     # sys/xattr.h
     setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_byte), ctypes.c_size_t, ctypes.c_int
+        ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t, ctypes.c_int
     )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_byte), ctypes.c_size_t
-    )
+    getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
 
     # sys/stat.h
     if _machine == 'x86_64':
@@ -462,17 +456,11 @@ elif _system == 'Windows' or _system.startswith('CYGWIN'):
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
         ctypes.c_int,
     )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
-        ctypes.c_size_t,
-    )
+    getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
     _c_stat__fields_ = [
         ('st_dev', c_dev_t),
         ('st_ino', ctypes.c_ulonglong),
@@ -505,7 +493,7 @@ elif _system == 'OpenBSD':
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
         ctypes.c_int,
     )
@@ -513,7 +501,7 @@ elif _system == 'OpenBSD':
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
     )
     c_fsblkcnt_t = ctypes.c_uint64
@@ -552,7 +540,7 @@ if _system == 'FreeBSD':
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
         ctypes.c_int,
     )
@@ -561,7 +549,7 @@ if _system == 'FreeBSD':
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
+        c_byte_p,
         ctypes.c_size_t,
     )
 
@@ -728,9 +716,6 @@ class fuse_file_info(ctypes.Structure):
     _fields_ = _fuse_file_info_fields_
 
 
-fuse_fi_p = POINTER(fuse_file_info)
-
-
 if ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
     assert ctypes.sizeof(fuse_file_info) == 40
 
@@ -776,6 +761,22 @@ class fuse_bufvec(ctypes.Structure):
         ('off', ctypes.c_size_t),
         ('buf', ctypes.POINTER(fuse_buf)),
     ]
+
+
+if TYPE_CHECKING:
+    fuse_fi_p = ctypes._Pointer[fuse_file_info]  # noqa: W212
+    c_stat_p = ctypes._Pointer[c_stat]  # noqa: W212
+    c_statvfs_p = ctypes._Pointer[c_statvfs]  # noqa: W212
+    c_utimbuf_p = ctypes._Pointer[c_utimbuf]  # noqa: W212
+    fuse_bufvec_p = ctypes._Pointer[fuse_bufvec]  # noqa: W212
+    fuse_bufvec_pp = ctypes._Pointer[fuse_bufvec_p]  # noqa: W212
+else:
+    fuse_fi_p = ctypes.POINTER(fuse_file_info)
+    c_stat_p = ctypes.POINTER(c_stat)
+    c_statvfs_p = ctypes.POINTER(c_statvfs)
+    c_utimbuf_p = ctypes.POINTER(c_utimbuf)
+    fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
+    fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
 
 
 # fuse_conn_info struct as defined and documented in fuse_common.h
@@ -918,29 +919,29 @@ _fuse_operations_fields_mknod_to_symlink = [
 ]
 _fuse_operations_fields_open_to_removexattr = [
     ('open', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-    ('read', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, fuse_fi_p)),
-    ('write', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, fuse_fi_p)),
-    ('statfs', CFUNCTYPE(c_int, c_char_p, POINTER(c_statvfs))),
+    ('read', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
+    ('write', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
+    ('statfs', CFUNCTYPE(c_int, c_char_p, c_statvfs_p)),
     ('flush', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
     ('release', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
     ('fsync', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
     ('setxattr', setxattr_t),
     ('getxattr', getxattr_t),
-    ('listxattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
+    ('listxattr', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
     ('removexattr', CFUNCTYPE(c_int, c_char_p, c_char_p)),
 ]
 _fuse_operations_fields_2_9 = [
     ('poll', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, fuse_pollhandle_p, POINTER(c_uint))),
-    ('write_buf', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_bufvec), c_off_t, fuse_fi_p)),
-    ('read_buf', CFUNCTYPE(c_int, c_char_p, POINTER(POINTER(fuse_bufvec)), c_size_t, c_off_t, fuse_fi_p)),
+    ('write_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_p, c_off_t, fuse_fi_p)),
+    ('read_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_pp, c_size_t, c_off_t, fuse_fi_p)),
     ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
     ('fallocate', CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, fuse_fi_p)),
 ]
 
 if fuse_version_major == 2:
     _fuse_operations_fields: list[FieldsEntry] = [
-        ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat))),
-        ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
+        ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p)),
+        ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
         ('getdir', c_void_p),  # Deprecated, use readdir
         *_fuse_operations_fields_mknod_to_symlink,
         ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
@@ -960,7 +961,7 @@ if fuse_version_major == 2:
                     c_int,
                     c_char_p,
                     c_void_p,
-                    CFUNCTYPE(c_int, c_void_p, c_char_p, POINTER(c_stat), c_off_t),
+                    CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t),
                     c_off_t,
                     fuse_fi_p,
                 ),
@@ -975,13 +976,13 @@ if fuse_version_major == 2:
             ('access', CFUNCTYPE(c_int, c_char_p, c_int)),
             ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),
             ('ftruncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),
-            ('fgetattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), fuse_fi_p)),
+            ('fgetattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),
         ]
     if fuse_version_minor >= 6:
         _fuse_operations_fields += [
             ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),
-            ('utimens', CFUNCTYPE(c_int, c_char_p, POINTER(c_utimbuf))),
-            ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, POINTER(c_uint64))),
+            ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p)),
+            ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),
         ]
     if fuse_version_minor >= 8:
         _fuse_operations_fields += [
@@ -995,7 +996,7 @@ if fuse_version_major == 2:
         _fuse_operations_fields += _fuse_operations_fields_2_9
 elif fuse_version_major == 3:
     fuse_fill_dir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is USE_FILL_DIR_PLUS = (1 << 1).
-    fuse_fill_dir_t = CFUNCTYPE(c_int, c_void_p, c_char_p, POINTER(c_stat), c_off_t, fuse_fill_dir_flags)
+    fuse_fill_dir_t = CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t, fuse_fill_dir_flags)
 
     fuse_readdir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is FUSE_READDIR_PLUS = (1 << 0).
 
@@ -1004,7 +1005,7 @@ elif fuse_version_major == 3:
     #   sed -nr '/struct fuse_operations/,$p' | sed -nr '0,/};/p' | sed -z 's|,\n *|, |g' |
     #   sed -r '
     #       s|const char [*]( ?[a-z_]+)?|ctypes.c_char_p|g;
-    #       s|char [*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.c_byte)|g;
+    #       s|char [*]( ?[a-z_]+)?|c_byte_p|g;
     #       s|([( ])([a-z]+)_t( ?[a-z_]+)?|\1c_\2_t|g;
     #       s|([( ])unsigned int( ?[a-z_]+)?|\1ctypes.c_uint|g;
     #       s|([( ])int( ?[a-z_]+)?|\1ctypes.c_int|g;
@@ -1014,7 +1015,7 @@ elif fuse_version_major == 3:
     #       s|struct (flock) [*]( ?[a-z_]+)?|ctypes.POINTER(c_\1)|g;
     #       s|(u?int64)_t [*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.c_\1)|g;
     #       s|void [*]( ?[a-z_]+)?|ctypes.c_void_p|g;
-    #       s|const struct timespec tv[[]2[]]|ctypes.POINTER(c_utimbuf)|g;
+    #       s|const struct timespec tv[[]2[]]|c_utimbuf_p|g;
     #       s|enum ([a-z_]+)|\1|g;
     #       s|^ *||;
     #   ' |
@@ -1029,8 +1030,8 @@ elif fuse_version_major == 3:
     #  - getattr, rename, chmod, chown, truncate, readdir, init, utimens, ioctl
     # fmt: off
     _fuse_operations_fields = [
-        ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), fuse_fi_p)),                       # Added file info
-        ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),                       # Same as v2.9
+        ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),                              # Added file info
+        ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),                              # Same as v2.9
         *_fuse_operations_fields_mknod_to_symlink,
         ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
         ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
@@ -1048,8 +1049,8 @@ elif fuse_version_major == 3:
         ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
         ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
         ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
-        ('utimens', CFUNCTYPE(c_int, c_char_p, POINTER(c_utimbuf), fuse_fi_p)),                    # Added file info
-        ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, POINTER(c_uint64))),                         # Same as v2.9
+        ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p, fuse_fi_p)),                           # Added file info
+        ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                                # Same as v2.9
         ('ioctl', CFUNCTYPE(                                                                       # Argument type
             c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
             fuse_fi_p, c_uint, c_void_p)),
@@ -1356,13 +1357,13 @@ class FUSE:
             fuse_exit()
             return -errno.EFAULT
 
-    def getattr_fuse_2(self, path: bytes, buf):
+    def getattr_fuse_2(self, path: bytes, buf: c_stat_p):
         return self.fgetattr(path, buf, None)
 
-    def getattr_fuse_3(self, path: bytes, buf, fip):
+    def getattr_fuse_3(self, path: bytes, buf: c_stat_p, fip: fuse_fi_p):
         return self.fgetattr(path, buf, fip)
 
-    def readlink(self, path: bytes, buf, bufsize: int) -> int:
+    def readlink(self, path: bytes, buf: c_byte_p, bufsize: int) -> int:
         ret = self.operations.readlink(path.decode(self.encoding)).encode(self.encoding)
 
         # copies a string into the given buffer
@@ -1402,7 +1403,7 @@ class FUSE:
     def chmod_fuse_2(self, path: Optional[bytes], mode: int) -> int:
         return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
 
-    def chmod_fuse_3(self, path: Optional[bytes], mode: int, fip) -> int:
+    def chmod_fuse_3(self, path: Optional[bytes], mode: int, fip: fuse_fi_p) -> int:
         return self.operations.chmod(None if path is None else path.decode(self.encoding), mode)
 
     def _chown(self, path: Optional[bytes], uid: int, gid: int) -> int:
@@ -1417,13 +1418,13 @@ class FUSE:
     def chown_fuse_2(self, path: Optional[bytes], uid: int, gid: int) -> int:
         return self._chown(path, uid, gid)
 
-    def chown_fuse_3(self, path: Optional[bytes], uid: int, gid: int, fip) -> int:
+    def chown_fuse_3(self, path: Optional[bytes], uid: int, gid: int, fip: fuse_fi_p) -> int:
         return self._chown(path, uid, gid)
 
     def truncate_fuse_2(self, path: Optional[bytes], length: int) -> int:
         return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
 
-    def truncate_fuse_3(self, path: Optional[bytes], length: int, fip) -> int:
+    def truncate_fuse_3(self, path: Optional[bytes], length: int, fip: fuse_fi_p) -> int:
         return self.operations.truncate(None if path is None else path.decode(self.encoding), length)
 
     def open(self, path: bytes, fip) -> int:
@@ -1433,7 +1434,7 @@ class FUSE:
         fi.fh = self.operations.open(path.decode(self.encoding), fi.flags)
         return 0
 
-    def read(self, path: Optional[bytes], buf, size: int, offset: int, fip) -> int:
+    def read(self, path: Optional[bytes], buf, size: int, offset: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         ret = self.operations.read(None if path is None else path.decode(self.encoding), size, offset, fh)
 
@@ -1446,12 +1447,12 @@ class FUSE:
         ctypes.memmove(buf, ret, retsize)
         return retsize
 
-    def write(self, path: Optional[bytes], buf, size: int, offset: int, fip) -> int:
+    def write(self, path: Optional[bytes], buf: c_byte_p, size: int, offset: int, fip: fuse_fi_p) -> int:
         data = ctypes.string_at(buf, size)
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.write(None if path is None else path.decode(self.encoding), data, offset, fh)
 
-    def statfs(self, path: bytes, buf) -> int:
+    def statfs(self, path: bytes, buf: c_statvfs_p) -> int:
         stv = buf.contents
         attrs = self.operations.statfs(path.decode(self.encoding))
         for key, val in attrs.items():
@@ -1460,19 +1461,19 @@ class FUSE:
 
         return 0
 
-    def flush(self, path: Optional[bytes], fip) -> int:
+    def flush(self, path: Optional[bytes], fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.flush(None if path is None else path.decode(self.encoding), fh)
 
-    def release(self, path: Optional[bytes], fip) -> int:
+    def release(self, path: Optional[bytes], fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.release(None if path is None else path.decode(self.encoding), fh)
 
-    def fsync(self, path: Optional[bytes], datasync: int, fip) -> int:
+    def fsync(self, path: Optional[bytes], datasync: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.fsync(None if path is None else path.decode(self.encoding), datasync, fh)
 
-    def setxattr(self, path: bytes, name: bytes, value, size: int, options, *args) -> int:
+    def setxattr(self, path: bytes, name: bytes, value: c_byte_p, size: int, options: int, *args) -> int:
         return self.operations.setxattr(
             path.decode(self.encoding),
             name.decode(self.encoding),
@@ -1481,7 +1482,7 @@ class FUSE:
             *args,
         )
 
-    def getxattr(self, path: bytes, name: bytes, value, size: int, *args) -> int:
+    def getxattr(self, path: bytes, name: bytes, value: c_byte_p, size: int, *args) -> int:
         ret = self.operations.getxattr(path.decode(self.encoding), name.decode(self.encoding), *args)
 
         retsize = len(ret)
@@ -1499,7 +1500,7 @@ class FUSE:
 
         return retsize
 
-    def listxattr(self, path: bytes, namebuf, size: int) -> int:
+    def listxattr(self, path: bytes, namebuf: c_byte_p, size: int) -> int:
         attrs = self.operations.listxattr(path.decode(self.encoding)) or ''
         ret = '\x00'.join(attrs).encode(self.encoding)
         if len(ret) > 0:
@@ -1522,7 +1523,7 @@ class FUSE:
     def removexattr(self, path: bytes, name: bytes) -> int:
         return self.operations.removexattr(path.decode(self.encoding), name.decode(self.encoding))
 
-    def opendir(self, path: bytes, fip) -> int:
+    def opendir(self, path: bytes, fip: fuse_fi_p) -> int:
         # Ignore raw_fi
         fip.contents.fh = self.operations.opendir(path.decode(self.encoding))
         return 0
@@ -1595,7 +1596,7 @@ class FUSE:
     # fuse_entry_out entry_out in the fuse_direntplus struct. fuse_attr has 16 members.
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
     #     fuse.h#L263C1-L280C3
-    def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
+    def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip: fuse_fi_p) -> int:
         # Ignore raw_fi
         st = c_stat()
 
@@ -1647,20 +1648,20 @@ class FUSE:
 
         return 0
 
-    def readdir_fuse_2(self, path: Optional[bytes], buf, filler, offset: int, fip) -> int:
+    def readdir_fuse_2(self, path: Optional[bytes], buf, filler, offset: int, fip: fuse_fi_p) -> int:
         return self._readdir(path, buf, filler, offset, fip)
 
-    def readdir_fuse_3(self, path: Optional[bytes], buf, filler, offset: int, fip, flags: int) -> int:
+    def readdir_fuse_3(self, path: Optional[bytes], buf, filler, offset: int, fip: fuse_fi_p, flags: int) -> int:
         # TODO if bit 0 (FUSE_READDIR_PLUS) is set in flags, then we might want to gather more metadata
         #      and return it in "filler" with bit 1 (FUSE_FILL_DIR_PLUS) being set.
         # Ignore raw_fi
         return self._readdir(path, buf, filler, offset, fip)
 
-    def releasedir(self, path: Optional[bytes], fip) -> int:
+    def releasedir(self, path: Optional[bytes], fip: fuse_fi_p) -> int:
         # Ignore raw_fi
         return self.operations.releasedir(None if path is None else path.decode(self.encoding), fip.contents.fh)
 
-    def fsyncdir(self, path: Optional[bytes], datasync: int, fip) -> int:
+    def fsyncdir(self, path: Optional[bytes], datasync: int, fip: fuse_fi_p) -> int:
         # Ignore raw_fi
         return self.operations.fsyncdir(None if path is None else path.decode(self.encoding), datasync, fip.contents.fh)
 
@@ -1685,13 +1686,13 @@ class FUSE:
                 setattr(config.contents, key, value)
         self._init(conn, config)
 
-    def destroy(self, private_data) -> None:
+    def destroy(self, private_data: c_void_p) -> None:
         return self.operations.destroy('/')
 
     def access(self, path: bytes, amode: int) -> int:
         return self.operations.access(path.decode(self.encoding), amode)
 
-    def create(self, path: bytes, mode: int, fip) -> int:
+    def create(self, path: bytes, mode: int, fip: fuse_fi_p) -> int:
         fi = fip.contents
         decoded_path = path.decode(self.encoding)
 
@@ -1703,11 +1704,11 @@ class FUSE:
             fi.fh = self.operations.create(decoded_path, mode, fi.flags)
         return 0
 
-    def ftruncate(self, path: Optional[bytes], length: int, fip) -> int:
+    def ftruncate(self, path: Optional[bytes], length: int, fip: fuse_fi_p) -> int:
         fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
         return self.operations.truncate(None if path is None else path.decode(self.encoding), length, fh)
 
-    def fgetattr(self, path: Optional[bytes], buf, fip) -> int:
+    def fgetattr(self, path: Optional[bytes], buf: c_stat_p, fip: Optional[fuse_fi_p]) -> int:
         ctypes.memset(buf, 0, ctypes.sizeof(c_stat))
 
         st = buf.contents
@@ -1717,11 +1718,11 @@ class FUSE:
         set_st_attrs(st, attrs, use_ns=self.use_ns)
         return 0
 
-    def lock(self, path: Optional[bytes], fip, cmd: int, lock) -> int:
+    def lock(self, path: Optional[bytes], fip: fuse_fi_p, cmd: int, lock) -> int:
         fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
         return self.operations.lock(None if path is None else path.decode(self.encoding), fh, cmd, lock)
 
-    def utimens_fuse_2(self, path: Optional[bytes], buf) -> int:
+    def utimens_fuse_2(self, path: Optional[bytes], buf: c_utimbuf_p) -> int:
         if buf:
             atime = time_of_timespec(buf.contents.actime, use_ns=self.use_ns)
             mtime = time_of_timespec(buf.contents.modtime, use_ns=self.use_ns)
@@ -1731,33 +1732,33 @@ class FUSE:
 
         return self.operations.utimens(None if path is None else path.decode(self.encoding), times)
 
-    def utimens_fuse_3(self, path: Optional[bytes], buf, fip) -> int:
+    def utimens_fuse_3(self, path: Optional[bytes], buf: c_utimbuf_p, fip: fuse_fi_p) -> int:
         return self.utimens_fuse_2(path, buf)
 
-    def bmap(self, path: bytes, blocksize: int, idx) -> int:
+    def bmap(self, path: bytes, blocksize: int, idx: c_uint64_p) -> int:
         return self.operations.bmap(path.decode(self.encoding), blocksize, idx)
 
-    def ioctl(self, path: Optional[bytes], cmd: int, arg, fip, flags: int, data) -> int:
+    def ioctl(self, path: Optional[bytes], cmd: int, arg: c_void_p, fip: fuse_fi_p, flags: int, data: c_void_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.ioctl(None if path is None else path.decode(self.encoding), cmd, arg, fh, flags, data)
 
-    def poll(self, path: Optional[bytes], fip, ph, reventsp) -> int:
+    def poll(self, path: Optional[bytes], fip: fuse_fi_p, ph, reventsp) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.poll(None if path is None else path.decode(self.encoding), fh, ph, reventsp)
 
-    def write_buf(self, path: bytes, buf, offset: int, fip) -> int:
+    def write_buf(self, path: bytes, buf: fuse_bufvec_p, offset: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.write_buf(path.decode(self.encoding), buf, offset, fh)
 
-    def read_buf(self, path: bytes, bufpp, size: int, offset: int, fip) -> int:
+    def read_buf(self, path: bytes, bufpp: fuse_bufvec_pp, size: int, offset: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.read_buf(path.decode(self.encoding), bufpp, size, offset, fh)
 
-    def flock(self, path: bytes, fip, op: int) -> int:
+    def flock(self, path: bytes, fip: fuse_fi_p, op: int) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.flock(path.decode(self.encoding), fh, op)
 
-    def fallocate(self, path: Optional[bytes], mode: int, offset: int, size: int, fip) -> int:
+    def fallocate(self, path: Optional[bytes], mode: int, offset: int, size: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.fallocate(None if path is None else path.decode(self.encoding), mode, offset, size, fh)
 
@@ -1802,7 +1803,7 @@ class Operations:
         return 0
 
     @_nullable_dummy_function
-    def bmap(self, path: str, blocksize: int, idx) -> int:
+    def bmap(self, path: str, blocksize: int, idx: c_uint64_p) -> int:
         return 0
 
     @_nullable_dummy_function
@@ -1814,7 +1815,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def create(self, path: str, mode: int, fi=None) -> int:
+    def create(self, path: str, mode: int, fi: Optional[Union[fuse_file_info, int]] = None) -> int:
         '''
         When raw_fi is False (default case), create should return a
         numerical file handle and the signature of create becomes:
@@ -1882,7 +1883,7 @@ class Operations:
         '''
 
     @_nullable_dummy_function
-    def ioctl(self, path: str, cmd: int, arg, fh: int, flags: int, data) -> int:
+    def ioctl(self, path: str, cmd: int, arg: c_void_p, fh: int, flags: int, data: c_void_p) -> int:
         raise FuseOSError(errno.ENOTTY)
 
     @_nullable_dummy_function
@@ -1900,7 +1901,7 @@ class Operations:
         return []
 
     @_nullable_dummy_function
-    def getxattr(self, path: str, name: str, position=0) -> bytes:
+    def getxattr(self, path: str, name: str, position: int = 0) -> bytes:
         '''
         Return the extended file attribute value to the specified (key) name and path.
         Should return a bytes object.
@@ -2002,7 +2003,7 @@ class Operations:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
-    def setxattr(self, path: str, name: str, value: bytes, options, position=0) -> int:
+    def setxattr(self, path: str, name: str, value: bytes, options: int, position: int = 0) -> int:
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
@@ -2038,7 +2039,7 @@ class Operations:
         return 0
 
     @_nullable_dummy_function
-    def write(self, path: str, data, offset: int, fh: int) -> int:
+    def write(self, path: str, data: bytes, offset: int, fh: int) -> int:
         raise FuseOSError(errno.EROFS)
 
     @_nullable_dummy_function
@@ -2046,11 +2047,11 @@ class Operations:
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def write_buf(self, path: str, buf, offset: int, fh: int) -> int:
+    def write_buf(self, path: str, buf: fuse_bufvec_p, offset: int, fh: int) -> int:
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def read_buf(self, path: str, bufpp, size: int, offset: int, fh: int) -> int:
+    def read_buf(self, path: str, bufpp: fuse_bufvec_pp, size: int, offset: int, fh: int) -> int:
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
