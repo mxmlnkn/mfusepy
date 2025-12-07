@@ -5,6 +5,7 @@ import errno
 import logging
 import stat as stat_module
 import sys
+from typing import Optional
 
 import mfusepy as fuse
 
@@ -27,7 +28,7 @@ class ReaddirWithOffset(fuse.Operations):
         self._file_count = 1000
         self._readdir_call_limit = readdir_call_limit
 
-    def getattr(self, path, fh=None):
+    def getattr(self, path: str, fh: Optional[int]=None):
         self._readdir_calls = 0
         if path == '/':
             # Root directory
@@ -54,7 +55,7 @@ class ReaddirWithOffset(fuse.Operations):
 
         return st
 
-    def readdir(self, path, fh):
+    def readdir(self, path: str, fh: int):
         """
         Yield directory entries with incrementing offsets starting at 1.
         An offset of 0 should only be returned when the offsets should be ignored.

@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../e
 from loopback import cli as cli_loopback  # noqa: E402
 from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
-from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
+from readdir_returning_offsets import cli as cli_readdir_returning_offsets  # noqa: E402
 
 
 class RunCLI:
@@ -251,7 +251,7 @@ def test_use_inode(cli, tmp_path):
         assert os.stat(path).st_ino == 100
 
 
-@pytest.mark.parametrize('cli', [cli_readdir_with_offset])
+@pytest.mark.parametrize('cli', [cli_readdir_returning_offsets])
 def test_readdir_with_offset(cli, tmp_path):
     mount_point = tmp_path
     arguments = []
