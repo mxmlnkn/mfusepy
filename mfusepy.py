@@ -68,7 +68,7 @@ if _system == 'Windows' or _system.startswith('CYGWIN'):
 class c_timespec(ctypes.Structure):
     if _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-    elif _system == 'OpenBSD':
+    elif _system in ('OpenBSD', 'FreeBSD'):
         _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
     else:
         _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
