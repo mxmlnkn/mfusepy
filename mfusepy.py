@@ -728,6 +728,9 @@ class fuse_file_info(ctypes.Structure):
     _fields_ = _fuse_file_info_fields_
 
 
+fuse_fi_p = POINTER(fuse_file_info)
+
+
 if ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
     assert ctypes.sizeof(fuse_file_info) == 40
 
@@ -914,36 +917,24 @@ _fuse_operations_fields_mknod_to_symlink = [
     ('symlink', CFUNCTYPE(c_int, c_char_p, c_char_p)),
 ]
 _fuse_operations_fields_open_to_removexattr = [
-    ('open', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
-    ('read', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, POINTER(fuse_file_info))),
-    ('write', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, POINTER(fuse_file_info))),
+    ('open', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+    ('read', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, fuse_fi_p)),
+    ('write', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t, c_off_t, fuse_fi_p)),
     ('statfs', CFUNCTYPE(c_int, c_char_p, POINTER(c_statvfs))),
-    ('flush', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
-    ('release', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
-    ('fsync', CFUNCTYPE(c_int, c_char_p, c_int, POINTER(fuse_file_info))),
+    ('flush', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+    ('release', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+    ('fsync', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
     ('setxattr', setxattr_t),
     ('getxattr', getxattr_t),
     ('listxattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),
     ('removexattr', CFUNCTYPE(c_int, c_char_p, c_char_p)),
 ]
 _fuse_operations_fields_2_9 = [
-    (
-        'poll',
-        CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info), fuse_pollhandle_p, POINTER(c_uint)),
-    ),
-    (
-        'write_buf',
-        CFUNCTYPE(c_int, c_char_p, POINTER(fuse_bufvec), c_off_t, POINTER(fuse_file_info)),
-    ),
-    (
-        'read_buf',
-        CFUNCTYPE(c_int, c_char_p, POINTER(POINTER(fuse_bufvec)), c_size_t, c_off_t, POINTER(fuse_file_info)),
-    ),
-    ('flock', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info), c_int)),
-    (
-        'fallocate',
-        CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, POINTER(fuse_file_info)),
-    ),
+    ('poll', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, fuse_pollhandle_p, POINTER(c_uint))),
+    ('write_buf', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_bufvec), c_off_t, fuse_fi_p)),
+    ('read_buf', CFUNCTYPE(c_int, c_char_p, POINTER(POINTER(fuse_bufvec)), c_size_t, c_off_t, fuse_fi_p)),
+    ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
+    ('fallocate', CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, fuse_fi_p)),
 ]
 
 if fuse_version_major == 2:
@@ -962,7 +953,7 @@ if fuse_version_major == 2:
     ]
     if fuse_version_minor >= 3:
         _fuse_operations_fields += [
-            ('opendir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
+            ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
             (
                 'readdir',
                 CFUNCTYPE(
@@ -971,24 +962,24 @@ if fuse_version_major == 2:
                     c_void_p,
                     CFUNCTYPE(c_int, c_void_p, c_char_p, POINTER(c_stat), c_off_t),
                     c_off_t,
-                    POINTER(fuse_file_info),
+                    fuse_fi_p,
                 ),
             ),
-            ('releasedir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),
-            ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, POINTER(fuse_file_info))),
+            ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+            ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
             ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info))),
             ('destroy', CFUNCTYPE(c_void_p, c_void_p)),
         ]
     if fuse_version_minor >= 5:
         _fuse_operations_fields += [
             ('access', CFUNCTYPE(c_int, c_char_p, c_int)),
-            ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, POINTER(fuse_file_info))),
-            ('ftruncate', CFUNCTYPE(c_int, c_char_p, c_off_t, POINTER(fuse_file_info))),
-            ('fgetattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), POINTER(fuse_file_info))),
+            ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),
+            ('ftruncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),
+            ('fgetattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), fuse_fi_p)),
         ]
     if fuse_version_minor >= 6:
         _fuse_operations_fields += [
-            ('lock', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info), c_int, POINTER(c_flock_t))),
+            ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),
             ('utimens', CFUNCTYPE(c_int, c_char_p, POINTER(c_utimbuf))),
             ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, POINTER(c_uint64))),
         ]
@@ -998,10 +989,7 @@ if fuse_version_major == 2:
             ('flag_nopath', c_uint, 1),
             ('flag_utime_omit_ok', c_uint, 1),
             ('flag_reserved', c_uint, 29),
-            (
-                'ioctl',
-                CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, POINTER(fuse_file_info), c_uint, c_void_p),
-            ),
+            ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
         ]
     if fuse_version_minor >= 9:
         _fuse_operations_fields += _fuse_operations_fields_2_9
@@ -1041,40 +1029,39 @@ elif fuse_version_major == 3:
     #  - getattr, rename, chmod, chown, truncate, readdir, init, utimens, ioctl
     # fmt: off
     _fuse_operations_fields = [
-        ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), POINTER(fuse_file_info))),         # Added file info
+        ('getattr', CFUNCTYPE(c_int, c_char_p, POINTER(c_stat), fuse_fi_p)),                       # Added file info
         ('readlink', CFUNCTYPE(c_int, c_char_p, POINTER(c_byte), c_size_t)),                       # Same as v2.9
         *_fuse_operations_fields_mknod_to_symlink,
         ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
         ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
-        ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, POINTER(fuse_file_info))),                  # Added file info
-        ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, POINTER(fuse_file_info))),          # Added file info
-        ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, POINTER(fuse_file_info))),                # Added file info
+        ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                                # Added file info
+        ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, fuse_fi_p)),                        # Added file info
+        ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),                              # Added file info
         *_fuse_operations_fields_open_to_removexattr,
-        ('opendir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),                          # Same as v2.9
+        ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                        # Same as v2.9
         ('readdir', CFUNCTYPE(
-            c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, POINTER(fuse_file_info),
-            fuse_readdir_flags)),                                                                  # Added flags
-        ('releasedir', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info))),                       # Same as v2.9
-        ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, POINTER(fuse_file_info))),                  # Same as v2.9
+            c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, fuse_fi_p, fuse_readdir_flags)),  # Added flags
+        ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                     # Same as v2.9
+        ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                                # Same as v2.9
         ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),              # Added config
         ('destroy', CFUNCTYPE(c_void_p, c_void_p)),                                                # Same as v2.9
         ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
-        ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, POINTER(fuse_file_info))),                 # Same as v2.9
-        ('lock', CFUNCTYPE(c_int, c_char_p, POINTER(fuse_file_info), c_int, POINTER(c_flock_t))),  # Same as v2.9
-        ('utimens', CFUNCTYPE(c_int, c_char_p, POINTER(c_utimbuf), POINTER(fuse_file_info))),      # Added file info
+        ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
+        ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
+        ('utimens', CFUNCTYPE(c_int, c_char_p, POINTER(c_utimbuf), fuse_fi_p)),                    # Added file info
         ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, POINTER(c_uint64))),                         # Same as v2.9
         ('ioctl', CFUNCTYPE(                                                                       # Argument type
             c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
-            POINTER(fuse_file_info), c_uint, c_void_p)),
+            fuse_fi_p, c_uint, c_void_p)),
         *_fuse_operations_fields_2_9,
         (
             'copy_file_range',                                                                     # New
             CFUNCTYPE(
-                c_ssize_t, c_char_p, POINTER(fuse_file_info), c_off_t, c_char_p,
-                POINTER(fuse_file_info), c_off_t, c_size_t, c_int,
+                c_ssize_t, c_char_p, fuse_fi_p, c_off_t, c_char_p,
+                fuse_fi_p, c_off_t, c_size_t, c_int,
             ),
         ),
-        ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, POINTER(fuse_file_info))),          # New
+        ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                        # New
     ]
     # fmt: on
 
