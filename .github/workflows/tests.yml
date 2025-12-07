@@ -201,6 +201,9 @@ jobs:
           - os: freebsd
             version: '14.3'
             display_name: FreeBSD
+          - os: netbsd
+            version: '10.1'
+            display_name: NetBSD
 
     steps:
       - name: Check out repository
@@ -246,6 +249,45 @@ jobs:
                 python3 -m pip install .
 
                 # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+                python3 -m pytest -v -rs tests
+                ;;
+              netbsd)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                sudo -E /bin/sh -c 'grep -q "netbsd\.local" /etc/hosts || echo "127.0.0.1 netbsd.local netbsd" >> /etc/hosts'
+                sudo -E hostname netbsd.local
+                hostname
+
+                # Packages
+                sudo -E pkgin -y update
+                sudo -E pkgin -y install git fuse python311 py311-pip
+                sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
+
+                # Fix PATH
+                export PATH="/usr/pkg/bin:/usr/pkg/sbin:/sbin:/usr/sbin:$PATH"
+
+                # Make FUSE work (NetBSD)
+                sudo sysctl -w vfs.generic.usermount=1
+                sudo sysctl -w kern.sbmax=4194304
+                sudo chmod 666 /dev/puffs
+
+                # avoid permissions issue for perfused trace file:
+                sudo chmod 777 /var/run
+                export PERFUSE_DEBUG=0
+                export PERFUSE_DEBUG_LOGFILE=/tmp/perfused.log
+                export PERFUSE_TRACEFILE=/tmp/perfused.trace
+
+                # Install pip Dependencies
+                python3 -m pip install --upgrade pip
+                python3 -m pip install --upgrade wheel
+                python3 -m pip install --upgrade setuptools
+                python3 -m pip install "pynacl==1.5.0"
+                python3 -m pip install pytest ioctl-opt
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2 via NetBSD librefuse)
                 python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
                 python3 -m pytest -v -rs tests
                 ;;
