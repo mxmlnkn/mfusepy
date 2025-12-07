@@ -138,7 +138,8 @@ def test_read_write_file_system(cli, tmp_path):
         mount_point = tmp_path
         arguments = []
     with RunCLI(cli, mount_point, arguments):
-        assert os.path.isdir(mount_point)
+        st = os.stat(mount_point)
+        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={st!r}!"
 
         path = mount_point / "foo"
         assert not path.is_dir()
@@ -247,7 +248,9 @@ def test_use_inode(cli, tmp_path):
     mount_point = tmp_path
     arguments = []
     with RunCLI(cli, mount_point, arguments):
-        assert os.path.isdir(mount_point)
+        st = os.stat(mount_point)
+        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={st!r}!"
+
         assert os.stat(mount_point).st_ino == 31
 
         path = mount_point / "foo"
