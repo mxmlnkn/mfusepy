@@ -163,10 +163,10 @@ def test_read_write_file_system(cli, tmp_path):
 
         assert path.read_bytes() == b"bar"
 
-        # ioctl does not work for regular files on macOS / FreeBSD.
+        # ioctl does not work for regular files on macOS / *BSD.
         # IOCTL(2) for BSDs and macOS:
         # [ENOTTY] The fd argument is not associated with a character special device.
-        if not (sys.platform == 'darwin' or sys.platform.startswith('freebsd')) and cli == cli_memory:
+        if sys.platform == 'linux' and cli == cli_memory:
             with open(path, 'rb') as file:
                 # Test a simple ioctl command that returns the argument incremented by one.
                 argument = 123
