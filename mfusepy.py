@@ -64,7 +64,7 @@ if _system == 'Windows' or _system.startswith('CYGWIN'):
 class c_timespec(ctypes.Structure):
     if _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-    elif _system in ('OpenBSD', 'FreeBSD'):
+    elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
         _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
     else:
         _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
@@ -525,6 +525,52 @@ elif _system == 'OpenBSD':
         ('st_flags', ctypes.c_uint32),
         ('st_gen', ctypes.c_uint32),
         ('st_birthtimespec', c_timespec),
+    ]
+elif _system == 'NetBSD':
+    ENOTSUP = 45
+    c_dev_t = ctypes.c_uint64
+    c_uid_t = ctypes.c_uint32
+    c_gid_t = ctypes.c_uint32
+    c_mode_t = ctypes.c_uint32
+    c_off_t = ctypes.c_int64
+    c_pid_t = ctypes.c_int32
+    setxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_byte),
+        ctypes.c_size_t,
+        ctypes.c_int,
+    )
+    getxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int64,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_byte),
+        ctypes.c_size_t,
+    )
+    c_fsblkcnt_t = ctypes.c_uint64
+    c_fsfilcnt_t = ctypes.c_uint64
+    _c_stat__fields_ = [
+        ('st_dev', c_dev_t),
+        ('st_mode', c_mode_t),
+        ('_padding0', ctypes.c_uint32),
+        ('st_ino', ctypes.c_uint64),
+        ('st_nlink', ctypes.c_uint32),
+        ('st_uid', c_uid_t),
+        ('st_gid', c_gid_t),
+        ('_padding1', ctypes.c_uint32),
+        ('st_rdev', c_dev_t),
+        ('st_atimespec', c_timespec),
+        ('st_mtimespec', c_timespec),
+        ('st_ctimespec', c_timespec),
+        ('st_birthtimespec', c_timespec),
+        ('st_size', c_off_t),
+        ('st_blocks', ctypes.c_int64),
+        ('st_blksize', ctypes.c_uint32),
+        ('st_flags', ctypes.c_uint32),
+        ('st_gen', ctypes.c_uint32),
+        ('st_spare', ctypes.c_uint32 * 2),
     ]
 else:
     raise NotImplementedError(_system + ' is not supported.')
