@@ -91,6 +91,7 @@ class RunCLI:
     def wait_for_mount_point(self):
         t0 = time.time()
         while True:
+            st = os.stat(self.mount_point)  # helps diagnose getattr issues
             if os.path.ismount(self.mount_point):
                 break
             if time.time() - t0 > self.timeout:
@@ -107,6 +108,8 @@ class RunCLI:
                     + self.get_stdout()
                     + "\n===== mount =====\n"
                     + mount_list
+                    + "\n===== stat(self.mount_point) =====\n"
+                    + f"{st!r}\n"
                 )
             time.sleep(0.1)
 
