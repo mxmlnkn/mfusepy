@@ -37,6 +37,9 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_gid': os.getgid(),
             }
         }
+        # Simple counter to hand out fake file handles for BSD stacks that
+        # expect a non-zero fh from create/open. We don't actually use them.
+        self._fh_counter: int = 1
 
     @fuse.overrides(fuse.Operations)
     def chmod(self, path: str, mode: int) -> int:
@@ -49,6 +52,37 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         self.files[path]['st_uid'] = uid
         self.files[path]['st_gid'] = gid
         return 0
+
+    @fuse.overrides(fuse.Operations)
+    def access(self, path: str, mode: int) -> int:
+        """Basic POSIX access check based on stored mode/uid/gid.
+
+        NetBSD's librefuse relies on access() more than Linux. If this
+        returns EACCES, creation/writes may be denied before our create/write
+        methods are called.
+        """
+        st = self.getattr(path)
+        perm = st['st_mode'] & 0o777
+        uid, gid = os.getuid(), os.getgid()
+
+        if uid == st.get('st_uid'):
+            allowed = (perm >> 6) & 0b111
+        elif gid == st.get('st_gid'):
+            allowed = (perm >> 3) & 0b111
+        else:
+            allowed = perm & 0b111
+
+        need = 0
+        if mode & os.R_OK:
+            need |= 0b100
+        if mode & os.W_OK:
+            need |= 0b010
+        if mode & os.X_OK:
+            need |= 0b001
+
+        if (allowed & need) == need:
+            return 0
+        raise fuse.FuseOSError(errno.EACCES)
 
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
@@ -64,7 +98,9 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_uid': os.getuid(),
             'st_gid': os.getgid(),
         }
-        return 0
+        # Return a fake, non-zero file handle to satisfy stacks that expect it.
+        self._fh_counter += 1
+        return self._fh_counter
 
     @fuse.overrides(fuse.Operations)
     def getattr(self, path: str, fh=None) -> dict[str, Any]:
@@ -103,6 +139,31 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         self.files['/']['st_nlink'] += 1
         return 0
+
+    @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int) -> int:
+        """Handle file creation via mknod for regular files.
+
+        NetBSD frequently uses the mknod+open path for creating regular files.
+        """
+        if stat.S_ISREG(mode):
+            # Respect the permission bits for the new file
+            return self.create(path, mode & 0o777)
+        # No support for special files in this simple memory FS
+        raise fuse.FuseOSError(errno.EPERM)
+
+    @fuse.overrides(fuse.Operations)
+    def open(self, path: str, flags: int):
+        """Perform simple permission checks, hand out a fake fh.
+
+        BSD stacks may expect open() to validate write permissions.
+        """
+        # If opening with write intent, ensure the mode allows it
+        if (flags & os.O_WRONLY) or (flags & os.O_RDWR):
+            self.access(path, os.W_OK)
+        # Return a fake, non-zero file handle
+        self._fh_counter += 1
+        return self._fh_counter
 
     @fuse.overrides(fuse.Operations)
     def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
@@ -224,7 +285,9 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    fuse.FUSE(Memory(), args.mount, foreground=True)
+    # On NetBSD/librefuse, enabling default_permissions lets the kernel enforce
+    # our getattr() mode bits consistently with POSIX, avoiding premature EACCES.
+    fuse.FUSE(Memory(), args.mount, foreground=True, default_permissions=True)
 
 
 if __name__ == '__main__':
