@@ -68,7 +68,11 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         """
         st = self.getattr(path)
         perm = st['st_mode'] & 0o777
-        uid, gid = os.getuid(), os.getgid()
+        # Use the caller's credentials from FUSE context when available
+        try:
+            uid, gid, _ = fuse.fuse_get_context()
+        except Exception:
+            uid, gid = os.getuid(), os.getgid()
 
         if uid == st.get('st_uid'):
             allowed = (perm >> 6) & 0b111
@@ -92,6 +96,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
         now = int(time.time() * 1e9)
+        try:
+            uid, gid, _ = fuse.fuse_get_context()
+        except Exception:
+            uid, gid = os.getuid(), os.getgid()
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
@@ -100,8 +108,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             # ensure the file is owned by the current user
-            'st_uid': os.getuid(),
-            'st_gid': os.getgid(),
+            'st_uid': uid,
+            'st_gid': gid,
         }
         # Return a fake, non-zero file handle to satisfy stacks that expect it.
         self._fh_counter += 1
@@ -130,6 +138,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def mkdir(self, path: str, mode: int) -> int:
         now = int(time.time() * 1e9)
+        try:
+            uid, gid, _ = fuse.fuse_get_context()
+        except Exception:
+            uid, gid = os.getuid(), os.getgid()
         self.files[path] = {
             'st_mode': (stat.S_IFDIR | mode),
             'st_nlink': 2,
@@ -138,8 +150,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             # ensure the directory is owned by the current user
-            'st_uid': os.getuid(),
-            'st_gid': os.getgid(),
+            'st_uid': uid,
+            'st_gid': gid,
         }
 
         self.files['/']['st_nlink'] += 1
@@ -155,6 +167,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             # Respect the permission bits for the new file. For mknod we must
             # NOT return a file handle; just create the inode metadata.
             now = int(time.time() * 1e9)
+            try:
+                uid, gid, _ = fuse.fuse_get_context()
+            except Exception:
+                uid, gid = os.getuid(), os.getgid()
             self.files[path] = {
                 'st_mode': (stat.S_IFREG | (mode & 0o777)),
                 'st_nlink': 1,
@@ -162,8 +178,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
-                'st_uid': os.getuid(),
-                'st_gid': os.getgid(),
+                'st_uid': uid,
+                'st_gid': gid,
             }
             return 0
         # No support for special files in this simple memory FS
