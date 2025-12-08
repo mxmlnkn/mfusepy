@@ -6,16 +6,36 @@ import errno
 import fcntl
 import io
 import os
+import stat
 import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
+from types import ModuleType
+from typing import Optional
 
 import pytest
 from ioctl_opt import IOWR
+
+pwd: Optional[ModuleType]
+try:
+    import pwd as _pwd
+
+    pwd = _pwd
+except ImportError:
+    pwd = None
+
+grp: Optional[ModuleType]
+try:
+    import grp as _grp
+
+    grp = _grp
+except ImportError:
+    grp = None
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
@@ -50,6 +70,34 @@ def filter_platform_files(files):
     # ACLs: Access Control Lists for permissions.
     files = [f for f in files if not f.startswith("._")]
     return files
+
+def stat_readable(st, path=None):
+    """Return a single human-readable line from an os.stat_result."""
+    user_name = None
+    if pwd:
+        try:
+            user_name = pwd.getpwuid(st.st_uid).pw_name
+        except Exception:
+            pass
+    group_name = None
+    if grp:
+        try:
+            group_name = grp.getgrgid(st.st_gid).gr_name
+        except Exception:
+            pass
+
+    mode = stat.filemode(st.st_mode)
+    size = str(st.st_size)
+    user = f"{user_name or st.st_uid}"
+    group = f"{group_name or st.st_gid}"
+    atime = datetime.fromtimestamp(st.st_atime).isoformat()
+    ctime = datetime.fromtimestamp(st.st_ctime).isoformat()
+    mtime = datetime.fromtimestamp(st.st_mtime).isoformat()
+    dev = str(getattr(st, "st_dev", ""))
+    inode = str(getattr(st, "st_ino", ""))
+    nlink = str(getattr(st, "st_nlink", ""))
+
+    return f"{mode} {nlink} {user} {group} {size} a:{atime} c:{ctime} m:{mtime} {dev} {inode} {path or ''}"
 
 
 class RunCLI:
@@ -131,7 +179,7 @@ class RunCLI:
                     + "\n===== mount =====\n"
                     + mount_list
                     + "\n===== stat(self.mount_point) =====\n"
-                    + f"{st!r}\n"
+                    + f"{stat_readable(st)}\n"
                 )
             time.sleep(0.1)
 
@@ -164,11 +212,17 @@ def test_read_write_file_system(cli, tmp_path):
         arguments = []
     with RunCLI(cli, mount_point, arguments):
         st = os.stat(mount_point)
-        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={st!r}!"
+        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={stat_readable(st)}!"
 
         path = mount_point / "foo"
         assert not path.is_dir()
-        assert path.write_bytes(b"bar") == 3
+
+        try:
+            n = path.write_bytes(b"bar")
+        except PermissionError:
+            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}")
+        else:
+            assert n == 3
 
         assert path.exists()
         assert path.is_file()
@@ -284,14 +338,20 @@ def test_use_inode(cli, tmp_path):
     arguments = []
     with RunCLI(cli, mount_point, arguments):
         st = os.stat(mount_point)
-        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={st!r}!"
+        assert os.path.isdir(mount_point), f"{mount_point} is not a directory, st={stat_readable(st)}!"
 
         assert os.stat(mount_point).st_ino == 31
 
         path = mount_point / "foo"
         assert not path.is_dir()
 
-        assert path.write_bytes(b"bar") == 3
+        try:
+            n = path.write_bytes(b"bar")
+        except PermissionError:
+            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}")
+        else:
+            assert n == 3
+
         assert path.exists()
         assert path.is_file()
         assert not path.is_dir()
