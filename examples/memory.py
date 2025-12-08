@@ -37,6 +37,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_mtime': now,
                 'st_atime': now,
                 'st_nlink': 2,
+                'st_flags': 0,
                 # ensure the mount root is owned by the current user
                 'st_uid': os.getuid(),
                 'st_gid': os.getgid(),
@@ -122,6 +123,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_flags': 0,
             # ensure the file is owned by the current user
             'st_uid': uid,
             'st_gid': gid,
@@ -161,6 +163,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_flags': 0,
             # ensure the directory is owned by the current user
             'st_uid': uid,
             'st_gid': gid,
@@ -191,6 +194,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
+                'st_flags': 0,
                 'st_uid': uid,
                 'st_gid': gid,
             }
@@ -221,6 +225,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
+                'st_flags': 0,
                 'st_uid': uid,
                 'st_gid': gid,
             }
