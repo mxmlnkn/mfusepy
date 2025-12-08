@@ -27,7 +27,11 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         self.files: dict[str, dict[str, Any]] = {
             '/': {
                 # writable by owner only
-                'st_mode': (stat.S_IFDIR | 0o755),
+                # On NetBSD/librefuse, operations may run under slightly different
+                # credentials (perfused), leading to kernel-side EACCES on create
+                # if the directory isn't world-writable. Use 0777 for the root
+                # to avoid credential-mismatch denials while keeping this a demo FS.
+                'st_mode': (stat.S_IFDIR | 0o777),
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
