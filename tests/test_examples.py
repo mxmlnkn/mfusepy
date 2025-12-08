@@ -50,6 +50,15 @@ from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
 os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
 
 
+def get_mount_output() -> str:
+    """Return the output of the system's 'mount' command as a string."""
+    try:
+        completed = subprocess.run(["mount"], capture_output=True, check=True, text=True)
+        return completed.stdout
+    except Exception as exc:
+        return f"<Unable to run mount command>\n{exc}"
+
+
 def stat_readable(st, path=None):
     """Return a single human-readable line from an os.stat_result."""
     user_name = None
@@ -200,7 +209,8 @@ def test_read_write_file_system(cli, tmp_path):
         try:
             n = path.write_bytes(b"bar")
         except PermissionError:
-            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}")
+            mtab = get_mount_output()
+            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}, mtab:\n{mtab}")
         else:
             assert n == 3
 
@@ -320,7 +330,8 @@ def test_use_inode(cli, tmp_path):
         try:
             n = path.write_bytes(b"bar")
         except PermissionError:
-            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}")
+            mtab = get_mount_output()
+            pytest.fail(reason=f"PermissionError, mount_point: st={stat_readable(st)}, mtab:\n{mtab}")
         else:
             assert n == 3
 
