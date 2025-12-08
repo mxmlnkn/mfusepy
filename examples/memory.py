@@ -66,6 +66,11 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         returns EACCES, creation/writes may be denied before our create/write
         methods are called.
         """
+        # On NetBSD (librefuse/perfused), pre-create access checks can reject
+        # operations prematurely based on credential proxying. Be permissive
+        # and let later operations/permissions handle it.
+        if sys.platform.startswith('netbsd'):
+            return 0
         # If the path does not exist yet (e.g., being created), BSD stacks
         # may still call access(). In that case, be permissive and allow
         # access so that the create/mknod path can proceed without an early
@@ -322,17 +327,12 @@ def cli(args=None):
     args = parser.parse_args(args)
 
     logging.basicConfig(level=logging.DEBUG)
-    # Build FUSE kwargs conservatively for NetBSD/librefuse.
-    # default_permissions may cause premature EACCES on NetBSD before our
-    # filesystem operations run. Avoid it there; keep it on other OSes.
-    fuse_kwargs = dict(foreground=True)
+    # Build FUSE kwargs: enable default_permissions everywhere so the kernel
+    # enforces mode bits consistently, and add allow_other on NetBSD to cope
+    # with potential credential proxying by perfused.
+    fuse_kwargs = dict(foreground=True, default_permissions=True)
     if sys.platform.startswith('netbsd'):
-        # NetBSD/perfused may proxy credentials; allow_other avoids denials when
-        # the kernel believes requests come from a different uid than the mounter.
         fuse_kwargs['allow_other'] = True
-    else:
-        # On non-NetBSD, let the kernel enforce mode bits for predictability.
-        fuse_kwargs['default_permissions'] = True
     fuse.FUSE(Memory(), args.mount, **fuse_kwargs)
 
 
