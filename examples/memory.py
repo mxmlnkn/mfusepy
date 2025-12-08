@@ -66,7 +66,18 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         returns EACCES, creation/writes may be denied before our create/write
         methods are called.
         """
-        st = self.getattr(path)
+        # If the path does not exist yet (e.g., being created), BSD stacks
+        # may still call access(). In that case, validate against the parent
+        # directory's permissions instead.
+        try:
+            st = self.getattr(path)
+        except fuse.FuseOSError as e:
+            if e.errno == errno.ENOENT:
+                # Use parent directory for permission check
+                parent = path.rsplit('/', 1)[0] or '/'
+                st = self.getattr(parent)
+            else:
+                raise
         perm = st['st_mode'] & 0o777
         # Use the caller's credentials from FUSE context when available
         try:
@@ -96,10 +107,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
         now = int(time.time() * 1e9)
-        try:
-            uid, gid, _ = fuse.fuse_get_context()
-        except Exception:
-            uid, gid = os.getuid(), os.getgid()
+        # On NetBSD/perfused the caller credentials may not match the
+        # daemon's for permission purposes. Use the daemon's uid/gid so
+        # default_permissions evaluates consistently for the mounter.
+        uid, gid = os.getuid(), os.getgid()
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
@@ -138,10 +149,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def mkdir(self, path: str, mode: int) -> int:
         now = int(time.time() * 1e9)
-        try:
-            uid, gid, _ = fuse.fuse_get_context()
-        except Exception:
-            uid, gid = os.getuid(), os.getgid()
+        uid, gid = os.getuid(), os.getgid()
         self.files[path] = {
             'st_mode': (stat.S_IFDIR | mode),
             'st_nlink': 2,
@@ -167,10 +175,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             # Respect the permission bits for the new file. For mknod we must
             # NOT return a file handle; just create the inode metadata.
             now = int(time.time() * 1e9)
-            try:
-                uid, gid, _ = fuse.fuse_get_context()
-            except Exception:
-                uid, gid = os.getuid(), os.getgid()
+            uid, gid = os.getuid(), os.getgid()
             self.files[path] = {
                 'st_mode': (stat.S_IFREG | (mode & 0o777)),
                 'st_nlink': 1,
