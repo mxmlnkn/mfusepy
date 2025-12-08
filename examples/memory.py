@@ -175,7 +175,11 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         NetBSD frequently uses the mknod+open path for creating regular files.
         """
-        if stat.S_ISREG(mode):
+        # Some stacks (notably NetBSD/librefuse) may pass mode without a
+        # file-type bit set for regular files. Treat missing/unknown type as
+        # a request to create a regular file.
+        type_bits = stat.S_IFMT(mode) if hasattr(stat, 'S_IFMT') else (mode & 0o170000)
+        if type_bits in (0, stat.S_IFREG):
             # Respect the permission bits for the new file. For mknod we must
             # NOT return a file handle; just create the inode metadata.
             now = int(time.time() * 1e9)
@@ -200,9 +204,38 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         BSD stacks may expect open() to validate write permissions.
         """
-        # If opening with write intent, ensure the mode allows it
+        # Creation fallback: on some librefuse paths, create() may not be
+        # called even when O_CREAT is present. If the file doesn't exist yet
+        # and O_CREAT is set, synthesize the inode here so the open succeeds.
+        if (flags & os.O_CREAT) and (path not in self.files):
+            now = int(time.time() * 1e9)
+            # Emulate typical POSIX default mode (subject to umask)
+            current_umask = os.umask(0)
+            os.umask(current_umask)
+            mode = (0o666 & (~current_umask))
+            uid, gid = os.getuid(), os.getgid()
+            self.files[path] = {
+                'st_mode': (stat.S_IFREG | mode),
+                'st_nlink': 1,
+                'st_size': 0,
+                'st_ctime': now,
+                'st_mtime': now,
+                'st_atime': now,
+                'st_uid': uid,
+                'st_gid': gid,
+            }
+            # ensure data entry exists
+            _ = self.data[path]  # defaultdict will initialize to b''
+
+        # If opening with write intent, ensure the mode allows it (no-op on NetBSD per access())
         if (flags & os.O_WRONLY) or (flags & os.O_RDWR):
             self.access(path, os.W_OK)
+
+        # Handle truncate flag: clear file content and size
+        if (flags & os.O_TRUNC) and (path in self.files):
+            self.data[path] = b''
+            self.files[path]['st_size'] = 0
+            self.files[path]['st_mtime'] = int(time.time() * 1e9)
         # Return a fake, non-zero file handle
         self._fh_counter += 1
         return self._fh_counter
@@ -330,9 +363,13 @@ def cli(args=None):
     # Build FUSE kwargs: enable default_permissions everywhere so the kernel
     # enforces mode bits consistently, and add allow_other on NetBSD to cope
     # with potential credential proxying by perfused.
+    # Keep NetBSD/librefuse as permissive as possible to avoid kernel-side
+    # denials before our FS logic runs. On NetBSD do not use default_permissions
+    # and do not pass allow_other (perfused may behave unexpectedly with it).
+    # On other OSes, default_permissions yields predictable POSIX checks.
+    # Use default_permissions so the kernel honors POSIX mode bits across OSes.
+    # This helps especially on NetBSD/librefuse where kernel-side checks are stricter.
     fuse_kwargs = dict(foreground=True, default_permissions=True)
-    if sys.platform.startswith('netbsd'):
-        fuse_kwargs['allow_other'] = True
     fuse.FUSE(Memory(), args.mount, **fuse_kwargs)
 
 
