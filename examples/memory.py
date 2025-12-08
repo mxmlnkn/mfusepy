@@ -6,6 +6,7 @@ import ctypes
 import errno
 import logging
 import os
+import sys
 import stat
 import struct
 import time
@@ -151,8 +152,20 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         NetBSD frequently uses the mknod+open path for creating regular files.
         """
         if stat.S_ISREG(mode):
-            # Respect the permission bits for the new file
-            return self.create(path, mode & 0o777)
+            # Respect the permission bits for the new file. For mknod we must
+            # NOT return a file handle; just create the inode metadata.
+            now = int(time.time() * 1e9)
+            self.files[path] = {
+                'st_mode': (stat.S_IFREG | (mode & 0o777)),
+                'st_nlink': 1,
+                'st_size': 0,
+                'st_ctime': now,
+                'st_mtime': now,
+                'st_atime': now,
+                'st_uid': os.getuid(),
+                'st_gid': os.getgid(),
+            }
+            return 0
         # No support for special files in this simple memory FS
         raise fuse.FuseOSError(errno.EPERM)
 
@@ -291,7 +304,12 @@ def cli(args=None):
     logging.basicConfig(level=logging.DEBUG)
     # On NetBSD/librefuse, enabling default_permissions lets the kernel enforce
     # our getattr() mode bits consistently with POSIX, avoiding premature EACCES.
-    fuse.FUSE(Memory(), args.mount, foreground=True, default_permissions=True)
+    fuse_kwargs = dict(foreground=True, default_permissions=True)
+    # NetBSD/perfused may proxy credentials; allow_other avoids denials when
+    # the kernel believes requests come from a different uid than the mounter.
+    if sys.platform.startswith('netbsd'):
+        fuse_kwargs['allow_other'] = True
+    fuse.FUSE(Memory(), args.mount, **fuse_kwargs)
 
 
 if __name__ == '__main__':
