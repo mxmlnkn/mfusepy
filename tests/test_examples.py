@@ -50,7 +50,6 @@ from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
 os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
 
 
-<<<<<<< HEAD
 def filter_platform_files(files):
     """
     Filter out platform specific special files.
@@ -69,8 +68,6 @@ def get_mount_output() -> str:
         return f"<Unable to run mount command>\n{exc}"
 
 
-=======
->>>>>>> 4559ac0 (improve debugging: readable stat of mountpoint)
 def stat_readable(st, path=None):
     """Return a single human-readable line from an os.stat_result."""
     user_name = None
