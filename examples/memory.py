@@ -39,6 +39,9 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_nlink': 2,
                 'st_flags': 0,
                 'st_ino': 1,
+                'st_size': 0,
+                'st_blksize': 4096,
+                'st_blocks': 0,
                 # ensure the mount root is owned by the current user
                 'st_uid': os.getuid(),
                 'st_gid': os.getgid(),
