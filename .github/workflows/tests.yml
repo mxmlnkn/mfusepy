@@ -216,6 +216,7 @@ jobs:
                 # Unit Tests (FUSE 2 via NetBSD librefuse)
                 python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
                 python3 verify_offsets.py
+                python3 verify_statvfs.py
                 python3 -m pytest -v -rs tests
                 ;;
             esac

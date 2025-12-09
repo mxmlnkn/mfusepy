@@ -630,6 +630,35 @@ class c_statvfs(ctypes.Structure):
             ('f_flag', c_win_ulong),
             ('f_namemax', c_win_ulong),
         ]
+    elif _system == 'NetBSD':
+        # Source: /usr/include/sys/statvfs.h
+        _fields_ = [
+            ('f_flag', ctypes.c_ulong),
+            ('f_bsize', ctypes.c_ulong),
+            ('f_frsize', ctypes.c_ulong),
+            ('f_iosize', ctypes.c_ulong),
+            ('f_blocks', c_fsblkcnt_t),
+            ('f_bfree', c_fsblkcnt_t),
+            ('f_bavail', c_fsblkcnt_t),
+            ('f_bresvd', c_fsblkcnt_t),
+            ('f_files', c_fsfilcnt_t),
+            ('f_ffree', c_fsfilcnt_t),
+            ('f_favail', c_fsfilcnt_t),
+            ('f_fresvd', c_fsfilcnt_t),
+            ('f_syncreads', ctypes.c_uint64),
+            ('f_syncwrites', ctypes.c_uint64),
+            ('f_asyncreads', ctypes.c_uint64),
+            ('f_asyncwrites', ctypes.c_uint64),
+            ('f_fsidx', ctypes.c_int32 * 2),  # NetBSD compatible fsid
+            ('f_fsid', ctypes.c_ulong),  # POSIX compatible fsid
+            ('f_namemax', ctypes.c_ulong),
+            ('f_owner', c_uid_t),
+            ('f_spare', ctypes.c_uint64 * 4),
+            ('f_fstypename', ctypes.c_char * 32),
+            ('f_mntonname', ctypes.c_char * 1024),
+            ('f_mntfromname', ctypes.c_char * 1024),
+            ('f_mntfromlabel', ctypes.c_char * 1024),
+        ]
     else:
         # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
         _fields_ = [
