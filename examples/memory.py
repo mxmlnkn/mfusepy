@@ -36,6 +36,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
+                'st_birthtime': now,
                 'st_nlink': 2,
                 'st_flags': 0,
                 'st_ino': 1,
@@ -92,6 +93,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_birthtime': now,
             'st_flags': 0,
             'st_ino': self._ino_counter,
             # ensure the file is owned by the current user
@@ -136,6 +138,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': now,
             'st_mtime': now,
             'st_atime': now,
+            'st_birthtime': now,
             'st_flags': 0,
             'st_ino': self._ino_counter,
             # ensure the directory is owned by the current user
@@ -171,6 +174,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_ctime': now,
                 'st_mtime': now,
                 'st_atime': now,
+                'st_birthtime': now,
                 'st_flags': 0,
                 'st_ino': self._ino_counter,
                 'st_uid': uid,
@@ -261,6 +265,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_ctime': int(time.time() * 1e9),
             'st_mtime': int(time.time() * 1e9),
             'st_atime': int(time.time() * 1e9),
+            'st_birthtime': int(time.time() * 1e9),
             'st_flags': 0,
         }
         self._ino_counter += 1
