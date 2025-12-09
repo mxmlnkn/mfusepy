@@ -6,9 +6,9 @@ import ctypes
 import errno
 import logging
 import os
-import sys
 import stat
 import struct
+import sys
 import time
 from collections.abc import Iterable
 from typing import Any, Optional
@@ -38,6 +38,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_atime': now,
                 'st_nlink': 2,
                 'st_flags': 0,
+                'st_ino': 1,
                 # ensure the mount root is owned by the current user
                 'st_uid': os.getuid(),
                 'st_gid': os.getgid(),
@@ -46,6 +47,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         # Simple counter to hand out fake file handles for BSD stacks that
         # expect a non-zero fh from create/open. We don't actually use them.
         self._fh_counter: int = 1
+        self._ino_counter: int = 100
 
     @fuse.overrides(fuse.Operations)
     def chmod(self, path: str, mode: int) -> int:
@@ -86,10 +88,12 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             'st_flags': 0,
+            'st_ino': self._ino_counter,
             # ensure the file is owned by the current user
             'st_uid': uid,
             'st_gid': gid,
         }
+        self._ino_counter += 1
         # Return a fake, non-zero file handle to satisfy stacks that expect it.
         self._fh_counter += 1
         return self._fh_counter
@@ -126,11 +130,12 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             'st_flags': 0,
+            'st_ino': self._ino_counter,
             # ensure the directory is owned by the current user
             'st_uid': uid,
             'st_gid': gid,
         }
-
+        self._ino_counter += 1
         self.files['/']['st_nlink'] += 1
         return 0
 
@@ -158,9 +163,11 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_mtime': now,
                 'st_atime': now,
                 'st_flags': 0,
+                'st_ino': self._ino_counter,
                 'st_uid': uid,
                 'st_gid': gid,
             }
+            self._ino_counter += 1
             # ensure data entry exists
             _ = self.data[path]  # defaultdict will initialize to b''
 
@@ -233,7 +240,19 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def symlink(self, target: str, source: str) -> int:
-        self.files[target] = {'st_mode': (stat.S_IFLNK | 0o777), 'st_nlink': 1, 'st_size': len(source)}
+        self.files[target] = {
+            'st_mode': (stat.S_IFLNK | 0o777),
+            'st_nlink': 1,
+            'st_size': len(source),
+            'st_ino': self._ino_counter,
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
+            'st_ctime': int(time.time() * 1e9),
+            'st_mtime': int(time.time() * 1e9),
+            'st_atime': int(time.time() * 1e9),
+            'st_flags': 0,
+        }
+        self._ino_counter += 1
         self.data[target] = source.encode()
         return 0
 
