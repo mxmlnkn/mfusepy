@@ -59,55 +59,17 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         self.files[path]['st_gid'] = gid
         return 0
 
+    # FIX FOR NETBSD PERMISSIONS
     @fuse.overrides(fuse.Operations)
     def access(self, path: str, mode: int) -> int:
-        """Basic POSIX access check based on stored mode/uid/gid.
+        return 0
 
-        NetBSD's librefuse relies on access() more than Linux. If this
-        returns EACCES, creation/writes may be denied before our create/write
-        methods are called.
-        """
-        # On NetBSD (librefuse/perfused), pre-create access checks can reject
-        # operations prematurely based on credential proxying. Be permissive
-        # and let later operations/permissions handle it.
-        if sys.platform.startswith('netbsd'):
-            return 0
-        # If the path does not exist yet (e.g., being created), BSD stacks
-        # may still call access(). In that case, be permissive and allow
-        # access so that the create/mknod path can proceed without an early
-        # EACCES from the kernel/librefuse.
-        try:
-            st = self.getattr(path)
-        except fuse.FuseOSError as e:
-            if e.errno == errno.ENOENT:
-                return 0
-            else:
-                raise
-        perm = st['st_mode'] & 0o777
-        # Use the caller's credentials from FUSE context when available
-        try:
-            uid, gid, _ = fuse.fuse_get_context()
-        except Exception:
-            uid, gid = os.getuid(), os.getgid()
-
-        if uid == st.get('st_uid'):
-            allowed = (perm >> 6) & 0b111
-        elif gid == st.get('st_gid'):
-            allowed = (perm >> 3) & 0b111
-        else:
-            allowed = perm & 0b111
-
-        need = 0
-        if mode & os.R_OK:
-            need |= 0b100
-        if mode & os.W_OK:
-            need |= 0b010
-        if mode & os.X_OK:
-            need |= 0b001
-
-        if (allowed & need) == need:
-            return 0
-        raise fuse.FuseOSError(errno.EACCES)
+    # FIX FOR NETBSD FILE CREATION
+    @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int) -> int:
+        fh = self.create(path, mode)
+        self._fh_counter = fh -1  # undo increment in .create()
+        return 0
 
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
@@ -171,36 +133,6 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         self.files['/']['st_nlink'] += 1
         return 0
-
-    @fuse.overrides(fuse.Operations)
-    def mknod(self, path: str, mode: int, dev: int) -> int:
-        """Handle file creation via mknod for regular files.
-
-        NetBSD frequently uses the mknod+open path for creating regular files.
-        """
-        # Some stacks (notably NetBSD/librefuse) may pass mode without a
-        # file-type bit set for regular files. Treat missing/unknown type as
-        # a request to create a regular file.
-        type_bits = stat.S_IFMT(mode) if hasattr(stat, 'S_IFMT') else (mode & 0o170000)
-        if type_bits in (0, stat.S_IFREG):
-            # Respect the permission bits for the new file. For mknod we must
-            # NOT return a file handle; just create the inode metadata.
-            now = int(time.time() * 1e9)
-            uid, gid = os.getuid(), os.getgid()
-            self.files[path] = {
-                'st_mode': (stat.S_IFREG | (mode & 0o777)),
-                'st_nlink': 1,
-                'st_size': 0,
-                'st_ctime': now,
-                'st_mtime': now,
-                'st_atime': now,
-                'st_flags': 0,
-                'st_uid': uid,
-                'st_gid': gid,
-            }
-            return 0
-        # No support for special files in this simple memory FS
-        raise fuse.FuseOSError(errno.EPERM)
 
     @fuse.overrides(fuse.Operations)
     def open(self, path: str, flags: int):
