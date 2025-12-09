@@ -114,11 +114,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def getxattr(self, path: str, name: str, position=0) -> bytes:
         attrs: dict[str, bytes] = self.files[path].get('attrs', {})
-
         try:
             return attrs[name]
         except KeyError:
-            return b''
+            raise fuse.FuseOSError(getattr(errno, 'ENOATTR', 93))
 
     @fuse.overrides(fuse.Operations)
     def listxattr(self, path: str) -> Iterable[str]:
@@ -220,7 +219,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         try:
             del attrs[name]
         except KeyError:
-            pass
+            raise fuse.FuseOSError(getattr(errno, 'ENOATTR', 93))
 
         return 0
 
