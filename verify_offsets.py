@@ -1,8 +1,13 @@
+"""
+Verify that the Python and C offsets and struct sizes match.
+
+Originally made for NetBSD, but should also work on other OSes.
+"""
 import ctypes
 import os
 import sys
 
-# 1. Compile a tiny C program to get the REAL NetBSD offsets
+# 1. Compile a tiny C program to get the REAL OS offsets
 c_source = """
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -26,12 +31,13 @@ with open("check_st.c", "w") as f:
 
 os.system("cc check_st.c -o check_st")
 
-print("--- NETBSD C OFFSETS ---")
+print("--- OS C OFFSETS ---")
 sys.stdout.flush()
 os.system("./check_st")
 
 # 2. Check mfusepy's Python offsets
 import mfusepy
+
 print("\n--- PYTHON CTYPES OFFSETS ---")
 st = mfusepy.c_stat
 print(f"PY_MODE={getattr(st.st_mode, 'offset', 'N/A')}")
