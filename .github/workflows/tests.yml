@@ -199,7 +199,7 @@ jobs:
 
                 # avoid permissions issue for perfused trace file:
                 sudo chmod 777 /var/run
-                export PERFUSE_DEBUG=0
+                # export PERFUSE_DEBUG=0
                 export PERFUSE_DEBUG_LOGFILE=/tmp/perfused.log
                 export PERFUSE_TRACEFILE=/tmp/perfused.trace
 
@@ -218,11 +218,13 @@ jobs:
                 python3 verify_offsets.py
                 python3 verify_statvfs.py
                 python3 verify_critical_structs.py
+                # preserve pytest exit status, always show logs
                 rc=0
-                if ! python3 -m pytest -v -rs tests; then
-                  rc=$?
-                fi
+                python3 -m pytest -v -rs tests || rc=$?
+                sudo tail -n 50 /var/run/perfuse* || true
+                sudo tail -n 50 /var/log/perfuse* || true
                 sudo tail -n 50 "$PERFUSE_DEBUG_LOGFILE" || true
+                sudo tail -n 50 "$PERFUSE_TRACEFILE" || true
                 exit "$rc"
                 ;;
             esac
