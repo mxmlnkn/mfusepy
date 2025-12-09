@@ -249,7 +249,18 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def statfs(self, path: str) -> dict[str, int]:
-        return {'f_bsize': 512, 'f_blocks': 4096, 'f_bavail': 2048}
+        return {
+            'f_bsize': 4096,  # Block size
+            'f_frsize': 4096,  # Fragment size
+            'f_iosize': 4096,  # Optimal I/O size
+            'f_blocks': 4096,  # Total blocks
+            'f_bfree': 2048,  # Free blocks
+            'f_bavail': 2048,  # Available blocks
+            'f_files': 1000,  # Total inodes
+            'f_ffree': 500,  # Free inodes
+            'f_favail': 500,  # Available inodes
+            'f_namemax': 255,  # Max filename length
+        }
 
     @fuse.overrides(fuse.Operations)
     def symlink(self, target: str, source: str) -> int:
