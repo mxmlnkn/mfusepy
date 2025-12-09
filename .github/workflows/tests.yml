@@ -199,7 +199,7 @@ jobs:
 
                 # avoid permissions issue for perfused trace file:
                 sudo chmod 777 /var/run
-                # export PERFUSE_DEBUG=0
+                export PERFUSE_DEBUG=1
                 export PERFUSE_DEBUG_LOGFILE=/var/run/perfused.log
                 export PERFUSE_TRACEFILE=/var/run/perfused.trace
 
