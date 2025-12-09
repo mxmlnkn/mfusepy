@@ -333,7 +333,7 @@ def cli(args=None):
     # On other OSes, default_permissions yields predictable POSIX checks.
     # Use default_permissions so the kernel honors POSIX mode bits across OSes.
     # This helps especially on NetBSD/librefuse where kernel-side checks are stricter.
-    fuse_kwargs = dict(foreground=True, default_permissions=True)
+    fuse_kwargs = dict(foreground=True, default_permissions=False)
     fuse.FUSE(Memory(), args.mount, **fuse_kwargs)
 
 
