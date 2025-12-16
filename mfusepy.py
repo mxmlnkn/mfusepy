@@ -232,8 +232,8 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
         ctypes.c_uint32,
     )
     if _system == 'Darwin':
-        c_fsblkcnt_t: type = ctypes.c_uint
-        c_fsfilcnt_t: type = ctypes.c_uint
+        c_fsblkcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
+        c_fsfilcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
         _c_stat__fields_: Sequence[FieldsEntry] = [
             ('st_dev', c_dev_t),
             ('st_mode', c_mode_t),
