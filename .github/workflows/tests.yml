@@ -186,7 +186,7 @@ jobs:
 
                 # Packages
                 sudo -E pkgin -y update
-                sudo -E pkgin -y install git fuse python311 py311-pip
+                sudo -E pkgin -y install git fuse perfuse python311 py311-pip
                 sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
 
                 # Fix PATH
