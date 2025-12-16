@@ -233,8 +233,16 @@ def test_read_write_file_system(cli, tmp_path):
         assert not os.path.exists(mount_point / "bar")
 
         if cli != cli_loopback:
-            # TODO Why does macOS not return f_bsize as returned by our statvfs implementation?!
-            assert os.statvfs(mount_point).f_bsize == 16384 if sys.platform == 'darwin' else 512
+            # Looks like macOS always returns the memory page size here (16K Apple Silicon, 4K Intel)
+            # and not the value provided by the fuse fs implementation (here: 512).
+            # FreeBSD returns 65536 (why?).
+            if sys.platform == 'darwin':
+                expected_bsize = os.sysconf('SC_PAGE_SIZE')
+            elif sys.platform.startswith('freebsd'):
+                expected_bsize = 65536
+            else:
+                expected_bsize = 512
+            assert os.statvfs(mount_point).f_bsize == expected_bsize
             assert os.statvfs(mount_point).f_bavail == 2048
 
         for i in range(200):
