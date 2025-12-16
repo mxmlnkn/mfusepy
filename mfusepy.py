@@ -1161,7 +1161,7 @@ class FUSE:
         ('nothreads', '-s'),
     )
 
-    def __init__(self, operations, mountpoint: str, raw_fi: bool = False, encoding: str = 'utf-8', errors: str = 'strict', **kwargs) -> None:
+    def __init__(self, operations, mountpoint: str, raw_fi: bool = False, encoding: str = 'utf-8', errors: str = 'surrogateescape', **kwargs) -> None:
         '''
         Setting raw_fi to True will cause FUSE to pass the fuse_file_info
         class as is to Operations, instead of just the fh field.
