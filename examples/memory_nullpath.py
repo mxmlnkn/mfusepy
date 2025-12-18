@@ -227,6 +227,25 @@ class Memory(fuse.Operations):
         return 0
 
     @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int) -> int:
+        # OpenBSD calls mknod + open instead of create.
+        now = int(time.time() * 1e9)
+        self.files[path] = {
+            'st_mode': mode,
+            'st_nlink': 1,
+            'st_size': 0,
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
+            'st_ino': self._inode,
+            # ensure the file is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
+        }
+        self._inode += 1
+        return 0
+
+    @fuse.overrides(fuse.Operations)
     def write(self, path: str, data, offset: int, fh: int) -> int:
         path = self._opened[fh]
         self.data[path] = (
