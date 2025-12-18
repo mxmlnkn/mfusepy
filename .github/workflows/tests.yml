@@ -201,6 +201,9 @@ jobs:
           - os: freebsd
             version: '14.3'
             display_name: FreeBSD
+          - os: openbsd
+            version: '7.7'
+            display_name: OpenBSD
 
     steps:
       - name: Check out repository
@@ -248,5 +251,33 @@ jobs:
                 # Unit Tests (FUSE 2)
                 python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
                 python3 -m pytest -v -rs tests
+                ;;
+              openbsd)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                sudo -E /bin/sh -c 'grep -q "openbsd\.local" /etc/hosts || echo "127.0.0.1 openbsd.local openbsd" >> /etc/hosts'
+                sudo -E hostname openbsd.local
+                hostname
+
+                # Packages
+                sudo -E pkg_add git py3-pip py3-virtualenv py3-tox
+                sudo -E pkg_add sshfs-fuse  # needed for sideeffect of having fuse 2.6?
+
+                # Install pip Dependencies
+                python3 -m venv .venv
+                source .venv/bin/activate
+                python3 -m pip install --upgrade pip
+                python3 -m pip install --upgrade wheel
+                python3 -m pip install --upgrade setuptools
+                python3 -m pip install "pynacl==1.5.0"
+                python3 -m pip install pytest ioctl-opt
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+
+                # FUSE mounting only works as root on OpenBSD
+                sudo -E .venv/bin/python3 -m pytest -v -rs tests
                 ;;
             esac
