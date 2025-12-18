@@ -648,9 +648,10 @@ else:
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
 if fuse_version_major == 2:
+    _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' else ctypes.c_ulong
     _fuse_file_info_fields_: list[FieldsEntry] = [
         ('flags', ctypes.c_int),
-        ('fh_old', ctypes.c_ulong),
+        ('fh_old', _fh_old_type),
         ('writepage', ctypes.c_int),
         ('direct_io', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
         ('keep_cache', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
