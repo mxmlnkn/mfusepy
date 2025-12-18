@@ -186,6 +186,32 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         return 0
 
     @fuse.overrides(fuse.Operations)
+    def open(self, path: str, flags: int) -> int:
+        # OpenBSD calls mknod + open instead of create.
+        return 0
+
+    @fuse.overrides(fuse.Operations)
+    def release(self, path: str, fh: int) -> int:
+        return 0
+
+    @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int) -> int:
+        # OpenBSD calls mknod + open instead of create.
+        now = int(time.time() * 1e9)
+        self.files[path] = {
+            'st_mode': mode,
+            'st_nlink': 1,
+            'st_size': 0,
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
+            # ensure the file is owned by the current user
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid(),
+        }
+        return 0
+
+    @fuse.overrides(fuse.Operations)
     def write(self, path: str, data, offset: int, fh: int) -> int:
         self.data[path] = (
             # make sure the data gets inserted at the right offset
