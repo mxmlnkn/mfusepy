@@ -30,6 +30,15 @@ from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
 os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
 
 
+def filter_platform_files(files):
+    """
+    Filter out platform specific special files.
+    """
+    # macOS: remove ._* files
+    files = [f for f in files if not f.startswith("._")]
+    return files
+
+
 class RunCLI:
     def __init__(self, cli, mount_point, arguments):
         self.timeout = 4
@@ -206,7 +215,7 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.stat(path).st_atime == 1.5
         assert os.stat(path).st_mtime == 12.5
 
-        assert os.listdir(mount_point) == ["foo"]
+        assert filter_platform_files(os.listdir(mount_point)) == ["foo"]
         os.unlink(path)
         assert not path.exists()
 
@@ -215,7 +224,7 @@ def test_read_write_file_system(cli, tmp_path):
         assert not path.is_file()
         assert path.is_dir()
 
-        assert os.listdir(mount_point) == ["foo"]
+        assert filter_platform_files(os.listdir(mount_point)) == ["foo"]
         assert os.listdir(path) == []
 
         os.rename(mount_point / "foo", mount_point / "bar")
@@ -249,7 +258,7 @@ def test_read_write_file_system(cli, tmp_path):
             path = mount_point / str(i)
             assert not path.exists()
             assert path.write_bytes(b"bar") == 3
-            assert len(os.listdir(mount_point)) == i + 2
+            assert len(filter_platform_files(os.listdir(mount_point))) == i + 2
 
         for i in range(200):
             path = mount_point / str(i)
@@ -287,7 +296,7 @@ def test_readdir_with_offset(cli, tmp_path):
         path = mount_point / "foo"
         assert not path.is_dir()
 
-        assert len(set(os.listdir(mount_point))) == 1000
+        assert len(set(filter_platform_files(os.listdir(mount_point)))) == 1000
 
 
 if __name__ == '__main__':
