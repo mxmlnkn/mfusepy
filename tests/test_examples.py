@@ -30,6 +30,28 @@ from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
 os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
 
 
+def filter_platform_files(files):
+    # macOS uses files starting with ._ (known as AppleDouble files) to store file metadata and
+    # extended attributes when the underlying filesystem does not natively support macOS-specific features.
+    #
+    # Legacy macOS filesystems (HFS/HFS+) used a "dual-fork" structure:
+    #
+    # Data Fork: The actual content of the file (what most OSs see).
+    # Resource Fork: Metadata like icons, window positions, and application-specific resources.
+    # When you copy files to a filesystem that only supports a single data stream (like FAT32, SMB/network shares,
+    # or some FUSE implementations), macOS cannot "attach" the metadata to the file. Instead, it creates a second,
+    # hidden file with the ._ prefix to store that metadata.
+    #
+    # Common types of data found in these files include:
+    #
+    # Finder Info: Labels, tags, and whether the file should be hidden.
+    # Extended Attributes (xattrs): Custom metadata used by applications (e.g., "Where from" URL for downloads).
+    # Resource Forks: Legacy data used by older Mac apps.
+    # ACLs: Access Control Lists for permissions.
+    files = [f for f in files if not f.startswith("._")]
+    return files
+
+
 class RunCLI:
     def __init__(self, cli, mount_point, arguments):
         self.timeout = 4
@@ -206,7 +228,7 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.stat(path).st_atime == 1.5
         assert os.stat(path).st_mtime == 12.5
 
-        assert os.listdir(mount_point) == ["foo"]
+        assert filter_platform_files(os.listdir(mount_point)) == ["foo"]
         os.unlink(path)
         assert not path.exists()
 
@@ -215,7 +237,7 @@ def test_read_write_file_system(cli, tmp_path):
         assert not path.is_file()
         assert path.is_dir()
 
-        assert os.listdir(mount_point) == ["foo"]
+        assert filter_platform_files(os.listdir(mount_point)) == ["foo"]
         assert os.listdir(path) == []
 
         os.rename(mount_point / "foo", mount_point / "bar")
@@ -249,7 +271,7 @@ def test_read_write_file_system(cli, tmp_path):
             path = mount_point / str(i)
             assert not path.exists()
             assert path.write_bytes(b"bar") == 3
-            assert len(os.listdir(mount_point)) == i + 2
+            assert len(filter_platform_files(os.listdir(mount_point))) == i + 2
 
         for i in range(200):
             path = mount_point / str(i)
@@ -287,7 +309,7 @@ def test_readdir_with_offset(cli, tmp_path):
         path = mount_point / "foo"
         assert not path.is_dir()
 
-        assert len(set(os.listdir(mount_point))) == 1000
+        assert len(set(filter_platform_files(os.listdir(mount_point)))) == 1000
 
 
 if __name__ == '__main__':
