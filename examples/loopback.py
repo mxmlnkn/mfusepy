@@ -4,6 +4,7 @@ import argparse
 import errno
 import logging
 import os
+import stat
 import threading
 import time
 from typing import Any, Optional
@@ -92,8 +93,19 @@ class Loopback(fuse.Operations):
         return os.link(self.root + source, target)
 
     mkdir = static_with_root_path(os.mkdir)
-    mknod = static_with_root_path(os.mknod)
     open = static_with_root_path(os.open)
+
+    @with_root_path
+    @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int):
+        # OpenBSD calls mknod + open instead of create.
+        if stat.S_ISREG(mode):
+            # OpenBSD does not allow using os.mknod to create regular files.
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, mode & 0o7777)
+            os.close(fd)
+        else:
+            os.mknod(path, mode, dev)
+        return 0
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
