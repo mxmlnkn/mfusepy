@@ -66,7 +66,12 @@ class Loopback(fuse.Operations):
     @with_root_path
     @fuse.overrides(fuse.Operations)
     def getattr(self, path: str, fh: Optional[int] = None) -> dict[str, Any]:
-        st = os.lstat(path)
+        if fh is not None:
+            st = os.fstat(fh)
+        elif path is not None:
+            st = os.lstat(path)
+        else:
+            raise fuse.FuseOSError(errno.ENOENT)
         return {
             key.removesuffix('_ns'): getattr(st, key)
             for key in (
