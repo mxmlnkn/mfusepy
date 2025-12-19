@@ -14,14 +14,18 @@ import mfusepy as fuse
 
 def with_root_path(func):
     def wrapper(self, path, *args, **kwargs):
-        return func(self, self.root + path, *args, **kwargs)
+        if path is not None:
+            path = self.root + path
+        return func(self, path, *args, **kwargs)
 
     return wrapper
 
 
 def static_with_root_path(func):
     def wrapper(self, path, *args, **kwargs):
-        return func(self.root + path, *args, **kwargs)
+        if path is not None:
+            path = self.root + path
+        return func(path, *args, **kwargs)
 
     return wrapper
 
