@@ -1626,6 +1626,11 @@ class FUSE:
         use_readdir_with_offset = hasattr(self.operations, "readdir_with_offset") and not getattr(
             self.operations.readdir_with_offset, "libfuse_ignore", False
         )
+        if _system == 'OpenBSD':
+            # OpenBSD (FUSE 2.6) does not support readdir_with_offset with arbitrary offsets.
+            # It seems to call readdir_with_offset with offsets like 0, 4096, etc., which is
+            # not compatible with our example fs implementations.
+            use_readdir_with_offset = False
         items = (
             self.operations.readdir_with_offset(decoded_path, offset, fip.contents.fh)
             if use_readdir_with_offset

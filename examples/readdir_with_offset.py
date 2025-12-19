@@ -67,7 +67,7 @@ class ReaddirWithOffset(fuse.Operations):
             log.warning("If you see this message repeating, the FUSE wrapper bug is triggered!")
             sys.exit(1)
 
-        log.debug("readdir called %s times for path=%s", self._readdir_calls, path)
+        log.debug("readdir called %s times, path=%s, offset=%d", self._readdir_calls, path, offset)
 
         if path != '/':
             raise fuse.FuseOSError(errno.ENOENT)

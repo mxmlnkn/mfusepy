@@ -360,6 +360,8 @@ def test_use_inode(cli, tmp_path):
 
 @pytest.mark.parametrize('cli', [cli_readdir_with_offset, cli_readdir_returning_offsets])
 def test_readdir_with_offset(cli, tmp_path):
+    if sys.platform.startswith('openbsd') and cli == cli_readdir_with_offset:
+        pytest.skip("OpenBSD FUSE implementation uses byte offsets, incompatible with this example's logic")
     mount_point = tmp_path
     arguments = []
     with RunCLI(cli, mount_point, arguments):
