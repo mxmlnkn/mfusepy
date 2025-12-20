@@ -157,6 +157,11 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linu
         f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. Expected FUSE 2!"
     )
 
+# Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
+# For missing xattrs, errno is set to the ENOATTR value (e.g. in getxattr and removexattr).
+# But, on some other platforms, ENOATTR is missing; use the same value as ENODATA there.
+# We have a test that makes sure this is not None for all platforms we test on.
+ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git
 # and check the diff with:
@@ -1326,7 +1331,7 @@ class FUSE:
                     raise e
                 if isinstance(e.errno, int) and e.errno > 0:
                     is_valid_exception = (func.__name__.startswith("getattr") and e.errno == errno.ENOENT) or (
-                        func.__name__ == "getxattr" and e.errno == errno.ENODATA
+                        func.__name__ == "getxattr" and e.errno == ENOATTR
                     )
 
                     error_string = ""
