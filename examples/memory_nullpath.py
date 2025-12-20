@@ -216,7 +216,7 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def unlink(self, path: str) -> int:
-        self.data.pop(path)
+        self.data.pop(path, None)
         self.files.pop(path)
         return 0
 
