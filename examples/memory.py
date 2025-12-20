@@ -53,6 +53,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
         now = int(time.time() * 1e9)
+        uid, gid, _pid = fuse.fuse_get_context()
         self.files[path] = {
             'st_mode': (stat.S_IFREG | mode),
             'st_nlink': 1,
@@ -61,8 +62,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             # ensure the file is owned by the current user
-            'st_uid': os.getuid(),
-            'st_gid': os.getgid(),
+            'st_uid': uid,
+            'st_gid': gid,
         }
         return 0
 
@@ -89,6 +90,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def mkdir(self, path: str, mode: int) -> int:
         now = int(time.time() * 1e9)
+        uid, gid, _pid = fuse.fuse_get_context()
         self.files[path] = {
             'st_mode': (stat.S_IFDIR | mode),
             'st_nlink': 2,
@@ -97,8 +99,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             # ensure the directory is owned by the current user
-            'st_uid': os.getuid(),
-            'st_gid': os.getgid(),
+            'st_uid': uid,
+            'st_gid': gid,
         }
 
         self.files['/']['st_nlink'] += 1
@@ -198,6 +200,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     def mknod(self, path: str, mode: int, dev: int) -> int:
         # OpenBSD calls mknod + open instead of create.
         now = int(time.time() * 1e9)
+        uid, gid, _pid = fuse.fuse_get_context()
         self.files[path] = {
             'st_mode': mode,
             'st_nlink': 1,
@@ -206,8 +209,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_mtime': now,
             'st_atime': now,
             # ensure the file is owned by the current user
-            'st_uid': os.getuid(),
-            'st_gid': os.getgid(),
+            'st_uid': uid,
+            'st_gid': gid,
         }
         return 0
 
