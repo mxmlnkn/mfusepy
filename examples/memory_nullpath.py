@@ -95,7 +95,7 @@ class Memory(fuse.Operations):
         try:
             return attrs[name]
         except KeyError:
-            return b''
+            raise fuse.FuseOSError(fuse.ENOATTR)
 
     @fuse.overrides(fuse.Operations)
     def listxattr(self, path: str) -> Iterable[str]:
@@ -166,7 +166,7 @@ class Memory(fuse.Operations):
         try:
             del attrs[name]
         except KeyError:
-            pass
+            raise fuse.FuseOSError(fuse.ENOATTR)
 
         return 0
 
