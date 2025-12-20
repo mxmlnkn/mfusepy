@@ -33,6 +33,7 @@
  - `#143 Expose a file system as case-insensitive`
  - `#141 Windows version?`
  - `#136 RHEL8 RPM package`
+   - This is the task of Linux distribution package maintainers.
  - `#133 Slashes in filenames appear to cause "Input/output error"`
  - `#128 fusepy doesn't work when using 32bit personality`
  - `#117 Module name clash with python-fuse`
@@ -41,12 +42,15 @@
 
 ## Questions
 
+Most of these are non-actionable.
+
  - `#138 “nothreads” argument explanation`
- - `#134 Project status?`
+ - [x] `#134 Project status?`
  - `#132 fusepy doesn't work when in background mode`
  - `#123 Create/Copy file with content`
  - `#119 Documentation`
- - `#118 Publish a new release`
+ - [x] `#118 Publish a new release`
+   - Not relevant to mfusepy. Also, mfusepy already did publish a new release.
  - `#115 read not returning 0 to client`
  - `#112 truncate vs ftruncate using python std library`
  - `#105 fuse_get_context() returns 0-filled tuple during release bug needs example`
@@ -63,13 +67,16 @@
 ## Tests and documentation
 
  - [x] `#139 Memory example empty files and ENOATTR`
- - `#127 package the LICENSE file in distributions`
+   - Fixed with mfusepy#33.
+ - [x] `#126 package the LICENSE file in distributions`
+   - The sdist and the wheel, both include the LICENSE.
  - `#109 Add test cases for fuse_exit implementation needs tests`
- - `#99 Python versions`
+ - [x] `#99 Python versions`
+   - Tests for all supported Python versions >= 3.9 exist. There is no point in supporting 2.x anymore.
  - `#82 Create CONTRIBUTING.md`
- - `#80 Test infrastructure and suite`
+ - [x] `#80 Test infrastructure and suite`
  - `#78 update memory.py with mem.py from kungfuse?`
- - `#59 Include license text in its own file`
+ - [x] `#59 Include license text in its own file`
  - `#27 link to wiki from readme`
 
 ## Performance Improvement Ideas
