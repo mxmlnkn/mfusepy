@@ -62,7 +62,7 @@
 
 ## Tests and documentation
 
- - `#139 Memory example empty files and ENOATTR`
+ - [x] `#139 Memory example empty files and ENOATTR`
  - `#127 package the LICENSE file in distributions`
  - `#109 Add test cases for fuse_exit implementation needs tests`
  - `#99 Python versions`
