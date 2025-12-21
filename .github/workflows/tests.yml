@@ -117,7 +117,7 @@ jobs:
       - name: Install Dependencies (Linux)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
-          sudo apt-get -y install libfuse2 fuse3 wget
+          sudo apt-get -y install libfuse2 libfuse-dev libfuse3-dev fuse3 wget
 
       - name: Install Dependencies (MacOS)
         if: startsWith( matrix.os, 'macos' )
