@@ -125,6 +125,22 @@ if not _libfuse_path:
             arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
             _libfuse_path += f"bin\\winfsp-{arch}.dll"
         # pytype: enable=module-attr
+    elif _system == 'SunOS':
+        _libfuse_path = find_library('fuse') or find_library('fuse3')
+        if not _libfuse_path:
+            for path in [
+                '/usr/gnu/lib/amd64/libfuse.so',
+                '/usr/gnu/lib/libfuse.so',
+                '/usr/lib/amd64/libfuse.so.2',
+                '/usr/lib/libfuse.so.2',
+                '/usr/lib/amd64/libfuse.so',
+                '/usr/lib/libfuse.so',
+                '/lib/amd64/libfuse.so.2',
+                '/lib/libfuse.so.2',
+            ]:
+                if os.path.exists(path):
+                    _libfuse_path = path
+                    break
     elif _libfuse_name := os.environ.get('FUSE_LIBRARY_NAME'):
         _libfuse_path = find_library(_libfuse_name)
     else:
