@@ -85,6 +85,16 @@ STRUCT_NAMES = {
 if platform.system() != 'NetBSD':
     STRUCT_NAMES['fuse_file_info'] = ['flags', 'fh', 'lock_owner']
 
+if platform.system() == 'SunOS':
+    STRUCT_NAMES['statvfs'] += ['f_basetype', 'f_fstr']
+
+# libfuse < 2.8 (e.g., the illumos libfuse 2.7 used on OmniOS) has neither fuse_context.umask nor
+# the fuse_conn_info members capable, want, max_background, and congestion_threshold.
+# OpenBSD announces 2.6, but still has these struct members.
+if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) < (2, 8) and platform.system() != 'OpenBSD':
+    STRUCT_NAMES['fuse_context'].remove('umask')
+    STRUCT_NAMES['fuse_conn_info'] = ['proto_major', 'proto_minor', 'max_write', 'max_readahead']
+
 if mfusepy.fuse_version_major == 3:
     STRUCT_NAMES['fuse_config'] = [
         'set_gid',
@@ -178,6 +188,7 @@ def c_run(name: str, source: str) -> str:
             '/usr/local/include/osxfuse/fuse',
             '/usr/local/include/macfuse/fuse',
             '/usr/include/libfuse',
+            '/usr/gnu/include/fuse',
         ]
         if mfusepy.fuse_version_major == 3:
             include_paths += ['/usr/local/include/fuse3', '/usr/include/fuse3']
