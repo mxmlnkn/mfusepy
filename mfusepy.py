@@ -262,13 +262,14 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
         ]
     elif _system == 'FreeBSD':
         # FreeBSD amd64 struct stat layout
+        # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/stat.h#L159
         # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
         _c_stat__fields_ = [
             ('st_dev', ctypes.c_uint64),
             ('st_ino', ctypes.c_uint64),
             ('st_nlink', ctypes.c_uint64),
             ('st_mode', c_mode_t),
-            ('st_padding0', ctypes.c_uint16),
+            ('st_bsdflags', ctypes.c_int16),
             ('st_uid', c_uid_t),
             ('st_gid', c_gid_t),
             ('st_padding1', ctypes.c_uint32),
@@ -279,9 +280,11 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
             ('st_birthtimespec', c_timespec),
             ('st_size', c_off_t),
             ('st_blocks', ctypes.c_int64),
-            ('st_blksize', ctypes.c_int32),
+            ('st_blksize', ctypes.c_uint32),
             ('st_flags', ctypes.c_uint32),
             ('st_gen', ctypes.c_uint32),
+            ('st_filerev', ctypes.c_uint64),
+            ('st_spare', ctypes.c_int64 * 9),
         ]
     else:
         # Darwin-MacFuse fallback (legacy)
@@ -622,6 +625,8 @@ class c_statvfs(ctypes.Structure):
             ('f_bsize', ctypes.c_ulong),
             ('f_flag', ctypes.c_ulong),
             ('f_frsize', ctypes.c_ulong),
+            ('f_fsid', ctypes.c_ulong),
+            ('f_namemax', ctypes.c_ulong),
         ]
     elif _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [
