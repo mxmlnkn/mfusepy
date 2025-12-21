@@ -239,6 +239,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
     if _system == 'Darwin':
         c_fsblkcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
         c_fsfilcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
+        # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/stat.h
         _c_stat__fields_: Sequence[FieldsEntry] = [
             ('st_dev', c_dev_t),
             ('st_mode', c_mode_t),
@@ -257,7 +258,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
             ('st_flags', ctypes.c_int32),
             ('st_gen', ctypes.c_int32),
             ('st_lspare', ctypes.c_int32),
-            ('st_qspare', ctypes.c_int64),
+            ('st_qspare', ctypes.c_int64 * 2),
         ]
     elif _system == 'FreeBSD':
         # FreeBSD amd64 struct stat layout
