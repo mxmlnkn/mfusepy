@@ -341,6 +341,7 @@ elif _system == 'Linux':
             ('st_atimespec', c_timespec),
             ('st_mtimespec', c_timespec),
             ('st_ctimespec', c_timespec),
+            ('reserved', ctypes.c_long * 3),
         ]
     elif _machine == 'mips':
         _c_stat__fields_ = [
@@ -432,6 +433,7 @@ elif _system == 'Linux':
             ('st_atimespec', c_timespec),
             ('st_mtimespec', c_timespec),
             ('st_ctimespec', c_timespec),
+            ('__reserved', ctypes.c_ulong),  # unclear what this is
         ]
     else:
         # i686, use as fallback for everything else
@@ -686,6 +688,11 @@ class c_statvfs(ctypes.Structure):
             ('f_flag', ctypes.c_ulong),
             ('f_namemax', ctypes.c_ulong),
         ]
+        if _system == 'Linux':  # Linux x86_64 and aarch64
+            _fields_ += [
+                ('f_type', ctypes.c_uint),
+                ('__f_spare', ctypes.c_uint * 5),
+            ]
 
 
 if _system == 'Linux':
