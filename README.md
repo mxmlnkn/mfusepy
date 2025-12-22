@@ -78,8 +78,8 @@ In the end, there is mostly only some path-to-hash table in the high-level libfu
 
 | Project | License | Dependants | Notes
 |------------------------------------------------------------------|------|-----|------------------------|
-| [pyfuse3](https://github.com/libfuse/pyfuse3)                    | LGPL | [9](https://www.wheelodex.org/projects/pyfuse3/rdepends/) | ReadMe contains: "Warning - no longer developed!", and the last release was 11 months ago. |
-| [llfuse](https://github.com/python-llfuse/python-llfuse/)        | LGPL | [2](https://www.wheelodex.org/projects/llfuse/rdepends/) | ReadMe contains: ["Warning - no longer developed!"](https://github.com/python-llfuse/python-llfuse/issues/67), and the last release was 11 months ago. |
+| [pyfuse3](https://github.com/libfuse/pyfuse3)                    | LGPL | [9](https://www.wheelodex.org/projects/pyfuse3/rdepends/) | ReadMe contains: "Warning - no longer developed!". |
+| [llfuse](https://github.com/python-llfuse/python-llfuse/)        | LGPL | [2](https://www.wheelodex.org/projects/llfuse/rdepends/) | ReadMe contains: ["Warning - no longer developed!"](https://github.com/python-llfuse/python-llfuse/issues/67). |
 | [arvados-llfuse](https://github.com/arvados/python-llfuse/)      | LGPL | [1](https://www.wheelodex.org/projects/arvados-llfuse/rdepends/) | Fork of llfuse, but less up to date? |
 | [aliyundrive-fuse](https://github.com/messense/aliyundrive-fuse) | MIT  | [0](https://www.wheelodex.org/projects/aliyundrive-fuse/rdepends/) | Alibaba Cloud Disk FUSE disk mounting. "This repository has been archived by the owner on Mar 28, 2023". Documentation is only in Chinese. Read-only support. Multiple fizzled-out forks: [pikpak-fuse](https://github.com/ykxVK8yL5L/pikpak-fuse/), [alist-fuse](https://github.com/ykxVK8yL5L/alist-fuse) |
 
