@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mfusepy"
-version = "3.0.0"
+version = "3.1.0"
 description = "Ctypes bindings for the high-level API in libfuse 2 and 3"
 authors = [{name = "Maximilian Knespel", email = "mxmlnknp@gmail.com"}]
 license = {text = "ISC"}
@@ -24,6 +24,8 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX",
     "Operating System :: Unix",
+    "Operating System :: POSIX :: BSD :: FreeBSD",
+    "Operating System :: POSIX :: BSD :: OpenBSD",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
