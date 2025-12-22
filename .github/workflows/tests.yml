@@ -174,8 +174,7 @@ jobs:
           python3 -m pip install ratarmount
           python3 -m pip install --force-reinstall .
           mkdir -p mounted-tar
-          wget https://github.com/mxmlnkn/ratarmount/raw/refs/heads/master/tests/single-file.tar
-          ratarmount single-file.tar mounted-tar
+          ratarmount tests/single-file.tar mounted-tar
           [[ "$( cat mounted-tar/bar )" == "foo" ]]
           fusermount -u mounted-tar
 
@@ -185,8 +184,7 @@ jobs:
           python3 -m pip install git+https://github.com/ihaveamac/ninfs.git@main
           python3 -m pip install --force-reinstall .
           mkdir -p mounted-3dsx
-          wget https://github.com/videah/3dsfetch/raw/refs/heads/master/3dsfetch.3dsx
-          ninfs threedsx 3dsfetch.3dsx mounted-3dsx
+          ninfs threedsx tests/3dsfetch.3dsx mounted-3dsx
           [[ "$( md5sum mounted-3dsx/icon.smdh )" =~ "a3d784b6f20182ebdf964589cbf427c2" ]]
           fusermount -u mounted-3dsx
 
@@ -196,17 +194,18 @@ jobs:
     timeout-minutes: 10
 
     strategy:
-     matrix:
-        include:
-          - os: freebsd
-            version: '14.3'
-            display_name: FreeBSD
-          - os: openbsd
-            version: '7.7'
-            display_name: OpenBSD
-          - os: netbsd
-            version: '10.1'
-            display_name: NetBSD
+      fail-fast: false
+      matrix:
+         include:
+           - os: freebsd
+             version: '14.3'
+             display_name: FreeBSD
+           - os: openbsd
+             version: '7.7'
+             display_name: OpenBSD
+           - os: netbsd
+             version: '10.1'
+             display_name: NetBSD
 
     steps:
       - name: Check out repository
