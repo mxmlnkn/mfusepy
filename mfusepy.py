@@ -324,7 +324,8 @@ elif _system == 'Linux':
     )
     getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
 
-    # sys/stat.h
+    # https://github.com/torvalds/linux/blob/v6.18/arch/x86/include/uapi/asm/stat.h#L83-L104
+    # -> See /arch/<arch> subfolders. Unfortunately, arch=arm64 does not have stat.h for some reason.
     if _machine == 'x86_64':
         _c_stat__fields_ = [
             ('st_dev', c_dev_t),
