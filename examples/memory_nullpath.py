@@ -33,8 +33,8 @@ class Memory(fuse.Operations):
                 'st_nlink': 2,
                 'st_ino': 31,
                 # ensure the mount root is owned by the current user
-                'st_uid': os.getuid(),
-                'st_gid': os.getgid(),
+                'st_uid': os.getuid() if hasattr(os, 'getuid') else 0,
+                'st_gid': os.getgid() if hasattr(os, 'getgid') else 0,
             }
         }
         self._inode = 100
