@@ -178,6 +178,7 @@ def c_run(name: str, source: str) -> str:
             '/usr/local/include/osxfuse/fuse',
             '/usr/local/include/macfuse/fuse',
             '/usr/include/libfuse',
+            '/usr/gnu/include/fuse',
         ]
         if mfusepy.fuse_version_major == 3:
             include_paths += ['/usr/local/include/fuse3', '/usr/include/fuse3']
