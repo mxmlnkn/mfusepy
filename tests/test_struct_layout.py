@@ -1,108 +1,153 @@
 import ctypes
 import os
+import platform
+import pprint
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 import pytest
 
 import mfusepy
 
-STRUCT_NAMES = ["stat", "statvfs", "fuse_file_info"]
+pytestmark = pytest.mark.order(0)
 
-# we only check the struct members that are present on all supported platforms.
 
-C_CHECKER = '''
+# Only check the struct members that are present on all supported platforms.
+STRUCT_NAMES = {
+    'stat': [
+        'st_atimespec',
+        'st_blksize',
+        'st_blocks',
+        'st_ctimespec',
+        'st_dev',
+        'st_gid',
+        'st_ino',
+        'st_mode',
+        'st_mtimespec',
+        'st_nlink',
+        'st_rdev',
+        'st_size',
+        'st_uid',
+    ],
+    'statvfs': [
+        'f_bavail',
+        'f_bfree',
+        'f_blocks',
+        'f_bsize',
+        'f_favail',
+        'f_ffree',
+        'f_files',
+        'f_flag',
+        'f_frsize',
+        'f_fsid',
+        'f_namemax',
+    ],
+    'fuse_context': ['fuse', 'uid', 'gid', 'pid', 'umask'],
+    'fuse_conn_info': [
+        'proto_major',
+        'proto_minor',
+        'max_write',
+        'max_readahead',
+        'capable',
+        'want',
+        'max_background',
+        'congestion_threshold',
+    ],
+    'fuse_operations': [
+        'getattr',
+        'readlink',
+        'mknod',
+        'mkdir',
+        'unlink',
+        'rmdir',
+        'symlink',
+        'rename',
+        'link',
+        'chmod',
+        'chown',
+        'truncate',
+        'open',
+        'read',
+        'write',
+        'statfs',
+        'flush',
+        'release',
+        'fsync',
+        'setxattr',
+        'getxattr',
+        'listxattr',
+        'removexattr',
+    ],
+}
+
+if platform.system() != 'NetBSD':
+    STRUCT_NAMES['fuse_file_info'] = ['flags', 'fh', 'lock_owner']
+
+if mfusepy.fuse_version_major == 3:
+    STRUCT_NAMES['fuse_config'] = [
+        'set_gid',
+        'gid',
+        'set_uid',
+        'uid',
+        'set_mode',
+        'umask',
+        'entry_timeout',
+        'negative_timeout',
+        'attr_timeout',
+        'intr',
+        'intr_signal',
+        'remember',
+        'hard_remove',
+        'use_ino',
+        'readdir_ino',
+        'direct_io',
+        'kernel_cache',
+        'auto_cache',
+    ]
+
+
+C_CHECKER = r'''
 #include <stdio.h>
 #include <stddef.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <fuse.h>
 
-int main() {
-    // stat
-    printf("stat_size:%zu\\n", sizeof(struct stat));
-    printf("stat_st_atimespec_offset:%zu\\n", offsetof(struct stat, st_atime));
-    printf("stat_st_blksize_offset:%zu\\n", offsetof(struct stat, st_blksize));
-    printf("stat_st_blocks_offset:%zu\\n", offsetof(struct stat, st_blocks));
-    printf("stat_st_ctimespec_offset:%zu\\n", offsetof(struct stat, st_ctime));
-    printf("stat_st_dev_offset:%zu\\n", offsetof(struct stat, st_dev));
-    printf("stat_st_gid_offset:%zu\\n", offsetof(struct stat, st_gid));
-    printf("stat_st_ino_offset:%zu\\n", offsetof(struct stat, st_ino));
-    printf("stat_st_mode_offset:%zu\\n", offsetof(struct stat, st_mode));
-    printf("stat_st_mtimespec_offset:%zu\\n", offsetof(struct stat, st_mtime));
-    printf("stat_st_nlink_offset:%zu\\n", offsetof(struct stat, st_nlink));
-    printf("stat_st_rdev_offset:%zu\\n", offsetof(struct stat, st_rdev));
-    printf("stat_st_size_offset:%zu\\n", offsetof(struct stat, st_size));
-    printf("stat_st_uid_offset:%zu\\n", offsetof(struct stat, st_uid));
-    // statvfs
-    printf("statvfs_size:%zu\\n", sizeof(struct statvfs));
-    printf("statvfs_f_bavail_offset:%zu\\n", offsetof(struct statvfs, f_bavail));
-    printf("statvfs_f_bfree_offset:%zu\\n", offsetof(struct statvfs, f_bfree));
-    printf("statvfs_f_blocks_offset:%zu\\n", offsetof(struct statvfs, f_blocks));
-    printf("statvfs_f_bsize_offset:%zu\\n", offsetof(struct statvfs, f_bsize));
-    printf("statvfs_f_favail_offset:%zu\\n", offsetof(struct statvfs, f_favail));
-    printf("statvfs_f_ffree_offset:%zu\\n", offsetof(struct statvfs, f_ffree));
-    printf("statvfs_f_files_offset:%zu\\n", offsetof(struct statvfs, f_files));
-    printf("statvfs_f_flag_offset:%zu\\n", offsetof(struct statvfs, f_flag));
-    printf("statvfs_f_frsize_offset:%zu\\n", offsetof(struct statvfs, f_frsize));
-    printf("statvfs_f_fsid_offset:%zu\\n", offsetof(struct statvfs, f_fsid));
-    printf("statvfs_f_namemax_offset:%zu\\n", offsetof(struct statvfs, f_namemax));
-    // fuse_file_info - TODO: fix this later!
-    printf("fuse_file_info_size:%zu\\n", sizeof(struct fuse_file_info));
-    // printf("fuse_file_info_flags_offset:%zu\\n", offsetof(struct fuse_file_info, flags));
-    // printf("fuse_file_info_fh_offset:%zu\\n", offsetof(struct fuse_file_info, fh));
-    // printf("fuse_file_info_lock_owner_offset:%zu\\n", offsetof(struct fuse_file_info, lock_owner));
-    return 0;
-}
+#define PRINT_STAT_MEMBER_OFFSET(NAME) \
+    printf("stat.%s offset:%zu\n", #NAME, offsetof(struct stat, NAME));
+
+#define PRINT_STATVFS_MEMBER_OFFSET(NAME) \
+    printf("statvfs.%s offset:%zu\n", #NAME, offsetof(struct statvfs, NAME));
+
+#define PRINT_FUSE_FILE_INFO_MEMBER_OFFSET(NAME) \
+    printf("fuse_file_info.%s offset:%zu\n", #NAME, offsetof(struct fuse_file_info, NAME));
+
+int main()
+{
 '''
 
-py_infos = {
-    # stat
-    'stat_size': ctypes.sizeof(mfusepy.c_stat),
-    'stat_st_atimespec_offset': mfusepy.c_stat.st_atimespec.offset,
-    'stat_st_blksize_offset': mfusepy.c_stat.st_blksize.offset,
-    'stat_st_blocks_offset': mfusepy.c_stat.st_blocks.offset,
-    'stat_st_ctimespec_offset': mfusepy.c_stat.st_ctimespec.offset,
-    'stat_st_dev_offset': mfusepy.c_stat.st_dev.offset,
-    'stat_st_gid_offset': mfusepy.c_stat.st_gid.offset,
-    'stat_st_ino_offset': mfusepy.c_stat.st_ino.offset,
-    'stat_st_mode_offset': mfusepy.c_stat.st_mode.offset,
-    'stat_st_mtimespec_offset': mfusepy.c_stat.st_mtimespec.offset,
-    'stat_st_nlink_offset': mfusepy.c_stat.st_nlink.offset,
-    'stat_st_rdev_offset': mfusepy.c_stat.st_rdev.offset,
-    'stat_st_size_offset': mfusepy.c_stat.st_size.offset,
-    'stat_st_uid_offset': mfusepy.c_stat.st_uid.offset,
-    # statvfs
-    'statvfs_size': ctypes.sizeof(mfusepy.c_statvfs),
-    'statvfs_f_bavail_offset': mfusepy.c_statvfs.f_bavail.offset,
-    'statvfs_f_bfree_offset': mfusepy.c_statvfs.f_bfree.offset,
-    'statvfs_f_blocks_offset': mfusepy.c_statvfs.f_blocks.offset,
-    'statvfs_f_bsize_offset': mfusepy.c_statvfs.f_bsize.offset,
-    'statvfs_f_favail_offset': mfusepy.c_statvfs.f_favail.offset,
-    'statvfs_f_ffree_offset': mfusepy.c_statvfs.f_ffree.offset,
-    'statvfs_f_files_offset': mfusepy.c_statvfs.f_files.offset,
-    'statvfs_f_flag_offset': mfusepy.c_statvfs.f_flag.offset,
-    'statvfs_f_frsize_offset': mfusepy.c_statvfs.f_frsize.offset,
-    'statvfs_f_fsid_offset': mfusepy.c_statvfs.f_fsid.offset,
-    'statvfs_f_namemax_offset': mfusepy.c_statvfs.f_namemax.offset,
-    # fuse_file_info - TODO: fix this later!
-    'fuse_file_info_size': ctypes.sizeof(mfusepy.fuse_file_info),
-    # 'fuse_file_info_flags_offset': mfusepy.fuse_file_info.flags.offset,
-    # 'fuse_file_info_fh_offset': mfusepy.fuse_file_info.fh.offset,
-    # 'fuse_file_info_lock_owner_offset': mfusepy.fuse_file_info.lock_owner.offset,
-}
+PY_INFOS = {}
+for struct_name, member_names in STRUCT_NAMES.items():
+    fusepy_struct = getattr(mfusepy, struct_name, getattr(mfusepy, 'c_' + struct_name, None))
+    assert fusepy_struct is not None
 
-# Common locations for different OSes
-INCLUDE_PATHS = [
-    '/usr/local/include/fuse',
-    '/usr/include/fuse',
-    '/usr/local/include/fuse3',
-    '/usr/include/fuse3',
-    '/usr/local/include/osxfuse/fuse',
-    '/usr/local/include/macfuse/fuse',
-    '/usr/include/libfuse',
-]
+    PY_INFOS[struct_name + " size"] = ctypes.sizeof(fusepy_struct)
+    C_CHECKER += f"""\n    printf("{struct_name} size:%zu\\n", sizeof(struct {struct_name}));\n"""
+
+    for name in member_names:
+        PY_INFOS[f'{struct_name}.{name} offset'] = getattr(fusepy_struct, name).offset
+        # This naming discrepancy is not good but would be an API change, I think.
+        c_name = name.replace('timespec', 'time') if name.endswith('timespec') else name
+        C_CHECKER += f'    printf("{struct_name}.{name} offset:%zu\\n", offsetof(struct {struct_name}, {c_name}));\n'
+
+C_CHECKER += """
+    return 0;
+}
+"""
+
+print(C_CHECKER)
 
 
 def get_compiler():
@@ -121,19 +166,29 @@ def c_run(name: str, source: str) -> str:
     with tempfile.TemporaryDirectory() as tmpdir:
         c_file = os.path.join(tmpdir, name + '.c')
         exe_file = os.path.join(tmpdir, name)
+        preprocessed_file = os.path.join(tmpdir, name + '.preprocessed.c')
 
         with open(c_file, 'w', encoding='utf-8') as f:
             f.write(source)
 
-        # Determine FUSE version and compile flags
-        fuse_major = mfusepy.fuse_version_major
-        fuse_minor = mfusepy.fuse_version_minor
-        print(f"FUSE version: {fuse_major}.{fuse_minor}")
+        print(f"FUSE version: {mfusepy.fuse_version_major}.{mfusepy.fuse_version_minor}")
 
-        cflags = [f'-DFUSE_USE_VERSION={fuse_major}{fuse_minor}', '-D_FILE_OFFSET_BITS=64']
+        # Common include locations for different OSes
+        include_paths = [
+            '/usr/local/include/osxfuse/fuse',
+            '/usr/local/include/macfuse/fuse',
+            '/usr/include/libfuse',
+        ]
+        if mfusepy.fuse_version_major == 3:
+            include_paths += ['/usr/local/include/fuse3', '/usr/include/fuse3']
+        else:
+            include_paths += ['/usr/local/include/fuse', '/usr/include/fuse']
 
-        # Try to find fuse headers
-        cflags += [f'-I{path}' for path in INCLUDE_PATHS if os.path.exists(path)]
+        cflags = [
+            f'-DFUSE_USE_VERSION={mfusepy.fuse_version_major}{mfusepy.fuse_version_minor}',
+            '-D_FILE_OFFSET_BITS=64',
+        ]
+        cflags += [f'-I{path}' for path in include_paths if os.path.exists(path)]
 
         # Add possible pkg-config flags if available
         for fuse_lib in ("fuse", "fuse3"):
@@ -154,6 +209,21 @@ def c_run(name: str, source: str) -> str:
             print(f"Compiler stderr:\n{e.stderr}")
             assert e.returncode == 0, "Could not compile C program to verify sizes."
 
+        cmd = [get_compiler(), '-E', *cflags, c_file, '-o', preprocessed_file]
+        print(f"Preprocessing with: {' '.join(cmd)}")
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Compiler return code: {e.returncode}")
+            print(f"Compiler stdout:\n{e.stdout}")
+            print(f"Compiler stderr:\n{e.stderr}")
+            assert e.returncode == 0, "Could not compile C program to verify sizes."
+
+        for line in Path(preprocessed_file).read_text().split('\n'):
+            if not line.startswith('#') and line:
+                print(line)
+        print(preprocessed_file)
+
         output = subprocess.check_output([exe_file], text=True)
         return output
 
@@ -161,28 +231,24 @@ def c_run(name: str, source: str) -> str:
 @pytest.mark.skipif(os.name == 'nt', reason="C compiler check not implemented for Windows")
 def test_struct_layout():
     output = c_run("verify_structs", C_CHECKER)
-    c_infos = {}
-    for line in output.strip().split('\n'):
-        name, value = line.split(':')
-        c_infos[name] = int(value)
+    c_infos = {line.split(':', 1)[0]: int(line.split(':', 1)[1]) for line in output.strip().split('\n')}
+    pprint.pprint(c_infos)
 
     fail = False
-    for struct_name in STRUCT_NAMES:
-        key = f"{struct_name}_size"
-        if c_infos[key] == py_infos[key]:
+    for struct_name, member_names in STRUCT_NAMES.items():
+        key = f"{struct_name} size"
+        if c_infos[key] == PY_INFOS[key]:
             print(f"OK: {key} = {c_infos[key]}")
         else:
-            print(f"Mismatch for {key}: C={c_infos[key]}, Python={py_infos[key]}")
+            print(f"Mismatch for {key}: C={c_infos[key]}, Python={PY_INFOS[key]}")
             fail = True
-        struct_members = [
-            (key, value)
-            for key, value in c_infos.items()
-            if key.startswith(struct_name + '_') and key.endswith("_offset")
-        ]
-        for key, _ in sorted(struct_members, key=lambda x: x[1]):  # sort by offset
-            if c_infos[key] == py_infos[key]:
+
+        for name in member_names:
+            key = f"{struct_name}.{name} offset"
+            if c_infos[key] == PY_INFOS[key]:
                 print(f"OK: {key} = {c_infos[key]}")
             else:
-                print(f"Mismatch for {key}: C={c_infos[key]}, Python={py_infos[key]}")
+                print(f"Mismatch for {key}: C={c_infos[key]}, Python={PY_INFOS[key]}")
                 fail = True
+
     assert not fail, "Struct layout mismatch, see stdout output for details!"

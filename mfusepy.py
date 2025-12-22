@@ -34,6 +34,7 @@ from stat import S_IFDIR
 from typing import TYPE_CHECKING, Any, Optional, Union, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
+BitFieldsEntry = tuple[str, type, int]
 ReadDirResult = Iterable[Union[str, tuple[str, dict[str, int], int], tuple[str, int, int]]]
 
 if TYPE_CHECKING:
@@ -65,6 +66,8 @@ class c_timespec(ctypes.Structure):
     if _system == 'Windows' or _system.startswith('CYGWIN'):
         _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
     elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
+        # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/timespec.h#L47
+        # https://github.com/NetBSD/src/blob/netbsd-10/sys/arch/hpc/stand/include/machine/types.h#L40
         _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
     else:
         _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
@@ -742,9 +745,61 @@ else:
 #  - 3.14.1 -> 3.16.2: no change
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
-if fuse_version_major == 2:
+_fuse_file_info_fields_: list[FieldsEntry] = []
+_fuse_file_info_fields_bitfield: list[BitFieldsEntry] = []
+# Bogus check. It fixes the struct for NetBSD, but it makes the examples not run anymore!
+if _system == 'NetBSD_False':
+    # NetBSD has its own FUSE library reimplementation with mismatching struct layouts!
+    # writepage is a bitfield (as in libFUSE 3.x), but the fh_old member still exists and the reported version is 2.9!
+    # https://www.netbsd.org/docs/puffs/
+    # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L100-L129
+    # https://github.com/NetBSD/src/blob/netbsd-10/lib/librefuse/fuse.h#L100-L129
+    #  - fuse_file_info is unchanged between 10 and 11
+    #  - FUSE_USE_VERSION is not set, but is set to _REFUSE_VERSION_ (3.10) with a warning if not set!
+    #  - However, the CI prints FUSE version 2.9?!
+    #  - Seems there is no sane way to get the correct compiled version! This is again an absolute shit show!
+    # https://github.com/NetBSD/src/blob/netbsd-9/lib/librefuse/fuse.h#L51-L61
+    #  - fuse_file_info looks quite different and version is specified as 2.6!
+    #  - #define FUSE_USE_VERSION 26
+    fuse_version = (fuse_version_major, fuse_version_minor)
+    _fuse_file_info_fields_ = [
+        ('flags', ctypes.c_int32),
+        ('fh_old', ctypes.c_uint32),
+    ]
+
+    if fuse_version >= (2, 9):
+        _fuse_file_info_fields_bitfield += [('writepage', ctypes.c_int32, 1)]
+    else:
+        _fuse_file_info_fields_ += [('writepage', ctypes.c_int32)]
+
+    _fuse_file_info_fields_bitfield += [
+        ('direct_io', ctypes.c_uint32, 1),  # Introduced in FUSE 2.4
+        ('keep_cache', ctypes.c_uint32, 1),  # Introduced in FUSE 2.4
+        ('flush', ctypes.c_uint32, 1),  # Introduced in FUSE 2.6
+    ]
+    if fuse_version >= (2, 9):
+        _fuse_file_info_fields_bitfield += [
+            ('nonseekable', ctypes.c_uint, 1),  # Introduced in FUSE 2.8
+            ('flock_release', ctypes.c_uint, 1),  # Introduced in FUSE 2.9
+            ('cache_readdir', ctypes.c_uint, 1),  # Introduced in FUSE 3.5
+        ]
+
+    _fuse_file_info_flag_count = sum(x[2] for x in _fuse_file_info_fields_bitfield)
+    assert _fuse_file_info_flag_count < ctypes.sizeof(_fuse_uint32) * 8
+
+    _fuse_file_info_fields_ += _fuse_file_info_fields_bitfield
+    _fuse_file_info_fields_ += [
+        ('padding', _fuse_uint32, ctypes.sizeof(_fuse_uint32) * 8 - _fuse_file_info_flag_count),
+        ('fh', ctypes.c_uint64),
+        ('lock_owner', ctypes.c_uint64),
+    ]
+
+    if fuse_version >= (2, 9):
+        _fuse_file_info_fields_ += [('poll_events', ctypes.c_uint32)]
+
+elif fuse_version_major == 2:
     _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' else ctypes.c_ulong
-    _fuse_file_info_fields_: list[FieldsEntry] = [
+    _fuse_file_info_fields_ = [
         ('flags', ctypes.c_int),
         ('fh_old', _fh_old_type),
         ('writepage', ctypes.c_int),
@@ -882,10 +937,14 @@ _fuse_conn_info_fields: list[FieldsEntry] = [
     ('proto_major', ctypes.c_uint),
     ('proto_minor', ctypes.c_uint),
 ]
-if fuse_version_major == 2:
+# For some reason, NetBSD return 2.9 even though the API is 3.10!
+# The correct version is important for the struct layout!
+# https://github.com/NetBSD/src/blob/netbsd-10/lib/librefuse/fuse.h#L58-L59
+# However, the fuse_operations layout probably fits the advertised version because I had segfaults from utimens!
+if fuse_version_major == 2 or _system == 'NetBSD':  # No idea why NetBSD did not remove it -.-
     _fuse_conn_info_fields += [('async_read', _fuse_uint32)]
 _fuse_conn_info_fields += [('max_write', _fuse_uint32)]
-if fuse_version_major == 3:
+if fuse_version_major == 3 or _system == 'NetBSD':
     _fuse_conn_info_fields += [('max_read', _fuse_uint32)]
 _fuse_conn_info_fields += [
     ('max_readahead', _fuse_uint32),
@@ -894,11 +953,11 @@ _fuse_conn_info_fields += [
     ('max_background', _fuse_uint32),  # Added in 2.9
     ('congestion_threshold', _fuse_uint32),  # Added in 2.9
 ]
-if fuse_version_major == 2:
+if fuse_version_major == 2 and _system != 'NetBSD':
     _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 23)]
-elif fuse_version_major == 3:
+elif fuse_version_major == 3 or _system == 'NetBSD':
     _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
-    if fuse_version_minor < 17:
+    if fuse_version_minor < 17 or _system == 'NetBSD':
         _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 22)]
     else:
         _fuse_conn_info_fields += [
@@ -972,14 +1031,16 @@ if fuse_version_major == 3:
     # Another ABI break as discussed here: https://lists.debian.org/debian-devel/2024/03/msg00278.html
     # The break was in 3.14.1 NOT in 3.14.0, but I cannot query the bugfix version.
     # I'd hope that all 3.14.0 installations have been replaced by updates to 3.14.1.
-    if fuse_version_minor >= 14 and fuse_version_minor < 17:
+    # ... they have not. My own system, Ubuntu 24.04 uses fuse 3.14.0. Check for >= 3.15.
+    if fuse_version_minor >= 15 and fuse_version_minor < 17:
         _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
 
-    _fuse_config_fields_ += [
-        ('show_help', _fuse_int32),
-        ('modules', ctypes.c_char_p),
-        ('debug', _fuse_int32),
-    ]
+    if _system != 'NetBSD':
+        _fuse_config_fields_ += [
+            ('show_help', _fuse_int32),
+            ('modules', ctypes.c_char_p),
+            ('debug', _fuse_int32),
+        ]
 
     if fuse_version_minor >= 17:
         _fuse_config_fields_ += [
