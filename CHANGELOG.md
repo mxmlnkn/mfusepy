@@ -1,4 +1,33 @@
 
+# Version 3.1.0 built on 2025-12-23
+
+Most of the fixes and test/CI improvements were contributed by Thomas Waldmann. Many thanks!
+
+## API
+
+ - Add many more missing type hints.
+
+## Features
+
+ - Add `mfusepy.ENOATTR` to be used as the correct value for `getxattr` and `removexattr`.
+ - Make path decode/encode error policy configurable and switch from `strict` to `surrogateescape`.
+ - Add `readdir_with_offset` implementable interface method, which takes an additional `offset` argument.
+   Does not work correctly on OpenBSD. Help would be welcome.
+ - Translate some of the libfuse2-only options (`use_ino`, `direct_io`, `nopath`, ...) to the libfuse3 config struct.
+ - Allow to set fuse library name via `FUSE_LIBRARY_NAME` environment variable.
+ - Automatically test and therefore support Ubuntu 22.04/24.04 aarch64/x86_64, macOS 14/15 Intel/ARM,
+   FreeBSD 14.3, OpenBSD 7.7, NetBSD 10.1.
+
+## Fixes
+
+ - Fix type definitions and examples on OpenBSD, FreeBSD, NetBSD, macOS, and others.
+ - `readdir`: Also forward `st_ino` in case `use_ino` is set to True.
+ - Avoid `readdir` infinite loop by ignoring the offset and returning offset 0, to trigger non-offset mode.
+   Overwrite `readdir_with_offset` to actually make use of offsets.
+ - `getattr_fuse_3`: pass argument `fip` to `fgetattr`.
+ - Avoid null pointer dereferences for `fip` in `ftruncate`, `fgetattr`, and `lock`.
+
+
 # Version 3.0.0 built on 2025-08-01
 
 Version 2 was skipped because the git tags would have clashed with the original fusepy tags.
