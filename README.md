@@ -101,8 +101,10 @@ See some examples of how you can use mfusepy:
 mfusepy requires FUSE 2.6 (or later) and runs on:
 
 - Linux (i386, x86_64, PPC, arm64, MIPS)
-- Mac OS X (Intel, PowerPC)
+- macOS (Apple Silicon, Intel)
 - FreeBSD (i386, amd64)
+- NetBSD (amd64)
+- OpenBSD (amd64)
 
 While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7.org/linux/man-pages/man4/fuse.4.html), several user space libraries exist for easy access.
 `libfuse` acts as the reference implementation.
