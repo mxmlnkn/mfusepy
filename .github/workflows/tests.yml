@@ -155,6 +155,11 @@ jobs:
               python3 "$file" -h
           done
 
+      - name: Only test struct layout (MacOS)
+        if: startsWith( matrix.os, 'macos' )
+        run: |
+          python3 -m pytest -s -v -rs tests/test_struct_layout.py
+
       - name: Unit Tests (FUSE 2)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
