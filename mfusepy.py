@@ -946,15 +946,17 @@ if fuse_version_major == 2 or _system == 'NetBSD':  # No idea why NetBSD did not
 _fuse_conn_info_fields += [('max_write', _fuse_uint32)]
 if fuse_version_major == 3 or _system == 'NetBSD':
     _fuse_conn_info_fields += [('max_read', _fuse_uint32)]
+_fuse_conn_info_fields += [('max_readahead', _fuse_uint32)]
+if _system == 'Darwin':
+    _fuse_conn_info_fields += [('enable', _fuse_uint32)]  # TODO: is a bitfield
 _fuse_conn_info_fields += [
-    ('max_readahead', _fuse_uint32),
     ('capable', _fuse_uint32),  # Added in 2.8
     ('want', _fuse_uint32),  # Added in 2.8
     ('max_background', _fuse_uint32),  # Added in 2.9
     ('congestion_threshold', _fuse_uint32),  # Added in 2.9
 ]
 if fuse_version_major == 2 and _system != 'NetBSD':
-    _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 23)]
+    _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (22 if _system == 'Darwin' else 23))]
 elif fuse_version_major == 3 or _system == 'NetBSD':
     _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
     if fuse_version_minor < 17 or _system == 'NetBSD':
