@@ -748,7 +748,7 @@ _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3
 _fuse_file_info_fields_: list[FieldsEntry] = []
 _fuse_file_info_fields_bitfield: list[BitFieldsEntry] = []
 # Bogus check. It fixes the struct for NetBSD, but it makes the examples not run anymore!
-if _system == 'NetBSD_False':
+if _system == 'NetBSD':
     # NetBSD has its own FUSE library reimplementation with mismatching struct layouts!
     # writepage is a bitfield (as in libFUSE 3.x), but the fh_old member still exists and the reported version is 2.9!
     # https://www.netbsd.org/docs/puffs/

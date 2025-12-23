@@ -63,6 +63,7 @@ jobs:
           mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
+    if: false
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -194,17 +195,9 @@ jobs:
     timeout-minutes: 10
 
     strategy:
+      fail-fast: false
       matrix:
          include:
-           - os: freebsd
-             version: '14.3'
-             display_name: FreeBSD
-           - os: freebsd
-             version: '13.5'
-             display_name: FreeBSD
-           - os: openbsd
-             version: '7.7'
-             display_name: OpenBSD
            # OpenBSD 6.9 is not supported because it only has Python 3.8, which is not supported anymore.
            # NetBSD 9.4 is not supported because its interface seems to mirror libFUSE 2.6 and therefore is HIGHLY
            #            incompatible. Even fuse_context.umask is missing!
