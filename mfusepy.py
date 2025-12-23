@@ -100,6 +100,7 @@ if not _libfuse_path:
             find_library('fuse4x') or find_library('osxfuse') or find_library('fuse') or find_library('fuse-t')
         )
     elif _system == 'NetBSD':
+        # On NetBSD 10+ librefuse implements FUSE 3, targetting 3.10 compatibility.
         _libfuse_path = find_library('refuse')
     elif _system == 'Windows':
         # pytype: disable=module-attr
