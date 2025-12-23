@@ -234,7 +234,7 @@ jobs:
                 rc=0
                 python3 -m pytest -s -v -rs tests/test_struct_layout.py
                 # for now, run the tests as root, too many PermissionErrors:
-                sudo -E python3 -m pytest -s -v -rs tests || rc=$?
+                sudo -E python3 -m pytest -s -v -rs -k "not struct_layout" tests || rc=$?
                 exit "$rc"
                 ;;
             esac
