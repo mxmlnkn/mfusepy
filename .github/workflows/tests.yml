@@ -213,7 +213,7 @@ jobs:
 
                 # Packages
                 sudo -E pkgin -y update
-                sudo -E pkgin -y install git fuse perfuse python311 py311-pip
+                sudo -E pkgin -y install git pkgconf python311 py311-pip
                 sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
 
                 # Fix PATH
@@ -223,9 +223,6 @@ jobs:
                 sudo sysctl -w vfs.generic.usermount=1
                 sudo sysctl -w kern.sbmax=4194304
                 sudo chmod 666 /dev/puffs
-
-                # avoid permissions issue for perfused trace file:
-                sudo chmod 777 /var/run
 
                 # Install pip Dependencies
                 python3 -m pip install pytest pytest-order ioctl-opt
