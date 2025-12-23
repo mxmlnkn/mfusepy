@@ -147,7 +147,7 @@ C_CHECKER += """
 }
 """
 
-print(C_CHECKER)
+# print(C_CHECKER)
 
 
 def get_compiler():
