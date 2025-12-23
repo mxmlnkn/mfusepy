@@ -1155,6 +1155,12 @@ if fuse_version_major == 2:
         ]
     if fuse_version_minor >= 9:
         _fuse_operations_fields += _fuse_operations_fields_2_9
+        if _system == 'Darwin':
+            _fuse_operations_fields += [
+                ('reserved00', c_void_p),
+                ('reserved01', c_void_p),
+                ('__todo__', c_void_p * 11),  # TODO: misc. addtl. functions
+            ]
 elif fuse_version_major == 3:
     fuse_fill_dir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is USE_FILL_DIR_PLUS = (1 << 1).
     fuse_fill_dir_t = CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t, fuse_fill_dir_flags)
