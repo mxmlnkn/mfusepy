@@ -99,6 +99,9 @@ if not _libfuse_path:
         _libfuse_path = (
             find_library('fuse4x') or find_library('osxfuse') or find_library('fuse') or find_library('fuse-t')
         )
+    elif _system == 'NetBSD':
+        # On NetBSD 10+ librefuse implements FUSE 3, targetting 3.10 compatibility.
+        _libfuse_path = find_library('refuse')
     elif _system == 'Windows':
         # pytype: disable=module-attr
         try:
@@ -155,7 +158,7 @@ if fuse_version_major == 2 and fuse_version_minor < 6:
         f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
         "There have been several ABI breaks in each version. Libfuse < 2.6 is not supported!"
     )
-if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linux'):
+if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Linux', 'NetBSD')):
     raise AttributeError(
         f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. Expected FUSE 2!"
     )

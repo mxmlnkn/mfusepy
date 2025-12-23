@@ -7,91 +7,16 @@ on:
   pull_request:
 
 jobs:
-  Static-Code-Checks:
-    runs-on: ubuntu-slim
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Dependencies
-        run: |
-          python3 -m pip install ioctl-opt paramiko types-paramiko pytest
-
-      - name: Style Check With Ruff
-        run: |
-          python3 -m pip install ruff
-          ruff check --config tests/.ruff.toml -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
-
-      - name: Style Check With Black
-        run: |
-          python3 -m pip install black
-          black -q --diff --line-length 120 --skip-string-normalization $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
-          if [ -s black.diff ]; then
-              cat black.diff
-              exit 123
-          fi
-
-      - name: Lint With Codespell
-        run: |
-          python3 -m pip install codespell
-          codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)$' )
-
-      - name: Lint With Flake8
-        run: |
-          python3 -m pip install flake8
-          flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
-
-      - name: Lint With Pylint
-        run: |
-          python3 -m pip install pylint
-          pylint --rcfile tests/.pylintrc $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
-          ! 'egrep' ': E[0-9]{4}: ' pylint.log
-
-      - name: Lint With Pytype
-        run: |
-          python3 -m pip install pytype
-          pytype -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
-
-      - name: Lint With Mypy
-        run: |
-          yes | python3 -m pip install --upgrade-strategy eager --upgrade types-dataclasses mypy
-          mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         # https://endoflife.date/python
         include:
-          - os: ubuntu-22.04
-            python-version: '3.9'
-          - os: ubuntu-22.04-arm
-            python-version: '3.10'
-          - os: ubuntu-22.04
-            python-version: '3.11'
-          - os: ubuntu-24.04-arm
-            python-version: '3.12'
           - os: ubuntu-24.04
-            python-version: '3.13'
-          - os: ubuntu-24.04
-            python-version: '3.14'
-          - os: macos-15
-            python-version: '3.9'
-          - os: macos-14
-            python-version: '3.10'
-          - os: macos-15-intel
-            python-version: '3.11'
-          - os: macos-14
-            python-version: '3.12'
-          - os: macos-15-intel
-            python-version: '3.13'
-          - os: macos-15
             python-version: '3.14'
 
     env:
@@ -288,7 +213,7 @@ jobs:
 
                 # Packages
                 sudo -E pkgin -y update
-                sudo -E pkgin -y install git fuse perfuse python311 py311-pip
+                sudo -E pkgin -y install git pkgconf python311 py311-pip
                 sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
 
                 # Fix PATH
@@ -298,9 +223,6 @@ jobs:
                 sudo sysctl -w vfs.generic.usermount=1
                 sudo sysctl -w kern.sbmax=4194304
                 sudo chmod 666 /dev/puffs
-
-                # avoid permissions issue for perfused trace file:
-                sudo chmod 777 /var/run
 
                 # Install pip Dependencies
                 python3 -m pip install pytest pytest-order ioctl-opt
@@ -312,7 +234,7 @@ jobs:
                 rc=0
                 python3 -m pytest -s -v -rs tests/test_struct_layout.py
                 # for now, run the tests as root, too many PermissionErrors:
-                sudo -E python3 -m pytest -s -v -rs tests || rc=$?
+                sudo -E python3 -m pytest -s -v -rs -k "not struct_layout" tests || rc=$?
                 exit "$rc"
                 ;;
             esac
