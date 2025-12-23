@@ -219,10 +219,10 @@ def c_run(name: str, source: str) -> str:
             print(f"Compiler stderr:\n{e.stderr}")
             assert e.returncode == 0, "Could not compile C program to verify sizes."
 
-        for line in Path(preprocessed_file).read_text().split('\n'):
-            if not line.startswith('#') and line:
-                print(line)
-        print(preprocessed_file)
+        #for line in Path(preprocessed_file).read_text().split('\n'):
+        #    if not line.startswith('#') and line:
+        #        print(line)
+        #print(preprocessed_file)
 
         output = subprocess.check_output([exe_file], text=True)
         return output
@@ -232,7 +232,7 @@ def c_run(name: str, source: str) -> str:
 def test_struct_layout():
     output = c_run("verify_structs", C_CHECKER)
     c_infos = {line.split(':', 1)[0]: int(line.split(':', 1)[1]) for line in output.strip().split('\n')}
-    pprint.pprint(c_infos)
+    #pprint.pprint(c_infos)
 
     fail = False
     for struct_name, member_names in STRUCT_NAMES.items():
