@@ -1382,7 +1382,8 @@ class FUSE:
         }
 
         argsb = [arg.encode(encoding, self.errors) for arg in args]
-        argv = (ctypes.c_char_p * len(argsb))(*argsb)
+        argc = len(argsb)
+        argv = (ctypes.c_char_p * (argc + 1))(*argsb, None)  # Null terminate explicitly
 
         alternative_callbacks = {
             "readdir": ["readdir_with_offset"],
@@ -1446,7 +1447,7 @@ class FUSE:
         except ValueError:
             old_handler = SIG_DFL
 
-        err = fuse_main_real(len(argsb), argv, ctypes.pointer(fuse_ops), ctypes.sizeof(fuse_ops), None)
+        err = fuse_main_real(argc, argv, ctypes.pointer(fuse_ops), ctypes.sizeof(fuse_ops), None)
 
         try:
             signal(SIGINT, old_handler)
