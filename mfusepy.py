@@ -954,12 +954,16 @@ class fuse_context(ctypes.Structure):
         ('gid', c_gid_t),
         ('pid', c_pid_t),
         ('private_data', ctypes.c_void_p),
-        # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
-        # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
-        # shared library! It shouldn't hurt the other way around to have a larger struct than
-        # the shared library expects. The newer members will simply be ignored.
-        ('umask', c_mode_t),
     ]
+    # OpenBSD announces 2.6, but still has the umask struct member.
+    if fuse_version_major == 3 or (fuse_version_major == 2 and fuse_version_minor >= 8) or _system == 'OpenBSD':
+        _fields_ += [
+            # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
+            # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
+            # shared library! It shouldn't hurt the other way around to have a larger struct than
+            # the shared library expects. The newer members will simply be ignored.
+            ('umask', c_mode_t),
+        ]
 
 
 _libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
