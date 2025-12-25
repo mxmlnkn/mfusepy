@@ -6,6 +6,7 @@ import errno
 import fcntl
 import io
 import os
+import platform
 import stat
 import struct
 import subprocess
@@ -209,7 +210,11 @@ class RunCLI:
             time.sleep(0.1)
 
 
-@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
+# cli_memory* crashes/reboots on omniOS (SunOS)
+clis = [cli_loopback] if platform.system() == 'SunOS' else [cli_loopback, cli_memory, cli_memory_nullpath]
+
+
+@pytest.mark.parametrize('cli', clis)
 def test_read_write_file_system(cli, tmp_path):
     if cli == cli_loopback:
         mount_source = tmp_path / "folder"
