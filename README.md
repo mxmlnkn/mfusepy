@@ -113,7 +113,6 @@ While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7
  - [libfuse](https://github.com/openbsd/src/tree/master/lib/libfuse) (OpenBSD) (fuse.h [2](https://github.com/openbsd/src/blob/master/lib/libfuse/fuse.h))
  - [librefuse](https://github.com/NetBSD/src/tree/netbsd-8/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [2](https://github.com/NetBSD/src/blob/netbsd-8/lib/librefuse/fuse.h))
  - [macFUSE](https://github.com/macfuse/macfuse) (macOS), previously called [osxfuse](https://osxfuse.github.io/), (fuse.h [2](https://github.com/osxfuse/fuse/blob/master/include/fuse.h) [3](https://github.com/macfuse/library/blob/6a8b90a0ab2685af918d5788cfdb5186f07351ce/include/fuse.h))
- - [MacFUSE](https://code.google.com/archive/p/macfuse/) (macOS), no longer maintained
  - [FUSE-T](https://www.fuse-t.org/) (macOS), [GitHub](https://github.com/macos-fuse-t/fuse-t)
  - [WinFsp](https://github.com/billziss-gh/winfsp) (Windows) (fuse.h [2](https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h) [3](https://github.com/winfsp/winfsp/blob/master/inc/fuse3/fuse.h))
  - [Dokany](https://github.com/dokan-dev/dokany) (Windows) (fuse.h [2](https://github.com/dokan-dev/dokany/blob/master/dokan_fuse/include/fuse.h))
