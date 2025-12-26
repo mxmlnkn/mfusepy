@@ -1713,6 +1713,10 @@ class FUSE:
         )
 
     def statfs(self, path: bytes, buf: c_statvfs_p) -> int:
+        if _system == 'SunOS':
+            log.warning("statfs called on SunOS, returning ENOSYS to avoid kernel panic.")
+            return -errno.ENOSYS
+
         stv = buf.contents
         attrs = self.operations.statfs(path.decode(self.encoding, self.errors))
         for key, val in attrs.items():
