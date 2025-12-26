@@ -216,7 +216,9 @@ jobs:
            - os: netbsd
              version: '10.1'
              display_name: NetBSD
-
+           - os: omnios
+             version: r151056
+             display_name: OmniOS
 
     steps:
       - name: Check out repository
@@ -225,7 +227,7 @@ jobs:
           fetch-tags: true
 
       - name: Test on ${{ matrix.display_name }}
-        uses: cross-platform-actions/action@v0.29.0
+        uses: cross-platform-actions/action@v0.32.0
         with:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
@@ -318,6 +320,47 @@ jobs:
                 python3 -m pytest -s -v -rs tests/test_struct_layout.py
                 # for now, run the tests as root, too many PermissionErrors:
                 sudo -E python3 -m pytest -s -v -rs tests || rc=$?
+                exit "$rc"
+                ;;
+              omnios)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                sudo -E /bin/sh -c 'grep -q "omnios\.local" /etc/hosts || echo "127.0.0.1 omnios.local omnios" >> /etc/hosts'
+                sudo -E hostname omnios.local
+                hostname
+
+                # Packages
+                pfexec pkg install developer/versioning/git
+                pfexec pkg install developer/gcc14
+                pfexec pkg set-mediator -V 14 gcc
+
+                # driver + libfuse
+                pfexec pkg set-publisher -p https://sfe.opencsw.org/localhostomnios localhostomnios
+                pfexec pkg refresh localhostomnios
+                pfexec pkg install --accept system/file-system/fusefs
+                pfexec pkg install --accept system/file-system/libfuse
+                pfexec pkg install --accept system/file-system/libfuse/src
+                pkg list system/file-system/fusefs
+                pkg list system/file-system/libfuse
+                pkg list system/file-system/libfuse/src
+                pkg contents system/file-system/fusefs
+                pkg contents system/file-system/libfuse
+                pkg contents system/file-system/libfuse/src
+
+                # Install pip Dependencies
+                python3 -m pip install pytest pytest-order ioctl-opt
+
+                # Fix PATH
+                export PATH="/home/runner/.local/bin:$PATH"
+                echo $PATH
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+                # preserve pytest exit status, always show logs
+                rc=0
+                pfexec python3 -m pytest -v -rs tests || rc=$?
                 exit "$rc"
                 ;;
             esac

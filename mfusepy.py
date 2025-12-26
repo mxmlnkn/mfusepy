@@ -125,6 +125,22 @@ if not _libfuse_path:
             arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
             _libfuse_path += f"bin\\winfsp-{arch}.dll"
         # pytype: enable=module-attr
+    elif _system == 'SunOS':
+        _libfuse_path = find_library('fuse') or find_library('fuse3')
+        if not _libfuse_path:
+            for path in [
+                '/usr/gnu/lib/amd64/libfuse.so',
+                '/usr/gnu/lib/libfuse.so',
+                '/usr/lib/amd64/libfuse.so.2',
+                '/usr/lib/libfuse.so.2',
+                '/usr/lib/amd64/libfuse.so',
+                '/usr/lib/libfuse.so',
+                '/lib/amd64/libfuse.so.2',
+                '/lib/libfuse.so.2',
+            ]:
+                if os.path.exists(path):
+                    _libfuse_path = path
+                    break
     elif _libfuse_name := os.environ.get('FUSE_LIBRARY_NAME'):
         _libfuse_path = find_library(_libfuse_name)
     else:
@@ -588,6 +604,47 @@ elif _system == 'NetBSD':
         ('st_gen', ctypes.c_uint32),
         ('st_spare', ctypes.c_uint32 * 2),
     ]
+elif _system == 'SunOS':
+    ENOTSUP = 48
+    c_dev_t = ctypes.c_uint64
+    c_uid_t = ctypes.c_uint32
+    c_gid_t = ctypes.c_uint32
+    c_mode_t = ctypes.c_uint32
+    c_off_t = ctypes.c_int64
+    c_pid_t = ctypes.c_int32
+    setxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        c_byte_p,
+        ctypes.c_size_t,
+        ctypes.c_int,
+    )
+    getxattr_t = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        c_byte_p,
+        ctypes.c_size_t,
+    )
+    c_fsblkcnt_t = ctypes.c_uint64
+    c_fsfilcnt_t = ctypes.c_uint64
+    _c_stat__fields_ = [
+        ('st_dev', c_dev_t),
+        ('st_ino', ctypes.c_uint64),
+        ('st_mode', c_mode_t),
+        ('st_nlink', ctypes.c_uint32),
+        ('st_uid', c_uid_t),
+        ('st_gid', c_gid_t),
+        ('st_rdev', c_dev_t),
+        ('st_size', c_off_t),
+        ('st_atimespec', c_timespec),
+        ('st_mtimespec', c_timespec),
+        ('st_ctimespec', c_timespec),
+        ('st_blksize', ctypes.c_int32),
+        ('st_blocks', ctypes.c_int64),
+        ('st_fstype', ctypes.c_char * 16),
+    ]
 else:
     raise NotImplementedError(_system + ' is not supported.')
 
@@ -676,6 +733,23 @@ class c_statvfs(ctypes.Structure):
             ('f_mntonname', ctypes.c_char * 1024),
             ('f_mntfromname', ctypes.c_char * 1024),
             ('f_mntfromlabel', ctypes.c_char * 1024),
+        ]
+    elif _system == 'SunOS':
+        # Source: /usr/include/sys/statvfs.h
+        _fields_ = [
+            ('f_bsize', ctypes.c_ulong),
+            ('f_frsize', ctypes.c_ulong),
+            ('f_blocks', c_fsblkcnt_t),
+            ('f_bfree', c_fsblkcnt_t),
+            ('f_bavail', c_fsblkcnt_t),
+            ('f_files', c_fsfilcnt_t),
+            ('f_ffree', c_fsfilcnt_t),
+            ('f_favail', c_fsfilcnt_t),
+            ('f_fsid', ctypes.c_ulong),
+            ('f_basetype', ctypes.c_char * 16),
+            ('f_flag', ctypes.c_ulong),
+            ('f_namemax', ctypes.c_ulong),
+            ('f_fstr', ctypes.c_char * 32),
         ]
     else:
         # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
@@ -880,12 +954,16 @@ class fuse_context(ctypes.Structure):
         ('gid', c_gid_t),
         ('pid', c_pid_t),
         ('private_data', ctypes.c_void_p),
-        # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
-        # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
-        # shared library! It shouldn't hurt the other way around to have a larger struct than
-        # the shared library expects. The newer members will simply be ignored.
-        ('umask', c_mode_t),
     ]
+    # OpenBSD announces 2.6, but still has the umask struct member.
+    if fuse_version_major == 3 or (fuse_version_major == 2 and fuse_version_minor >= 8) or _system == 'OpenBSD':
+        _fields_ += [
+            # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
+            # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
+            # shared library! It shouldn't hurt the other way around to have a larger struct than
+            # the shared library expects. The newer members will simply be ignored.
+            ('umask', c_mode_t),
+        ]
 
 
 _libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
@@ -1635,6 +1713,10 @@ class FUSE:
         )
 
     def statfs(self, path: bytes, buf: c_statvfs_p) -> int:
+        if _system == 'SunOS':
+            log.warning("statfs called on SunOS, returning ENOSYS to avoid kernel panic.")
+            return -errno.ENOSYS
+
         stv = buf.contents
         attrs = self.operations.statfs(path.decode(self.encoding, self.errors))
         for key, val in attrs.items():

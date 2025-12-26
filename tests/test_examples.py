@@ -6,6 +6,7 @@ import errno
 import fcntl
 import io
 import os
+import platform
 import stat
 import struct
 import subprocess
@@ -209,7 +210,11 @@ class RunCLI:
             time.sleep(0.1)
 
 
-@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
+# cli_memory* crashes/reboots on omniOS (SunOS)
+clis = [cli_loopback, cli_memory, cli_memory_nullpath]
+
+
+@pytest.mark.parametrize('cli', clis)
 def test_read_write_file_system(cli, tmp_path):
     if cli == cli_loopback:
         mount_source = tmp_path / "folder"
@@ -329,8 +334,9 @@ def test_read_write_file_system(cli, tmp_path):
                 expected_bsize = 65536
             else:
                 expected_bsize = 512
-            assert os.statvfs(mount_point).f_bsize == expected_bsize
-            assert os.statvfs(mount_point).f_bavail == 2048
+            if platform.system() != 'SunOS':
+                assert os.statvfs(mount_point).f_bsize == expected_bsize
+                assert os.statvfs(mount_point).f_bavail == 2048
 
         for i in range(200):
             path = mount_point / str(i)

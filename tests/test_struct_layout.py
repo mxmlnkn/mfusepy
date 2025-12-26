@@ -85,6 +85,31 @@ STRUCT_NAMES = {
 if platform.system() != 'NetBSD':
     STRUCT_NAMES['fuse_file_info'] = ['flags', 'fh', 'lock_owner']
 
+if platform.system() == 'SunOS':
+    STRUCT_NAMES['statvfs'] = [
+        'f_bavail',
+        'f_bfree',
+        'f_blocks',
+        'f_bsize',
+        'f_favail',
+        'f_ffree',
+        'f_files',
+        'f_flag',
+        'f_frsize',
+        'f_fsid',
+        'f_namemax',
+        'f_basetype',  # SunOS only
+        'f_fstr',  # SunOS only
+    ]
+    STRUCT_NAMES['fuse_context'] = ['fuse', 'uid', 'gid', 'pid']  # no 'umask' on SunOS
+    STRUCT_NAMES['fuse_conn_info'] = [
+        'proto_major',
+        'proto_minor',
+        'max_write',
+        'max_readahead',
+        # 4 attrs not present on SunOS
+    ]
+
 if mfusepy.fuse_version_major == 3:
     STRUCT_NAMES['fuse_config'] = [
         'set_gid',
@@ -178,6 +203,7 @@ def c_run(name: str, source: str) -> str:
             '/usr/local/include/osxfuse/fuse',
             '/usr/local/include/macfuse/fuse',
             '/usr/include/libfuse',
+            '/usr/gnu/include/fuse',
         ]
         if mfusepy.fuse_version_major == 3:
             include_paths += ['/usr/local/include/fuse3', '/usr/include/fuse3']
