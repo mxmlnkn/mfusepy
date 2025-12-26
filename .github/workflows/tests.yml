@@ -347,11 +347,7 @@ jobs:
                 pkg contents system/file-system/libfuse/src
 
                 # Install pip Dependencies
-                python3 -m pip install --upgrade pip
-                python3 -m pip install --upgrade wheel
-                python3 -m pip install --upgrade setuptools
-                python3 -m pip install "pynacl==1.5.0"
-                python3 -m pip install pytest ioctl-opt
+                python3 -m pip install pytest pytest-order ioctl-opt
 
                 # Fix PATH
                 export PATH="/home/runner/.local/bin:$PATH"
