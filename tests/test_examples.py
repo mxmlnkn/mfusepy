@@ -211,7 +211,7 @@ class RunCLI:
 
 
 # cli_memory* crashes/reboots on omniOS (SunOS)
-clis = [cli_loopback] if platform.system() == 'SunOS' else [cli_loopback, cli_memory, cli_memory_nullpath]
+clis = [cli_loopback] if platform.system() == 'SunOS-False' else [cli_loopback, cli_memory, cli_memory_nullpath]
 
 
 @pytest.mark.parametrize('cli', clis)
