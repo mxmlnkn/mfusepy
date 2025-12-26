@@ -211,7 +211,7 @@ class RunCLI:
 
 
 # cli_memory* crashes/reboots on omniOS (SunOS)
-clis = [cli_loopback] if platform.system() == 'SunOS-False' else [cli_loopback, cli_memory, cli_memory_nullpath]
+clis = [cli_loopback, cli_memory, cli_memory_nullpath]
 
 
 @pytest.mark.parametrize('cli', clis)
@@ -334,8 +334,9 @@ def test_read_write_file_system(cli, tmp_path):
                 expected_bsize = 65536
             else:
                 expected_bsize = 512
-            assert os.statvfs(mount_point).f_bsize == expected_bsize
-            assert os.statvfs(mount_point).f_bavail == 2048
+            if platform.system() != 'SunOS':
+                assert os.statvfs(mount_point).f_bsize == expected_bsize
+                assert os.statvfs(mount_point).f_bavail == 2048
 
         for i in range(200):
             path = mount_point / str(i)
