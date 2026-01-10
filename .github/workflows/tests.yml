@@ -327,8 +327,8 @@ jobs:
                 ;;
               omnios)
                 # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
-                sudo -E /bin/sh -c 'grep -q "omnios\.local" /etc/hosts || echo "127.0.0.1 omnios.local omnios" >> /etc/hosts'
-                sudo -E hostname omnios.local
+                pfexec /bin/sh -c 'grep -q "omnios\.local" /etc/hosts || echo "127.0.0.1 omnios.local omnios" >> /etc/hosts'
+                pfexec hostname omnios.local
                 hostname
 
                 # Packages
@@ -341,13 +341,19 @@ jobs:
                 pfexec pkg refresh localhostomnios
                 pfexec pkg install --accept system/file-system/fusefs
                 pfexec pkg install --accept system/file-system/libfuse
-                pfexec pkg install --accept system/file-system/libfuse/src
                 pkg list system/file-system/fusefs
                 pkg list system/file-system/libfuse
-                pkg list system/file-system/libfuse/src
                 pkg contents system/file-system/fusefs
                 pkg contents system/file-system/libfuse
-                pkg contents system/file-system/libfuse/src
+
+                # Fetch custom build from Tom and install it
+                modinfo | grep fuse | awk '{print $1}' | while read id; do pfexec modunload -i $id; done
+                modinfo | grep fuse || true
+                curl -L https://www.wagner-net.com/~tom/fuse-files-sfe-omnios-r151054-f66c95f374.tar.bz2 -o /tmp/fuse-files.tar.bz2
+                pushd /
+                pfexec tar xvjf /tmp/fuse-files.tar.bz2
+                popd
+                ls -l /usr/gnu/lib/amd64/libfuse.so.2.7.1 /usr/gnu/lib/libfuse.so.2.7.1 /usr/kernel/drv/amd64/fuse
 
                 # Install pip Dependencies
                 python3 -m pip install pytest pytest-order ioctl-opt
