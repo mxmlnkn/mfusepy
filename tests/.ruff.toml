@@ -30,6 +30,7 @@ ignore = [
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
+external = ["W212"]
 
 [format]
 line-ending = "lf"
