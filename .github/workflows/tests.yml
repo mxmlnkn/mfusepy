@@ -187,7 +187,9 @@ jobs:
       - name: Test Compatibility (ninfs)
         if: ${{ startsWith( matrix.os, 'ubuntu' ) && matrix.python-version != '3.7' }}
         run: |
-          python3 -m pip install git+https://github.com/ihaveamac/ninfs.git@main
+          # https://github.com/ihaveamac/ninfs/commit/9554caa5ecb325a9893bce829fb17efc73d3622c
+          # ^ Increases requirement from 3.8 to 3.12 seemingly for no reason at all. There is no commit after it...
+          python3 -m pip install git+https://github.com/ihaveamac/ninfs.git@v2.0
           python3 -m pip install --force-reinstall .
           mkdir -p mounted-3dsx
           ninfs threedsx tests/3dsfetch.3dsx mounted-3dsx
