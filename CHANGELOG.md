@@ -1,4 +1,13 @@
 
+# Version 3.1.1 built on 2026-03-13
+
+## Fixes
+
+ - Pin to setuptools < 83 instead of <= 82 to allow matches against 82.0.1 and higher.
+   It still is pinned to <83 because of the
+   [license specifier API break disaster](https://github.com/pypa/setuptools/issues/4903).
+
+
 # Version 3.1.0 built on 2025-12-23
 
 Most of the fixes and test/CI improvements were contributed by Thomas Waldmann. Many thanks!

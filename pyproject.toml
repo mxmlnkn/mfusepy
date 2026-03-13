@@ -15,7 +15,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mfusepy"
-version = "3.1.0"
+version = "3.1.1"
 description = "Ctypes bindings for the high-level API in libfuse 2 and 3"
 authors = [{name = "Maximilian Knespel", email = "mxmlnknp@gmail.com"}]
 license = {text = "ISC"}
