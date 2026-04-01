@@ -1,0 +1,20 @@
+# .mailmap - Consolidate git author identities
+# See: https://git-scm.com/docs/gitmailmap
+#
+# Format: Canonical Name <canonical@email.com> Old Name <old@email.com>
+
+# Maximilian Knespel
+Maximilian Knespel <mxmlnkn@github.de> mxmlnkn <mxmlnkn@github.de>
+
+# Nikratio (SVN-era commits, case normalization)
+nikratio <nikratio@1ebed218-b0a3-11dd-8075-91d349ce83ee> Nikratio <Nikratio@1ebed218-b0a3-11dd-8075-91d349ce83ee>
+
+# Rian Hunter
+Rian Hunter <rian@alum.mit.edu> Rian Hunter <rian.hunter@no-reply.github.com>
+
+# Terence Honles
+Terence Honles <terence@honles.com> Terence D. Honles <terence@honles.com>
+Terence Honles <terence@honles.com> Terence Daniel Honles <terence@honles.com>
+
+# Thomas Waldmann
+Thomas Waldmann <tw@waldmann-edv.de> TW <tw@waldmann-edv.de>
