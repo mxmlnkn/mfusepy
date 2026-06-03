@@ -220,7 +220,7 @@ jobs:
              version: '10.1'
              display_name: NetBSD
            - os: omnios
-             version: r151056
+             version: r151058
              display_name: OmniOS
 
     steps:
