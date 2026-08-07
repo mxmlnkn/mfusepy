@@ -973,9 +973,93 @@ elif fuse_version_major == 3 or _system == 'NetBSD':
         ]
 
 
+# Feature flags for fuse_conn_info as defined in fuse_common.h. The kernel announces the supported
+# features in 'capable' and the file system requests the features it wants to be enabled in 'want'.
+# Note that libfuse 2 only knows the flags up to FUSE_CAP_IOCTL_DIR and that flags beyond 32 bits
+# require libfuse 3.17 or newer, which added the 64-bit 'capable_ext' and 'want_ext' members.
+# Use fuse_conn_info.set_feature_flag or Operations.wanted_features to request features because
+# requesting a feature that the kernel is not capable of makes libfuse fail the mount.
+FUSE_CAP_ASYNC_READ = 1 << 0
+FUSE_CAP_POSIX_LOCKS = 1 << 1
+FUSE_CAP_ATOMIC_O_TRUNC = 1 << 3
+FUSE_CAP_EXPORT_SUPPORT = 1 << 4
+FUSE_CAP_BIG_WRITES = 1 << 5  # libfuse 2 only. Always enabled in libfuse 3.
+FUSE_CAP_DONT_MASK = 1 << 6
+FUSE_CAP_SPLICE_WRITE = 1 << 7
+FUSE_CAP_SPLICE_MOVE = 1 << 8
+FUSE_CAP_SPLICE_READ = 1 << 9
+FUSE_CAP_FLOCK_LOCKS = 1 << 10
+FUSE_CAP_IOCTL_DIR = 1 << 11
+FUSE_CAP_AUTO_INVAL_DATA = 1 << 12
+FUSE_CAP_READDIRPLUS = 1 << 13
+FUSE_CAP_READDIRPLUS_AUTO = 1 << 14
+FUSE_CAP_ASYNC_DIO = 1 << 15
+FUSE_CAP_WRITEBACK_CACHE = 1 << 16
+FUSE_CAP_NO_OPEN_SUPPORT = 1 << 17
+FUSE_CAP_PARALLEL_DIROPS = 1 << 18
+FUSE_CAP_POSIX_ACL = 1 << 19
+FUSE_CAP_HANDLE_KILLPRIV = 1 << 20
+FUSE_CAP_HANDLE_KILLPRIV_V2 = 1 << 21
+FUSE_CAP_CACHE_SYMLINKS = 1 << 23
+FUSE_CAP_NO_OPENDIR_SUPPORT = 1 << 24
+FUSE_CAP_EXPLICIT_INVAL_DATA = 1 << 25
+FUSE_CAP_EXPIRE_ONLY = 1 << 26
+FUSE_CAP_SETXATTR_EXT = 1 << 27
+FUSE_CAP_DIRECT_IO_ALLOW_MMAP = 1 << 28
+FUSE_CAP_PASSTHROUGH = 1 << 29
+FUSE_CAP_NO_EXPORT_SUPPORT = 1 << 30
+FUSE_CAP_OVER_IO_URING = 1 << 31
+FUSE_CAP_ALLOW_IDMAP = 1 << 32
+FUSE_CAP_SECURITY_CTX = 1 << 33
+
+
+def feature_flag_names(flags: int) -> str:
+    'Return a human-readable representation of the given FUSE_CAP_* flags, e.g. for logging.'
+    names = [name for name, value in globals().items() if name.startswith('FUSE_CAP_') and value & flags]
+    return ' | '.join(sorted(names)) if names else hex(flags)
+
+
 # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
 class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
+    # The struct members are defined dynamically via '_fields_', which pylint cannot see.
+    # pylint: disable=no-member
     _fields_ = _fuse_conn_info_fields
+
+    # The 32-bit 'capable' and 'want' members are deprecated since libfuse 3.17 in favor of the
+    # 64-bit 'capable_ext' and 'want_ext' members. Setting only 'want' still works because libfuse
+    # converts it (fuse_convert_to_conn_want_ext), but setting both, exactly like the libfuse helper
+    # fuse_set_feature_flag does, is what works for all libfuse versions.
+    _has_extended_features = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
+
+    def is_capable(self, flags: int) -> bool:
+        'Return whether the kernel supports all of the given FUSE_CAP_* feature flags.'
+        capable = self.capable_ext if self._has_extended_features else self.capable
+        return bool(flags) and capable & flags == flags
+
+    def is_wanted(self, flags: int) -> bool:
+        'Return whether all of the given FUSE_CAP_* feature flags are requested to be enabled.'
+        want = self.want_ext if self._has_extended_features else self.want
+        return bool(flags) and want & flags == flags
+
+    def set_feature_flag(self, flags: int) -> bool:
+        '''
+        Request the given FUSE_CAP_* features to be enabled, see fuse_set_feature_flag.
+        Does nothing and returns False if the kernel or the loaded libfuse version is not
+        capable of all of the given features. Requesting an unsupported feature would make
+        libfuse abort the mount with EPROTO.
+        '''
+        if not self.is_capable(flags):
+            return False
+        if self._has_extended_features:
+            self.want_ext |= flags
+        self.want |= flags & 0xFFFF_FFFF
+        return True
+
+    def unset_feature_flag(self, flags: int) -> None:
+        'Request the given FUSE_CAP_* features to be disabled, see fuse_unset_feature_flag.'
+        if self._has_extended_features:
+            self.want_ext &= ~flags
+        self.want &= ~flags & 0xFFFF_FFFF
 
 
 if (fuse_version_major, fuse_version_minor) >= (3, 17):
@@ -1860,7 +1944,26 @@ class FUSE:
             None if path is None else path.decode(self.encoding, self.errors), datasync, fip.contents.fh
         )
 
+    def _request_wanted_features(self, conn: fuse_conn_info) -> None:
+        wanted_features = getattr(self.operations, 'wanted_features', 0)
+        for bit in range(64):
+            flag = 1 << bit
+            if not wanted_features & flag:
+                continue
+            if conn.set_feature_flag(flag):
+                log.debug("Requested FUSE feature: %s", feature_flag_names(flag))
+            else:
+                log.warning(
+                    "The kernel or the loaded libfuse version does not support the requested FUSE feature: %s",
+                    feature_flag_names(flag),
+                )
+
     def _init(self, conn: FuseConnInfoPointer, config: Optional[FuseConfigPointer]) -> None:
+        # Do this before calling into the file system so that it can check the result
+        # with fuse_conn_info.is_wanted and even adjust it in 'init_with_config'.
+        if conn:
+            self._request_wanted_features(conn.contents)
+
         if hasattr(self.operations, "init_with_config") and not getattr(
             self.operations.init_with_config, "libfuse_ignore", False
         ):
@@ -1997,6 +2100,24 @@ class Operations:
     than int.
     '''
 
+    # Set this to a combination of FUSE_CAP_* flags to request optional kernel features, e.g.:
+    #
+    #     wanted_features = mfusepy.FUSE_CAP_POSIX_ACL
+    #
+    # Features that the kernel or the loaded libfuse version is not capable of are skipped with
+    # a warning. Overwrite 'init_with_config' and check 'conn_info.is_wanted' if the file system
+    # needs to know whether a feature actually got enabled.
+    #
+    # FUSE_CAP_POSIX_ACL (Linux-only) makes the kernel enforce the POSIX ACLs that are returned
+    # by 'getxattr' for 'system.posix_acl_access' and 'system.posix_acl_default' in the binary
+    # ACL format documented in acl(5). Without it, the ACLs are only visible, e.g. to getfacl,
+    # but access is not checked against them. Note that this implicitly enables the
+    # 'default_permissions' mount option, i.e., the kernel will also check the mode bits, uid,
+    # and gid returned by 'getattr' instead of delegating permission checks to 'access'.
+    # Writable file systems additionally have to implement 'setxattr' for these attributes,
+    # keep the file mode in sync with the ACL, and apply default ACLs to newly created files.
+    wanted_features: int = 0
+
     @_nullable_dummy_function
     def access(self, path: str, amode: int) -> int:
         return 0
@@ -2079,6 +2200,11 @@ class Operations:
         Only either 'init' or 'init_with_config' should be overridden.
         Use it instead of __init__ if you start threads on initialization.
         Argument config_3 should be ignored when a FUSE 2 library is loaded.
+
+        The features listed in 'wanted_features' have already been requested when this is called,
+        i.e., 'conn_info.is_wanted' can be used to check whether they got enabled. Further features
+        can be requested with 'conn_info.set_feature_flag' and enabled ones can be turned off again
+        with 'conn_info.unset_feature_flag'.
         '''
 
     @_nullable_dummy_function
