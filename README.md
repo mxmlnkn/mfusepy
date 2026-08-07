@@ -96,6 +96,39 @@ See some examples of how you can use mfusepy:
 | [sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)   |
 
 
+# Optional Kernel Features
+
+Some kernel features are disabled by default and have to be requested by the filesystem during the
+FUSE initialization handshake.
+Set `wanted_features` in your `Operations` subclass to a combination of `FUSE_CAP_*` flags to do so:
+
+```python
+class MyFileSystem(mfusepy.Operations):
+    wanted_features = mfusepy.FUSE_CAP_POSIX_ACL
+```
+
+Features that the kernel or the loaded libfuse version is not capable of are skipped with a warning.
+Overwrite `init_with_config` to check with `conn_info.is_wanted(flag)` whether a feature actually got
+enabled, or to request (`conn_info.set_feature_flag`) and disable (`conn_info.unset_feature_flag`)
+features programmatically.
+
+## POSIX ACLs
+
+`FUSE_CAP_POSIX_ACL` (Linux-only) makes the kernel *enforce* the POSIX ACLs that `getxattr` returns
+for `system.posix_acl_access` and `system.posix_acl_default` in the binary format documented in
+[acl(5)](https://man7.org/linux/man-pages/man5/acl.5.html).
+Without this feature, such ACLs are only visible, e.g. to `getfacl`, but access is not checked
+against them.
+Note that:
+
+ - It implicitly enables the `default_permissions` mount option, i.e., the kernel will check the
+   mode bits, uid, and gid returned by `getattr` instead of delegating permission checks to `access`.
+ - Writable filesystems additionally have to implement `setxattr` for these attributes, keep the file
+   mode in sync with the ACL, and apply default ACLs to newly created files.
+ - Inside a user namespace, e.g. in a rootless container, the kernel refuses `getxattr` for
+   `system.posix_acl_*` on FUSE mounts that did not negotiate this feature.
+
+
 # Platforms
 
 mfusepy requires FUSE 2.6 (or later) and runs on:
