@@ -247,7 +247,10 @@ jobs:
 
                 # Packages
                 sudo -E pkg update -f
-                sudo -E pkg install -y git fusefs-libs python3 python311 py311-pip
+                # Ports only package pip for the default Python version, which differs between
+                # FreeBSD versions and changes over time, e.g. py311-pip on 13.5 but py312-pip
+                # on 14.3, so install it via its unflavored port origin instead of by name.
+                sudo -E pkg install -y git fusefs-libs python3 devel/py-pip
 
                 # Make FUSE work
                 sudo -E kldload fusefs
