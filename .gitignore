@@ -2,6 +2,7 @@
 *.tar.gz
 *.egg-info
 .*
+!.mailmap
 build
 dist
 __pycache__
