@@ -219,7 +219,9 @@ jobs:
            - os: netbsd
              version: '10.1'
              display_name: NetBSD
-
+           - os: omnios
+             version: r151058
+             display_name: OmniOS
 
     steps:
       - name: Check out repository
@@ -228,7 +230,7 @@ jobs:
           fetch-tags: true
 
       - name: Test on ${{ matrix.display_name }}
-        uses: cross-platform-actions/action@v0.32.0
+        uses: cross-platform-actions/action@v1.2.0
         with:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
@@ -324,6 +326,53 @@ jobs:
                 python3 -m pytest -s -v -rs tests/test_struct_layout.py
                 # for now, run the tests as root, too many PermissionErrors:
                 sudo -E python3 -m pytest -s -v -rs tests || rc=$?
+                exit "$rc"
+                ;;
+              omnios)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                pfexec /bin/sh -c 'grep -q "omnios\.local" /etc/hosts || echo "127.0.0.1 omnios.local omnios" >> /etc/hosts'
+                pfexec hostname omnios.local
+                hostname
+
+                # Packages
+                pfexec pkg install developer/versioning/git
+                pfexec pkg install developer/gcc14
+                pfexec pkg set-mediator -V 14 gcc
+
+                # driver + libfuse
+                pfexec pkg set-publisher -p https://sfe.opencsw.org/localhostomnios localhostomnios
+                pfexec pkg refresh localhostomnios
+                pfexec pkg install --accept system/file-system/fusefs
+                pfexec pkg install --accept system/file-system/libfuse
+                pkg list system/file-system/fusefs
+                pkg list system/file-system/libfuse
+                pkg contents system/file-system/fusefs
+                pkg contents system/file-system/libfuse
+
+                # Fetch custom build from Tom and install it
+                modinfo | grep fuse | awk '{print $1}' | while read id; do pfexec modunload -i $id; done
+                modinfo | grep fuse || true
+                curl -L https://www.wagner-net.com/~tom/fuse-files-sfe-omnios-r151054-f66c95f374.tar.bz2 -o /tmp/fuse-files.tar.bz2
+                pushd /
+                pfexec tar xvjf /tmp/fuse-files.tar.bz2
+                popd
+                ls -l /usr/gnu/lib/amd64/libfuse.so.2.7.1 /usr/gnu/lib/libfuse.so.2.7.1 /usr/kernel/drv/amd64/fuse
+
+                # Install pip Dependencies
+                python3 -m pip install pytest pytest-order ioctl-opt
+
+                # Fix PATH
+                export PATH="/home/runner/.local/bin:$PATH"
+                echo $PATH
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+                # preserve pytest exit status, always show logs
+                rc=0
+                pfexec python3 -m pytest -v -rs tests || rc=$?
                 exit "$rc"
                 ;;
             esac
