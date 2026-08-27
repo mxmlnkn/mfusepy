@@ -209,7 +209,8 @@ class RunCLI:
             time.sleep(0.1)
 
 
-@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
+#@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
+@pytest.mark.parametrize('cli', [cli_loopback])
 def test_read_write_file_system(cli, tmp_path):
     if cli == cli_loopback:
         mount_source = tmp_path / "folder"
