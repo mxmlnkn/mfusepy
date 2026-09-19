@@ -67,6 +67,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      # Let all jobs finish, so one can see which platforms are affected by a failure.
+      fail-fast: false
       matrix:
         # https://endoflife.date/python
         include:
@@ -202,6 +204,7 @@ jobs:
     timeout-minutes: 10
 
     strategy:
+      fail-fast: false
       matrix:
          include:
            - os: freebsd
@@ -299,7 +302,8 @@ jobs:
 
                 # Packages
                 sudo -E pkgin -y update
-                sudo -E pkgin -y install git fuse perfuse python311 py311-pip
+                # perfuse is part of the NetBSD base system (pkgin fails if asked for a package that does not exist).
+                sudo -E pkgin -y install git fuse python311 py311-pip
                 sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
 
                 # Fix PATH
