@@ -5,7 +5,7 @@
 
 import errno
 import os
-import struct
+import stat
 import subprocess
 import sys
 import threading
@@ -16,29 +16,23 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import mfusepy  # noqa: E402
+from mfusepy import (  # noqa: E402
+    ACL_EXECUTE,
+    ACL_GROUP_OBJ,
+    ACL_MASK,
+    ACL_OTHER,
+    ACL_READ,
+    ACL_UNDEFINED_ID,
+    ACL_USER,
+    ACL_USER_OBJ,
+    ACL_WRITE,
+    XATTR_NAME_POSIX_ACL_ACCESS,
+    PosixACLEntry,
+    pack_posix_acl,
+    unpack_posix_acl,
+)
 
-# Values for the binary ACL format documented in acl(5) and defined in <linux/posix_acl_xattr.h>.
-POSIX_ACL_XATTR_VERSION = 2
-ACL_UNDEFINED_ID = 0xFFFF_FFFF
-ACL_USER_OBJ = 0x01
-ACL_USER = 0x02
-ACL_GROUP_OBJ = 0x04
-ACL_GROUP = 0x08
-ACL_MASK = 0x10
-ACL_OTHER = 0x20
-ACL_READ = 4
-ACL_WRITE = 2
-ACL_EXECUTE = 1
-
-ACL_ACCESS_XATTR = 'system.posix_acl_access'
 FILE_CONTENTS = b'Hello ACL!\n'
-
-
-def pack_acl(entries) -> bytes:
-    'Pack (tag, permissions, id) triples into the binary format expected by the kernel.'
-    return struct.pack('<I', POSIX_ACL_XATTR_VERSION) + b''.join(
-        struct.pack('<HHI', tag, permissions, entry_id) for tag, permissions, entry_id in entries
-    )
 
 
 def test_feature_flags():
@@ -58,6 +52,11 @@ def test_feature_flags():
 
     assert connection.is_capable(mfusepy.FUSE_CAP_POSIX_ACL)
     assert not connection.is_capable(mfusepy.FUSE_CAP_POSIX_ACL | mfusepy.FUSE_CAP_PASSTHROUGH)
+    # No requested feature is trivially supported and requesting none trivially succeeds.
+    assert connection.is_capable(0)
+    assert connection.is_wanted(0)
+    assert connection.set_feature_flag(0)
+    assert connection.want == 0
 
     assert connection.set_feature_flag(mfusepy.FUSE_CAP_POSIX_ACL)
     assert connection.is_wanted(mfusepy.FUSE_CAP_POSIX_ACL)
@@ -83,6 +82,68 @@ def test_feature_flag_names():
     )
 
 
+def test_pack_posix_acl():
+    # Same as: setfacl -m u::rw-,u:1000:r-x,g::---,m::r-x,o::--- <file>
+    entries = [
+        PosixACLEntry(ACL_USER_OBJ, ACL_READ | ACL_WRITE),
+        PosixACLEntry(ACL_USER, ACL_READ | ACL_EXECUTE, 1000),
+        PosixACLEntry(ACL_GROUP_OBJ, 0),
+        PosixACLEntry(ACL_MASK, ACL_READ | ACL_EXECUTE),
+        PosixACLEntry(ACL_OTHER, 0),
+    ]
+    packed = pack_posix_acl(entries)
+
+    # Fixed little-endian layout: a 4 B version header followed by 8 B per entry.
+    assert packed == bytes.fromhex(
+        '02000000'  # version 2
+        ' 0100 0600 ffffffff'  # ACL_USER_OBJ, ACL_READ | ACL_WRITE, ACL_UNDEFINED_ID
+        ' 0200 0500 e8030000'  # ACL_USER, ACL_READ | ACL_EXECUTE, 1000
+        ' 0400 0000 ffffffff'  # ACL_GROUP_OBJ, no permissions, ACL_UNDEFINED_ID
+        ' 1000 0500 ffffffff'  # ACL_MASK, ACL_READ | ACL_EXECUTE, ACL_UNDEFINED_ID
+        ' 2000 0000 ffffffff'  # ACL_OTHER, no permissions, ACL_UNDEFINED_ID
+    )
+    assert unpack_posix_acl(packed) == entries
+
+    # Plain triples work as well and the qualifier may be given as -1 instead of ACL_UNDEFINED_ID.
+    assert pack_posix_acl([(ACL_OTHER, ACL_READ, -1)]) == pack_posix_acl([(ACL_OTHER, ACL_READ, ACL_UNDEFINED_ID)])
+
+
+def test_unpack_posix_acl_errors():
+    with pytest.raises(ValueError, match='version'):
+        unpack_posix_acl(b'\x03\0\0\0')
+    with pytest.raises(ValueError, match='truncated'):
+        unpack_posix_acl(b'\x02\0\0')
+    with pytest.raises(ValueError, match='truncated'):
+        unpack_posix_acl(pack_posix_acl([(ACL_OTHER, 0, -1)])[:-1])
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason="POSIX ACLs are only stored in xattrs on Linux.")
+def test_pack_posix_acl_is_understood_by_the_kernel(tmp_path):
+    'Check the packed representation against the kernel instead of only against itself.'
+    path = tmp_path / 'file'
+    path.write_bytes(FILE_CONTENTS)
+    os.chmod(path, 0o644)
+
+    entries = [
+        PosixACLEntry(ACL_USER_OBJ, ACL_READ | ACL_WRITE),
+        PosixACLEntry(ACL_USER, ACL_READ, os.getuid() + 1),
+        PosixACLEntry(ACL_GROUP_OBJ, 0),
+        PosixACLEntry(ACL_MASK, ACL_READ),
+        PosixACLEntry(ACL_OTHER, 0),
+    ]
+    try:
+        os.setxattr(path, XATTR_NAME_POSIX_ACL_ACCESS, pack_posix_acl(entries))
+    except OSError as exception:
+        if exception.errno in [errno.EOPNOTSUPP, errno.ENOTSUP, errno.EPERM]:
+            pytest.skip(f"The file system for {tmp_path} does not support POSIX ACLs.")
+        raise
+
+    assert unpack_posix_acl(os.getxattr(path, XATTR_NAME_POSIX_ACL_ACCESS)) == entries
+    # The kernel derives the mode bits from the ACL: owner from ACL_USER_OBJ, group from ACL_MASK,
+    # and other from ACL_OTHER, i.e., an accepted but misunderstood ACL would show up here.
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+
+
 class ACLFileSystem(mfusepy.Operations):
     '''
     A read-only file system with two files owned by root, whose access permissions can only be
@@ -103,25 +164,25 @@ class ACLFileSystem(mfusepy.Operations):
         self.files = {
             '/allowed': (
                 0o100640,
-                pack_acl(
+                pack_posix_acl(
                     [
-                        (ACL_USER_OBJ, ACL_READ | ACL_WRITE, ACL_UNDEFINED_ID),
-                        (ACL_USER, ACL_READ, user_id),
-                        (ACL_GROUP_OBJ, 0, ACL_UNDEFINED_ID),
-                        (ACL_MASK, ACL_READ, ACL_UNDEFINED_ID),
-                        (ACL_OTHER, 0, ACL_UNDEFINED_ID),
+                        PosixACLEntry(ACL_USER_OBJ, ACL_READ | ACL_WRITE),
+                        PosixACLEntry(ACL_USER, ACL_READ, user_id),
+                        PosixACLEntry(ACL_GROUP_OBJ, 0),
+                        PosixACLEntry(ACL_MASK, ACL_READ),
+                        PosixACLEntry(ACL_OTHER, 0),
                     ]
                 ),
             ),
             '/denied': (
                 0o100644,
-                pack_acl(
+                pack_posix_acl(
                     [
-                        (ACL_USER_OBJ, ACL_READ | ACL_WRITE, ACL_UNDEFINED_ID),
-                        (ACL_USER, 0, user_id),
-                        (ACL_GROUP_OBJ, ACL_READ, ACL_UNDEFINED_ID),
-                        (ACL_MASK, ACL_READ, ACL_UNDEFINED_ID),
-                        (ACL_OTHER, ACL_READ, ACL_UNDEFINED_ID),
+                        PosixACLEntry(ACL_USER_OBJ, ACL_READ | ACL_WRITE),
+                        PosixACLEntry(ACL_USER, 0, user_id),
+                        PosixACLEntry(ACL_GROUP_OBJ, ACL_READ),
+                        PosixACLEntry(ACL_MASK, ACL_READ),
+                        PosixACLEntry(ACL_OTHER, ACL_READ),
                     ]
                 ),
             ),
@@ -148,10 +209,10 @@ class ACLFileSystem(mfusepy.Operations):
         return ['.', '..', *[name.lstrip('/') for name in self.files]]
 
     def listxattr(self, path):
-        return [ACL_ACCESS_XATTR] if path in self.files else []
+        return [XATTR_NAME_POSIX_ACL_ACCESS] if path in self.files else []
 
     def getxattr(self, path, name, position=0):
-        if path in self.files and name == ACL_ACCESS_XATTR:
+        if path in self.files and name == XATTR_NAME_POSIX_ACL_ACCESS:
             return self.files[path][1]
         raise mfusepy.FuseOSError(mfusepy.ENOATTR)
 
@@ -197,7 +258,7 @@ def test_posix_acl_enforcement(tmp_path):
         # The ACLs are visible, e.g. for getfacl, even without FUSE_CAP_POSIX_ACL, but the kernel
         # returns them from its own ACL cache when it does enforce them, so also check them here.
         for name in ['allowed', 'denied']:
-            assert os.getxattr(tmp_path / name, ACL_ACCESS_XATTR) == operations.files['/' + name][1]
+            assert os.getxattr(tmp_path / name, XATTR_NAME_POSIX_ACL_ACCESS) == operations.files['/' + name][1]
 
         # Readable only because of the ACL. The mode bits deny access to everyone but the owner.
         with open(tmp_path / 'allowed', 'rb') as file:

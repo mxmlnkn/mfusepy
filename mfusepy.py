@@ -25,13 +25,14 @@ import inspect
 import logging
 import os
 import platform
+import struct
 import warnings
 from collections.abc import Iterable, Sequence
 from ctypes import CFUNCTYPE, POINTER, c_char_p, c_int, c_size_t, c_ssize_t, c_uint, c_void_p
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, Optional, Union, get_type_hints
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
 BitFieldsEntry = tuple[str, type, int]
@@ -180,6 +181,81 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system == 'Linu
 # But, on some other platforms, ENOATTR is missing; use the same value as ENODATA there.
 # We have a test that makes sure this is not None for all platforms we test on.
 ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
+
+
+# POSIX ACLs are exchanged with the Linux kernel via these extended attributes, see acl(5).
+# Other platforms neither use this representation nor support FUSE_CAP_POSIX_ACL.
+XATTR_NAME_POSIX_ACL_ACCESS = 'system.posix_acl_access'
+XATTR_NAME_POSIX_ACL_DEFAULT = 'system.posix_acl_default'
+
+# Only version 2 has ever existed. Defined in <linux/posix_acl_xattr.h>.
+POSIX_ACL_XATTR_VERSION = 0x0002
+# Value of PosixACLEntry.qualifier for tags that do not have one. It is (uint32_t)(-1).
+ACL_UNDEFINED_ID = 0xFFFF_FFFF
+
+# Values for PosixACLEntry.tag as defined in <linux/posix_acl.h>.
+ACL_USER_OBJ = 0x01
+ACL_USER = 0x02
+ACL_GROUP_OBJ = 0x04
+ACL_GROUP = 0x08
+ACL_MASK = 0x10
+ACL_OTHER = 0x20
+
+# Values for PosixACLEntry.permissions as defined in <linux/posix_acl.h>.
+ACL_READ = 0x04
+ACL_WRITE = 0x02
+ACL_EXECUTE = 0x01
+
+
+class PosixACLEntry(NamedTuple):
+    tag: int  # One of ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER.
+    permissions: int  # Combination of ACL_READ, ACL_WRITE, ACL_EXECUTE.
+    # The user ID for ACL_USER, the group ID for ACL_GROUP, and ACL_UNDEFINED_ID for all other tags.
+    qualifier: int = ACL_UNDEFINED_ID
+
+
+# struct posix_acl_xattr_header { __le32 a_version; }
+_POSIX_ACL_XATTR_HEADER = struct.Struct('<I')
+# struct posix_acl_xattr_entry { __le16 e_tag; __le16 e_perm; __le32 e_id; }
+_POSIX_ACL_XATTR_ENTRY = struct.Struct('<HHI')
+
+
+def pack_posix_acl(entries: Iterable[Sequence[int]]) -> bytes:
+    '''
+    Return the value for the 'system.posix_acl_access' or 'system.posix_acl_default' extended
+    attribute for the given (tag, permissions, qualifier) triples, e.g. PosixACLEntry instances.
+
+    The kernel requires the entries to be sorted by tag in the order ACL_USER_OBJ, ACL_USER,
+    ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER, the ACL_USER and ACL_GROUP entries to be
+    sorted by qualifier, and an ACL_MASK entry to exist if there are any ACL_USER or ACL_GROUP
+    entries. The layout is fixed little-endian, i.e., it does not depend on the host byte order.
+    '''
+    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(
+        # Masking also maps the ACL_UNDEFINED_ID spelling -1 from <linux/posix_acl.h> to 0xFFFFFFFF.
+        _POSIX_ACL_XATTR_ENTRY.pack(tag, permissions, qualifier & 0xFFFF_FFFF)
+        for tag, permissions, qualifier in entries
+    )
+
+
+def unpack_posix_acl(value: bytes) -> list[PosixACLEntry]:
+    '''
+    Inverse of 'pack_posix_acl'. Raises ValueError if the version or the size does not match.
+    Note that this does not check the ordering requirements listed for 'pack_posix_acl'.
+    '''
+    header_size = _POSIX_ACL_XATTR_HEADER.size
+    entry_size = _POSIX_ACL_XATTR_ENTRY.size
+    if len(value) < header_size or (len(value) - header_size) % entry_size != 0:
+        raise ValueError(f"POSIX ACL of size {len(value)} is truncated or contains trailing bytes!")
+
+    version = _POSIX_ACL_XATTR_HEADER.unpack_from(value)[0]
+    if version != POSIX_ACL_XATTR_VERSION:
+        raise ValueError(f"Expected POSIX ACL version {POSIX_ACL_XATTR_VERSION} but got: {version}!")
+
+    return [
+        PosixACLEntry(*_POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset))
+        for offset in range(header_size, len(value), entry_size)
+    ]
+
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git
 # and check the diff with:
@@ -1105,12 +1181,12 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
     def is_capable(self, flags: int) -> bool:
         'Return whether the kernel supports all of the given FUSE_CAP_* feature flags.'
         capable = self.capable_ext if self._has_extended_features else self.capable
-        return bool(flags) and capable & flags == flags
+        return (capable & flags) == flags
 
     def is_wanted(self, flags: int) -> bool:
         'Return whether all of the given FUSE_CAP_* feature flags are requested to be enabled.'
         want = self.want_ext if self._has_extended_features else self.want
-        return bool(flags) and want & flags == flags
+        return (want & flags) == flags
 
     def set_feature_flag(self, flags: int) -> bool:
         '''
@@ -2192,14 +2268,14 @@ class Operations:
     # a warning. Overwrite 'init_with_config' and check 'conn_info.is_wanted' if the file system
     # needs to know whether a feature actually got enabled.
     #
-    # FUSE_CAP_POSIX_ACL (Linux-only) makes the kernel enforce the POSIX ACLs that are returned
-    # by 'getxattr' for 'system.posix_acl_access' and 'system.posix_acl_default' in the binary
-    # ACL format documented in acl(5). Without it, the ACLs are only visible, e.g. to getfacl,
-    # but access is not checked against them. Note that this implicitly enables the
-    # 'default_permissions' mount option, i.e., the kernel will also check the mode bits, uid,
-    # and gid returned by 'getattr' instead of delegating permission checks to 'access'.
-    # Writable file systems additionally have to implement 'setxattr' for these attributes,
-    # keep the file mode in sync with the ACL, and apply default ACLs to newly created files.
+    # FUSE_CAP_POSIX_ACL (Linux-only) makes the kernel enforce the POSIX ACLs that are returned by
+    # 'getxattr' for XATTR_NAME_POSIX_ACL_ACCESS and XATTR_NAME_POSIX_ACL_DEFAULT in the binary format
+    # documented in acl(5), which 'pack_posix_acl' and 'unpack_posix_acl' convert to and from.
+    # Without it, the ACLs are only visible, e.g. to getfacl, but access is not checked against them.
+    # Note that this implicitly enables the 'default_permissions' mount option, i.e., the kernel will
+    # also check the mode bits, uid, and gid returned by 'getattr' instead of delegating permission
+    # checks to 'access'. Writable file systems additionally have to implement 'setxattr' for these
+    # attributes, keep the file mode in sync with the ACL, and apply default ACLs to newly created files.
     wanted_features: int = 0
 
     @_nullable_dummy_function

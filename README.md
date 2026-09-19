@@ -119,6 +119,23 @@ for `system.posix_acl_access` and `system.posix_acl_default` in the binary forma
 [acl(5)](https://man7.org/linux/man-pages/man5/acl.5.html).
 Without this feature, such ACLs are only visible, e.g. to `getfacl`, but access is not checked
 against them.
+
+`pack_posix_acl` and `unpack_posix_acl` convert between that binary format and lists of
+`PosixACLEntry(tag, permissions, qualifier)`, e.g. for the equivalent of
+`setfacl -m u::rw-,u:1000:r--,g::---,m::r--,o::--- <file>`:
+
+```python
+mfusepy.pack_posix_acl(
+    [
+        mfusepy.PosixACLEntry(mfusepy.ACL_USER_OBJ, mfusepy.ACL_READ | mfusepy.ACL_WRITE),
+        mfusepy.PosixACLEntry(mfusepy.ACL_USER, mfusepy.ACL_READ, 1000),
+        mfusepy.PosixACLEntry(mfusepy.ACL_GROUP_OBJ, 0),
+        mfusepy.PosixACLEntry(mfusepy.ACL_MASK, mfusepy.ACL_READ),
+        mfusepy.PosixACLEntry(mfusepy.ACL_OTHER, 0),
+    ]
+)
+```
+
 Note that:
 
  - It implicitly enables the `default_permissions` mount option, i.e., the kernel will check the
