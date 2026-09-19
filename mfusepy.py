@@ -1050,6 +1050,16 @@ else:
 fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
 
 
+_fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
+    ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
+    ('getdir', c_void_p),  # Deprecated, use readdir
+]
+if _system == 'Windows' or _system.startswith('CYGWIN'):
+    # WinFsp has getdir before readlink (libfuse 2 has readlink before getdir), see struct fuse_operations in
+    # https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
+    # With the wrong order, WinFsp does not find readlink and shows all symlinks as regular files.
+    _fuse_operations_fields_readlink_getdir.reverse()
+
 # These are unchanged in FUSE 3 and therefore nice to have separate to reduce duplication.
 _fuse_operations_fields_mknod_to_symlink = [
     ('mknod', CFUNCTYPE(c_int, c_char_p, c_mode_t, c_dev_t)),
@@ -1082,8 +1092,7 @@ _fuse_operations_fields_2_9 = [
 if fuse_version_major == 2:
     _fuse_operations_fields: list[FieldsEntry] = [
         ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p)),
-        ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
-        ('getdir', c_void_p),  # Deprecated, use readdir
+        *_fuse_operations_fields_readlink_getdir,
         *_fuse_operations_fields_mknod_to_symlink,
         ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
         ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),
