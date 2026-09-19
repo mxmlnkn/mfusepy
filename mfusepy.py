@@ -136,9 +136,6 @@ if not _libfuse_path:
     raise OSError('Unable to find libfuse')
 _libfuse = ctypes.CDLL(_libfuse_path)
 
-if _system == 'Darwin' and hasattr(_libfuse, 'macfuse_version'):
-    _system = 'Darwin-MacFuse'
-
 
 def get_fuse_version(libfuse):
     version = libfuse.fuse_version()
@@ -211,7 +208,7 @@ ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
 #    for reasoning.
 
 # Set non-FUSE-specific kernel type definitions.
-if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
+if _system in ('Darwin', 'FreeBSD'):
     ENOTSUP = 45
 
     c_dev_t: type = ctypes.c_int32
@@ -263,7 +260,7 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
             ('st_lspare', ctypes.c_int32),
             ('st_qspare', ctypes.c_int64 * 2),
         ]
-    elif _system == 'FreeBSD':
+    else:
         # FreeBSD amd64 struct stat layout
         # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/stat.h#L159
         # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
@@ -288,23 +285,6 @@ if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):
             ('st_gen', ctypes.c_uint32),
             ('st_filerev', ctypes.c_uint64),
             ('st_spare', ctypes.c_int64 * 9),
-        ]
-    else:
-        # Darwin-MacFuse fallback (legacy)
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('st_ino', ctypes.c_uint32),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_uint16),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('st_size', c_off_t),
-            ('st_blocks', ctypes.c_int64),
-            ('st_blksize', ctypes.c_int32),
         ]
 elif _system == 'Linux':
     ENOTSUP = 95
@@ -2106,7 +2086,7 @@ class Operations:
         Should return a bytes object.
         '''
         # I have no idea what 'position' does. It is a compatibility placeholder specifically for
-        # "if _system in ('Darwin', 'Darwin-MacFuse', 'FreeBSD'):", for which getxattr_t supposedly has
+        # "if _system in ('Darwin', 'FreeBSD'):", for which getxattr_t supposedly has
         # an additional uint32_t argument for some reason. I think that including FreeBSD here might be a bug,
         # because it also only uses libfuse. TODO: Somehow need to test this!
         # MacFuse does indeed have that extra argument but also only in some overload, not in "Vanilla":
