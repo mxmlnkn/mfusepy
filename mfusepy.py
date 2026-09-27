@@ -400,7 +400,7 @@ elif _system == 'Linux':
             ('st_mtimespec', c_timespec),
             ('st_ctimespec', c_timespec),
         ]
-    elif _machine == 'aarch64':
+    elif _machine in ('aarch64', 'riscv64'):
         _c_stat__fields_ = [
             ('st_dev', c_dev_t),
             ('st_ino', ctypes.c_ulong),
