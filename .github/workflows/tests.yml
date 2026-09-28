@@ -136,7 +136,7 @@ jobs:
            # NetBSD 9.4 is not supported because its interface seems to mirror libFUSE 2.6 and therefore is HIGHLY
            #            incompatible. Even fuse_context.umask is missing!
            - os: netbsd
-             version: '10.1'
+             version: '11.0'
              display_name: NetBSD
 
 
