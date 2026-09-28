@@ -723,6 +723,9 @@ else:
 #  - 3.13.1 -> 3.14.1: parallel_direct_writes was added in the middle.
 #                      Padding was correctly decreased by 1.
 #  - 3.14.1 -> 3.16.2: no change
+#  - 3.16.2 -> 3.17.1: padding3 was made explicit, backing_id, compat_flags and reserved[2] were added
+#                      at the end, which increases the size from 40 B to 64 B.
+#  - 3.17.1 -> 3.18.2: no change
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
 _fuse_file_info_fields_: list[FieldsEntry] = []
@@ -841,8 +844,16 @@ elif fuse_version_major == 3:
     _fuse_file_info_fields_ += [
         ('fh', ctypes.c_uint64),
         ('lock_owner', ctypes.c_uint64),
-        ('poll_events', ctypes.c_uint64),
     ]
+    if fuse_version_minor >= 17:
+        _fuse_file_info_fields_ += [
+            ('poll_events', ctypes.c_uint32),
+            ('backing_id', ctypes.c_int32),
+            ('compat_flags', ctypes.c_uint64),
+            ('reserved', ctypes.c_uint64 * 2),
+        ]
+    else:
+        _fuse_file_info_fields_ += [('poll_events', ctypes.c_uint64)]
 
 
 class fuse_file_info(ctypes.Structure):
@@ -850,7 +861,7 @@ class fuse_file_info(ctypes.Structure):
 
 
 if ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
-    assert ctypes.sizeof(fuse_file_info) == 40
+    assert ctypes.sizeof(fuse_file_info) == 64
 
 
 class fuse_context(ctypes.Structure):
@@ -1220,6 +1231,10 @@ elif fuse_version_major == 3:
         ),
         ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                        # New
     ]
+    if fuse_version_minor >= 18:
+        _fuse_operations_fields += [
+            ('statx', c_void_p),  # Not supported, struct statx is not defined here.
+        ]
     # fmt: on
 
 
