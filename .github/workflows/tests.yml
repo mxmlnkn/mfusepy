@@ -76,23 +76,25 @@ jobs:
             python-version: '3.9'
           - os: ubuntu-22.04-arm
             python-version: '3.10'
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             python-version: '3.11'
           - os: ubuntu-24.04-arm
             python-version: '3.12'
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             python-version: '3.13'
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04-arm
             python-version: '3.14'
+          - os: ubuntu-26.04
+            python-version: '3.15'
           - os: macos-15
             python-version: '3.9'
-          - os: macos-14
+          - os: macos-26
             python-version: '3.10'
           - os: macos-15-intel
             python-version: '3.11'
-          - os: macos-14
+          - os: macos-26
             python-version: '3.12'
-          - os: macos-15-intel
+          - os: macos-26-intel
             python-version: '3.13'
           - os: macos-15
             python-version: '3.14'
@@ -116,6 +118,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          # Only has an effect for Python versions without a stable release yet.
+          allow-prereleases: true
 
       - name: Install Dependencies (Linux)
         if: startsWith( matrix.os, 'ubuntu' )
@@ -172,7 +176,8 @@ jobs:
       - name: Unit Tests (FUSE 3)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
-          export FUSE_LIBRARY_PATH=$( dpkg -L libfuse3-3 | 'grep' -F .so | head -1 )
+          # The package name depends on the soname: libfuse3-3 up to Ubuntu 24.04, libfuse3-4 since Ubuntu 26.04.
+          export FUSE_LIBRARY_PATH=$( ldconfig -p | awk '/libfuse3[.]so[.][0-9]+ /{ print $NF; exit }' )
           python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 3'
           python3 -m pytest -v -rs tests
 
@@ -208,17 +213,23 @@ jobs:
       matrix:
          include:
            - os: freebsd
-             version: '14.3'
+             version: '14.5'
              display_name: FreeBSD
            - os: freebsd
-             version: '13.5'
+             version: '15.1'
              display_name: FreeBSD
            - os: openbsd
-             version: '7.7'
+             version: '7.9'
+             display_name: OpenBSD
+           - os: openbsd
+             version: '7.8'
              display_name: OpenBSD
            # OpenBSD 6.9 is not supported because it only has Python 3.8, which is not supported anymore.
            # NetBSD 9.4 is not supported because its interface seems to mirror libFUSE 2.6 and therefore is HIGHLY
            #            incompatible. Even fuse_context.umask is missing!
+           - os: netbsd
+             version: '11.0'
+             display_name: NetBSD
            - os: netbsd
              version: '10.1'
              display_name: NetBSD
@@ -231,7 +242,7 @@ jobs:
           fetch-tags: true
 
       - name: Test on ${{ matrix.display_name }}
-        uses: cross-platform-actions/action@v0.32.0
+        uses: cross-platform-actions/action@v1.6.0
         with:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
