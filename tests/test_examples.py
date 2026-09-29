@@ -19,7 +19,15 @@ from types import ModuleType
 from typing import Optional
 
 import pytest
-from ioctl_opt import IOWR
+
+# Only needed for the ioctl test, which only runs on Linux.
+ioctl_opt: Optional[ModuleType]
+if sys.platform == 'linux':
+    import ioctl_opt as _ioctl_opt
+
+    ioctl_opt = _ioctl_opt
+else:
+    ioctl_opt = None
 
 pwd: Optional[ModuleType]
 try:
@@ -244,11 +252,11 @@ def test_read_write_file_system(cli, tmp_path):
         # ioctl does not work for regular files on macOS / *BSD.
         # IOCTL(2) for BSDs and macOS:
         # [ENOTTY] The fd argument is not associated with a character special device.
-        if sys.platform == 'linux' and cli == cli_memory:
+        if sys.platform == 'linux' and cli == cli_memory and ioctl_opt is not None:
             with open(path, 'rb') as file:
                 # Test a simple ioctl command that returns the argument incremented by one.
                 argument = 123
-                iowr_m = IOWR(ord('M'), 1, ctypes.c_uint32)
+                iowr_m = ioctl_opt.IOWR(ord('M'), 1, ctypes.c_uint32)
                 result = fcntl.ioctl(file, iowr_m, struct.pack('I', argument))
                 assert struct.unpack('I', result)[0] == argument + 1
 
