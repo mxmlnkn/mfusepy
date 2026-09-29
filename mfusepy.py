@@ -126,17 +126,19 @@ if not _libfuse_path:
             _libfuse_path += f"bin\\winfsp-{arch}.dll"
         # pytype: enable=module-attr
     elif _system == 'SunOS':
-        _libfuse_path = find_library('fuse') or find_library('fuse3')
+        _libfuse_path = find_library(os.environ.get('FUSE_LIBRARY_NAME', 'fuse'))
         if not _libfuse_path:
+            # On Solaris/illumos, find_library only consults the default library path reported by
+            # crle -64 (/lib/64:/usr/lib/64). libfuse is not packaged by OmniOS, so also look where
+            # the SFE package and self-built installations put it. Only 64-bit directories are
+            # searched because a 64-bit Python cannot load 32-bit libraries.
             for path in [
                 '/usr/gnu/lib/amd64/libfuse.so',
-                '/usr/gnu/lib/libfuse.so',
+                '/usr/local/lib/amd64/libfuse.so',
+                '/opt/local/lib/amd64/libfuse.so',
                 '/usr/lib/amd64/libfuse.so.2',
-                '/usr/lib/libfuse.so.2',
                 '/usr/lib/amd64/libfuse.so',
-                '/usr/lib/libfuse.so',
                 '/lib/amd64/libfuse.so.2',
-                '/lib/libfuse.so.2',
             ]:
                 if os.path.exists(path):
                     _libfuse_path = path
