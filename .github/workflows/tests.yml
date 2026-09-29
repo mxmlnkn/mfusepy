@@ -222,7 +222,9 @@ jobs:
            - os: netbsd
              version: '10.1'
              display_name: NetBSD
-
+           - os: omnios
+             version: r151058
+             display_name: OmniOS
 
     steps:
       - name: Check out repository
@@ -231,7 +233,7 @@ jobs:
           fetch-tags: true
 
       - name: Test on ${{ matrix.display_name }}
-        uses: cross-platform-actions/action@v0.32.0
+        uses: cross-platform-actions/action@v1.6.0
         with:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
@@ -328,6 +330,59 @@ jobs:
                 python3 -m pytest -s -v -rs tests/test_struct_layout.py
                 # for now, run the tests as root, too many PermissionErrors:
                 sudo -E python3 -m pytest -s -v -rs tests || rc=$?
+                exit "$rc"
+                ;;
+              omnios)
+                # Ensure a proper hostname/FQDN is set (VMs may not have one by default)
+                pfexec /bin/sh -c 'grep -q "omnios\.local" /etc/hosts || echo "127.0.0.1 omnios.local omnios" >> /etc/hosts'
+                pfexec hostname omnios.local
+                hostname
+
+                # Packages
+                pfexec pkg install developer/versioning/git developer/gcc14
+                pfexec pkg set-mediator -V 14 gcc
+
+                # FUSE kernel driver (illumos-fusefs), built for this OmniOS release by omnios-extra.
+                # Do not use the SFE fusefs package: it was built for r151046 and panics newer kernels in
+                # fuse_statvfs (NULL pointer dereference in strlen).
+                pkg publisher extra.omnios || pfexec pkg set-publisher -g "https://pkg.omnios.org/${{ matrix.version }}/extra/" extra.omnios
+                pfexec pkg install ooce/driver/fuse
+                ls -l /dev/fuse
+
+                # libfuse is not packaged for OmniOS: build the Solaris port of libfuse 2.7 that comes with illumos-fusefs.
+                pushd /tmp
+                curl -fsSL https://raw.githubusercontent.com/jurikm/illumos-fusefs/Version-1.6/lib/libfuse-20100615.tgz | gzip -dc | tar xf -
+                cd libfuse
+                gcc -m64 -O2 -fPIC -std=gnu99 -Iinclude \
+                    -D__SOLARIS__ -D_XOPEN_SOURCE=600 -D__EXTENSIONS__ -D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26 \
+                    -DFUSERMOUNT_DIR='"/usr/gnu/bin"' \
+                    -shared -Wl,-h,libfuse.so.2 -Wl,-zdefs -o libfuse.so.2.7.1 \
+                    fuse.c fuse_kern_chan.c fuse_loop.c fuse_loop_mt.c fuse_lowlevel.c fuse_mt.c fuse_opt.c \
+                    fuse_session.c fuse_signals.c helper.c mount.c daemon.c mount_util.c modules/iconv.c modules/subdir.c \
+                    -lxnet
+                pfexec mkdir -p /usr/gnu/lib/amd64 /usr/gnu/include/fuse
+                pfexec cp libfuse.so.2.7.1 /usr/gnu/lib/amd64/
+                pfexec ln -sf libfuse.so.2.7.1 /usr/gnu/lib/amd64/libfuse.so.2
+                pfexec ln -sf libfuse.so.2.7.1 /usr/gnu/lib/amd64/libfuse.so
+                pfexec cp include/fuse.h include/fuse_common.h include/fuse_common_compat.h include/fuse_compat.h \
+                    include/fuse_lowlevel.h include/fuse_lowlevel_compat.h include/fuse_opt.h /usr/gnu/include/fuse/
+                popd
+
+                # Install pip Dependencies
+                python3 -m pip install pytest pytest-order ioctl-opt
+
+                # Fix PATH
+                export PATH="/home/runner/.local/bin:$PATH"
+                echo $PATH
+
+                # Test Installation From Source
+                python3 -m pip install .
+
+                # Unit Tests (FUSE 2)
+                python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
+                # preserve pytest exit status, always show logs
+                rc=0
+                pfexec python3 -m pytest -v -rs tests || rc=$?
                 exit "$rc"
                 ;;
             esac
