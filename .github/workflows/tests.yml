@@ -181,7 +181,7 @@ jobs:
         run: |
           python3 -m build
           twine check dist/*
-          python3 -m pip install "$( find dist -name '*.tar.gz' | head -1 )"[full]
+          python3 -m pip install "$( find dist -name '*.tar.gz' | head -1 )"
 
       - name: Test Installation From Source
         run: |
