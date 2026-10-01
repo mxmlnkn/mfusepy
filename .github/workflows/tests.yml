@@ -24,6 +24,16 @@ jobs:
             pyproject.toml
             tests/requirements-tests.txt
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Configure uv package age policy
+        run: |
+          echo "UV_EXCLUDE_NEWER=7 days" >> "$GITHUB_ENV"
+          echo "UV_SYSTEM_PYTHON=1" >> "$GITHUB_ENV"
+
       - name: Reject AI co-authorship
         if: github.event_name == 'pull_request'
         run: |
@@ -42,17 +52,17 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          python3 -m pip install ioctl-opt paramiko types-paramiko pytest
+          uv pip install ioctl-opt paramiko types-paramiko pytest
 
       - name: Style Check With Ruff
         run: |
           # I hate when the CI fails after not pushing for a while because ruff has new default rules.
-          python3 -m pip install ruff~=0.14
+          uv pip install ruff~=0.14
           ruff check --config tests/.ruff.toml -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Style Check With Black
         run: |
-          python3 -m pip install black
+          uv pip install black
           black -q --diff --line-length 120 --skip-string-normalization $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
           if [ -s black.diff ]; then
               cat black.diff
@@ -61,28 +71,28 @@ jobs:
 
       - name: Lint With Codespell
         run: |
-          python3 -m pip install codespell
+          uv pip install codespell
           codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)$' )
 
       - name: Lint With Flake8
         run: |
-          python3 -m pip install flake8
+          uv pip install flake8
           flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Pylint
         run: |
-          python3 -m pip install pylint
+          uv pip install pylint
           pylint --rcfile tests/.pylintrc $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
           ! 'egrep' ': E[0-9]{4}: ' pylint.log
 
       - name: Lint With Pytype
         run: |
-          python3 -m pip install pytype
+          uv pip install pytype
           pytype -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Mypy
         run: |
-          yes | python3 -m pip install --upgrade-strategy eager --upgrade types-dataclasses mypy
+          uv pip install --upgrade types-dataclasses mypy
           mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
@@ -155,6 +165,16 @@ jobs:
             pyproject.toml
             tests/requirements-tests.txt
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Configure uv package age policy
+        run: |
+          echo "UV_EXCLUDE_NEWER=7 days" >> "$GITHUB_ENV"
+          echo "UV_SYSTEM_PYTHON=1" >> "$GITHUB_ENV"
+
       - name: Install Dependencies (Linux)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
@@ -167,25 +187,22 @@ jobs:
 
       - name: Install pip Dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade wheel
-          python3 -m pip install --upgrade setuptools
           # https://github.com/pyca/pynacl/issues/839
           # https://github.com/pyca/pynacl/pull/848
           # pynacl no longer needs to be installed from git master for Python 3.14:
           # pynacl 1.6.0 (2025-09) is on PyPI and contains the typing.ByteString fix of PR 848.
           #python3 -m pip install --upgrade git+https://github.com/pyca/pynacl.git
-          python3 -m pip install --upgrade-strategy eager --upgrade twine build pytest pytest-order ioctl-opt paramiko types-paramiko
+          uv pip install --upgrade wheel setuptools twine build pytest pytest-order ioctl-opt paramiko types-paramiko
 
       - name: Test Installation From Tarball
         run: |
           python3 -m build
           twine check dist/*
-          python3 -m pip install "$( find dist -name '*.tar.gz' | head -1 )"
+          uv pip install "$( find dist -name '*.tar.gz' | head -1 )"
 
       - name: Test Installation From Source
         run: |
-          python3 -m pip install .
+          uv pip install .
 
       - name: Test Import
         run: |
@@ -220,8 +237,8 @@ jobs:
       - name: Test Compatibility (Ratarmount)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
-          python3 -m pip install ratarmount
-          python3 -m pip install --force-reinstall .
+          uv pip install ratarmount
+          uv pip install --reinstall-package mfusepy .
           mkdir -p mounted-tar
           ratarmount tests/single-file.tar mounted-tar
           [[ "$( cat mounted-tar/bar )" == "foo" ]]
@@ -232,8 +249,8 @@ jobs:
         run: |
           # https://github.com/ihaveamac/ninfs/commit/9554caa5ecb325a9893bce829fb17efc73d3622c
           # ^ Increases requirement from 3.8 to 3.12 seemingly for no reason at all. There is no commit after it...
-          python3 -m pip install git+https://github.com/ihaveamac/ninfs.git@v2.0
-          python3 -m pip install --force-reinstall .
+          uv pip install git+https://github.com/ihaveamac/ninfs.git@v2.0
+          uv pip install --reinstall-package mfusepy .
           mkdir -p mounted-3dsx
           ninfs threedsx tests/3dsfetch.3dsx mounted-3dsx
           [[ "$( md5sum mounted-3dsx/icon.smdh )" =~ "a3d784b6f20182ebdf964589cbf427c2" ]]
