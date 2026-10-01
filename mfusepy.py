@@ -237,24 +237,26 @@ if _system in ('Darwin', 'FreeBSD'):
     c_off_t: type = ctypes.c_int64
     c_pid_t: type = ctypes.c_int32
     c_uid_t: type = ctypes.c_uint32
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-        ctypes.c_uint32,
-    )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_uint32,
-    )
     if _system == 'Darwin':
+        # macFUSE's fuse.h adds a uint32_t position argument to setxattr and getxattr (#ifdef __APPLE__),
+        # see Operations.getxattr.
+        setxattr_t = ctypes.CFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            c_byte_p,
+            ctypes.c_size_t,
+            ctypes.c_int,
+            ctypes.c_uint32,
+        )
+        getxattr_t = ctypes.CFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            c_byte_p,
+            ctypes.c_size_t,
+            ctypes.c_uint32,
+        )
         c_fsblkcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
         c_fsfilcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
         # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/stat.h
@@ -279,6 +281,22 @@ if _system in ('Darwin', 'FreeBSD'):
             ('st_qspare', ctypes.c_int64 * 2),
         ]
     else:
+        # FreeBSD uses vanilla libfuse: unlike macFUSE, there is no position argument.
+        setxattr_t = ctypes.CFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            c_byte_p,
+            ctypes.c_size_t,
+            ctypes.c_int,
+        )
+        getxattr_t = ctypes.CFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            c_byte_p,
+            ctypes.c_size_t,
+        )
         # FreeBSD amd64 struct stat layout
         # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/stat.h#L159
         # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
@@ -639,22 +657,6 @@ class c_stat(ctypes.Structure):
 if _system == 'FreeBSD':
     c_fsblkcnt_t = ctypes.c_uint64
     c_fsfilcnt_t = ctypes.c_uint64
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    )
-
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-    )
 
 
 class c_statvfs(ctypes.Structure):
@@ -2188,14 +2190,12 @@ class Operations:
         '''
         Return the extended file attribute value to the specified (key) name and path.
         Should return a bytes object.
+
+        position is only passed on macOS (macFUSE), on all other platforms it is always 0.
+        It is the byte offset into the attribute value, as in macOS getxattr(2). macOS only uses it
+        for the resource fork attribute (com.apple.ResourceFork), for all other attributes it is 0.
+        Most filesystems can ignore it, but overrides must keep the parameter because macFUSE passes it.
         '''
-        # I have no idea what 'position' does. It is a compatibility placeholder specifically for
-        # "if _system in ('Darwin', 'FreeBSD'):", for which getxattr_t supposedly has
-        # an additional uint32_t argument for some reason. I think that including FreeBSD here might be a bug,
-        # because it also only uses libfuse. TODO: Somehow need to test this!
-        # MacFuse does indeed have that extra argument but also only in some overload, not in "Vanilla":
-        # https://github.com/macfuse/library/blob/6c26f28394c1cbda2428498c03e1f898c775404e/include/fuse.h#L1465-L1471
-        # It seems to be some kind of position, maybe to query very long values in a chunked manner with an offset?
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
@@ -2287,6 +2287,15 @@ class Operations:
 
     @_nullable_dummy_function
     def setxattr(self, path: str, name: str, value: bytes, options: int, position: int = 0) -> int:
+        '''
+        Set the extended file attribute value for the specified (key) name and path.
+        options are the XATTR_CREATE / XATTR_REPLACE flags of setxattr(2).
+
+        position is only passed on macOS (macFUSE), on all other platforms it is always 0.
+        It is the byte offset into the attribute value, as in macOS setxattr(2). macOS only uses it
+        for the resource fork attribute (com.apple.ResourceFork), for all other attributes it is 0.
+        Most filesystems can ignore it, but overrides must keep the parameter because macFUSE passes it.
+        '''
         raise FuseOSError(ENOTSUP)
 
     @_nullable_dummy_function
