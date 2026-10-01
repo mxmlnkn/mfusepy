@@ -277,13 +277,17 @@ jobs:
         with:
           fetch-tags: true
 
-      - name: Test on ${{ matrix.display_name }}
+      - name: Start VM on ${{ matrix.display_name }}
         uses: cross-platform-actions/action@v1.6.0
         with:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
+          # The shell that cpa.sh uses to run the script of subsequent custom-shell steps inside the VM
           shell: bash
-          run: |
+
+      - name: Test on ${{ matrix.display_name }}
+        shell: cpa.sh {0}
+        run: |
             set -euxo pipefail
             case "${{ matrix.os }}" in
               freebsd)
