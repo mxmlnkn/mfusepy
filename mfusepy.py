@@ -1431,7 +1431,7 @@ class FUSE:
         self.raw_fi = raw_fi
         self.encoding = encoding
         self.errors = errors
-        self.__critical_exception = None
+        self.__critical_exception: Optional[BaseException] = None
 
         self.use_ns = getattr(self.operations, 'use_ns', False)
         if not self.use_ns:
@@ -1515,7 +1515,7 @@ class FUSE:
                         raise RuntimeError(f"Internal Error: Method wrapper for FUSE callback '{name}' is missing!")
 
                 log.debug("Set libFUSE callback for '%s' to wrapped %s wrapping %s", name, method, value)
-                value = prototype(functools.partial(self._wrapper, method))
+                value = prototype(functools.partial(self._wrapper, name, method))
             else:
                 log.debug("Set libFUSE value for '%s' to %s", name, value)
 
@@ -1559,22 +1559,24 @@ class FUSE:
             else:
                 yield f'{key}={value}'
 
-    def _wrapper(self, func, *args, **kwargs):
+    def _wrapper(self, callback_name: str, func, *args, **kwargs):
         'Decorator for the methods that follow'
 
-        # Catch exceptions generically so that the whole filesystem does not crash on each fusepy user
-        # error. 'init' must not fail because its return code is just stored as private_data field of
-        # struct fuse_contex.
+        # Catch exceptions from the file system generically so that the whole file system is not torn
+        # down by a single fusepy user error. 'init' is special: its return value is only stored as the
+        # private_data field of struct fuse_context, so a failure cannot be signaled through the return
+        # code. Re-raise it so that FUSE.__init__ aborts instead of continuing with a half-initialized
+        # file system.
         try:
             try:
                 return func(*args, **kwargs) or 0
 
             except OSError as e:
-                if func.__name__ == "init":
-                    raise e
+                if callback_name == "init":
+                    raise
                 if isinstance(e.errno, int) and e.errno > 0:
-                    is_valid_exception = (func.__name__.startswith("getattr") and e.errno == errno.ENOENT) or (
-                        func.__name__ == "getxattr" and e.errno == ENOATTR
+                    is_valid_exception = (callback_name in ("getattr", "fgetattr") and e.errno == errno.ENOENT) or (
+                        callback_name == "getxattr" and e.errno == ENOATTR
                     )
 
                     error_string = ""
@@ -1583,7 +1585,7 @@ class FUSE:
 
                     log.debug(
                         "FUSE operation %s (%s) raised a %s, returning errno %s (%s).",
-                        func.__name__,
+                        callback_name,
                         args,
                         type(e),
                         e.errno,
@@ -1593,22 +1595,22 @@ class FUSE:
                     return -e.errno
                 log.exception(
                     "FUSE operation %s raised an OSError with negative errno %s, returning errno.EINVAL.",
-                    func.__name__,
+                    callback_name,
                     e.errno,
                 )
                 return -errno.EINVAL
 
-            except Exception as e:
-                if func.__name__ == "init":
-                    raise e
-                log.exception("Uncaught exception from FUSE operation %s, returning errno.EINVAL.", func.__name__)
+            except Exception:
+                if callback_name == "init":
+                    raise
+                log.exception("Uncaught exception from FUSE operation %s, returning errno.EINVAL.", callback_name)
                 return -errno.EINVAL
 
         except BaseException as e:
             self.__critical_exception = e
             log.critical(
                 "Uncaught critical exception from FUSE operation %s, aborting.",
-                func.__name__,
+                callback_name,
                 exc_info=True,
             )
             # the raised exception (even SystemExit) will be caught by FUSE
