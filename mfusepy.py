@@ -185,7 +185,8 @@ if fuse_version_major == 2 and fuse_version_minor < 6:
     )
 if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Linux', 'NetBSD')):
     raise AttributeError(
-        f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. Expected FUSE 2!"
+        f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. "
+        "Expected FUSE 2, or FUSE 3 on Linux and NetBSD!"
     )
 
 # Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
