@@ -111,7 +111,7 @@ While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7
 
  - [libfuse](https://github.com/libfuse/libfuse) (Linux, FreeBSD) (fuse.h [2](https://github.com/libfuse/libfuse/blob/fuse-2_9_bugfix/include/fuse.h) [3](https://github.com/libfuse/libfuse/blob/master/include/fuse.h))
  - [libfuse](https://github.com/openbsd/src/tree/master/lib/libfuse) (OpenBSD) (fuse.h [2](https://github.com/openbsd/src/blob/master/lib/libfuse/fuse.h))
- - [librefuse](https://github.com/NetBSD/src/tree/netbsd-8/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [2](https://github.com/NetBSD/src/blob/netbsd-8/lib/librefuse/fuse.h))
+ - [librefuse](https://github.com/NetBSD/src/tree/netbsd-11/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [3](https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h))
  - [macFUSE](https://github.com/macfuse/macfuse) (macOS), previously called [osxfuse](https://osxfuse.github.io/), (fuse.h [2](https://github.com/osxfuse/fuse/blob/master/include/fuse.h) [3](https://github.com/macfuse/library/blob/6a8b90a0ab2685af918d5788cfdb5186f07351ce/include/fuse.h))
  - [MacFUSE](https://code.google.com/archive/p/macfuse/) (macOS), no longer maintained
  - [FUSE-T](https://www.fuse-t.org/) (macOS), [GitHub](https://github.com/macos-fuse-t/fuse-t)
