@@ -829,7 +829,8 @@ if _librefuse:
         ('nonseekable', ctypes.c_uint32, 1),
         ('flock_release', ctypes.c_uint32, 1),
         ('cache_readdir', ctypes.c_uint32, 1),
-        ('padding', ctypes.c_uint32, 25),
+        # As in fuse.h: 7 + 26 bits do not fit into 32 bits, so padding starts a new 32-bit unit (as in C).
+        ('padding', ctypes.c_uint32, 26),
         ('fh', ctypes.c_uint64),
         ('lock_owner', ctypes.c_uint64),
         ('poll_events', ctypes.c_uint32),
@@ -914,7 +915,10 @@ class fuse_file_info(ctypes.Structure):
     _fields_ = _fuse_file_info_fields_
 
 
-if ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
+if _librefuse:
+    if ctypes.alignment(ctypes.c_uint64) == 8:
+        assert ctypes.sizeof(fuse_file_info) == 40
+elif ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
     assert ctypes.sizeof(fuse_file_info) == 64
 
 
@@ -1025,7 +1029,7 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
     _fields_ = _fuse_conn_info_fields
 
 
-if (fuse_version_major, fuse_version_minor) >= (3, 17):
+if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
     assert ctypes.sizeof(fuse_conn_info) == 128
 
 # FUSE 3-only struct for second init argument defined in fuse.h.
@@ -1060,7 +1064,8 @@ _fuse_config_fields_: list[FieldsEntry] = [
 ]
 if fuse_version_major == 3:
     # Adding this member in the middle of the struct was an ABI-incompatible change!
-    if fuse_version_minor >= 11 and fuse_version_minor < 17:
+    # librefuse has one fuse_config layout for all API versions, i.e. none of the version-dependent members below.
+    if fuse_version_minor >= 11 and fuse_version_minor < 17 and not _librefuse:
         _fuse_config_fields_ += [('no_rofd_flush', ctypes.c_int)]
 
     _fuse_config_fields_ += [
@@ -1081,7 +1086,7 @@ if fuse_version_major == 3:
     # The break was in 3.14.1 NOT in 3.14.0, but I cannot query the bugfix version.
     # I'd hope that all 3.14.0 installations have been replaced by updates to 3.14.1.
     # ... they have not. My own system, Ubuntu 24.04 uses fuse 3.14.0. Check for >= 3.15.
-    if fuse_version_minor >= 15 and fuse_version_minor < 17:
+    if fuse_version_minor >= 15 and fuse_version_minor < 17 and not _librefuse:
         _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
 
     if not _librefuse:
@@ -1091,7 +1096,7 @@ if fuse_version_major == 3:
             ('debug', _fuse_int32),
         ]
 
-    if fuse_version_minor >= 17:
+    if fuse_version_minor >= 17 and not _librefuse:
         _fuse_config_fields_ += [
             ('fmask', ctypes.c_uint32),
             ('dmask', ctypes.c_uint32),
