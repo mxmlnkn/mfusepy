@@ -44,8 +44,19 @@ class Loopback(fuse.Operations):
             raise fuse.FuseOSError(errno.EACCES)
         return 0
 
-    chmod = static_with_root_path(os.chmod)
-    chown = static_with_root_path(os.chown)
+    # The kernel resolves symlinks, so chmod and chown are meant for the node itself and must not follow a symlink.
+    # librefuse (NetBSD) calls chmod and chown for every newly created node, including symlinks. Following a symlink
+    # that points back into the mount point would then deadlock.
+    @with_root_path
+    @fuse.overrides(fuse.Operations)
+    def chmod(self, path: str, mode: int) -> int:
+        if os.chmod in os.supports_follow_symlinks:
+            os.chmod(path, mode, follow_symlinks=False)
+        elif not os.path.islink(path):  # e.g. Linux has no lchmod, but symlink permissions are ignored there anyway
+            os.chmod(path, mode)
+        return 0
+
+    chown = static_with_root_path(os.lchown)
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
