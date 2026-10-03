@@ -161,7 +161,11 @@ _libfuse = ctypes.CDLL(_libfuse_path)
 
 # NetBSD's librefuse is a FUSE reimplementation on top of puffs (no perfused daemon needed).
 # Its struct layouts differ from libfuse and are fixed, i.e. independent of the FUSE API version.
-_librefuse = _system == 'NetBSD' and hasattr(_libfuse, '__fuse_main')
+# fuse_pkgversion() returns e.g. "ReFUSE 3.10" for librefuse, but e.g. "3.18.2" for libfuse 3 (pkgsrc fuse3).
+_librefuse = False
+if _system == 'NetBSD' and hasattr(_libfuse, 'fuse_pkgversion'):
+    _libfuse.fuse_pkgversion.restype = ctypes.c_char_p
+    _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
 
 
 def get_fuse_version(libfuse):
@@ -1313,9 +1317,11 @@ elif _librefuse:
     # the operations as struct fuse_operations_v26. __fuse_main takes the layout version instead of the size.
     # The FUSE 3 fuse_operations defined above is struct fuse_operations_v38 (used for FUSE_USE_VERSION 38..310).
     _REFUSE_OP_VERSION = 38
+    # Look it up at import time: without it, falling back to the fuse_main_real shim would crash.
+    _refuse_fuse_main = getattr(_libfuse, '__fuse_main')
 
     def fuse_main_real(argc, argv, fuse_ops_v, sizeof_fuse_ops, ctx_p):
-        return getattr(_libfuse, '__fuse_main')(argc, argv, fuse_ops_v, _REFUSE_OP_VERSION, ctx_p)
+        return _refuse_fuse_main(argc, argv, fuse_ops_v, _REFUSE_OP_VERSION, ctx_p)
 
 else:
     fuse_main_real = _libfuse.fuse_main_real
