@@ -56,7 +56,7 @@ jobs:
           # ruff is pinned because new default rules can fail the CI without any change to this repository.
           uv pip install \
             ioctl-opt paramiko types-paramiko pytest \
-            ruff~=0.14 black codespell flake8 pylint pytype types-dataclasses mypy
+            ruff~=0.14 black codespell flake8 flake8-bugbear bandit pylint pytype types-dataclasses mypy
 
       - name: Style Check With Ruff
         run: |
@@ -77,6 +77,11 @@ jobs:
       - name: Lint With Flake8
         run: |
           flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
+
+      - name: Security Lint With Bandit
+        run: |
+          # Only report medium and higher severity issues and scan the library and the examples.
+          bandit -q -r -ll mfusepy.py examples
 
       - name: Lint With Pylint
         run: |

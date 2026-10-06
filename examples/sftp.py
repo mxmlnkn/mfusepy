@@ -19,7 +19,8 @@ class SFTP(fuse.Operations):
 
     def __init__(self, host, username=None, port=22):
         self.client = paramiko.SSHClient()
-        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Demo only: accept unknown host keys for convenience. Production code should verify them.
+        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec
         self.client.load_system_host_keys()
         self.client.connect(host, port=port, username=username)
         self.sftp = self.client.open_sftp()
