@@ -53,10 +53,11 @@ jobs:
       - name: Install Dependencies
         run: |
           # Install all static-code-check tools in a single call so that uv resolves and installs only once.
-          # ruff is pinned because new default rules can fail the CI without any change to this repository.
+          # Pin ruff to a minor version because new rules can fail the CI without any change here.
+          # Use three components because for 0.x releases "ruff~=0.16" would still allow any 0.x.
           uv pip install \
             ioctl-opt paramiko types-paramiko pytest \
-            ruff~=0.14 black codespell flake8 flake8-bugbear bandit pylint pytype types-dataclasses mypy
+            ruff~=0.16.0 black codespell flake8 flake8-bugbear bandit pylint pytype types-dataclasses mypy
 
       - name: Style Check With Ruff
         run: |
