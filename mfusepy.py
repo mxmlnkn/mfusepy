@@ -1321,7 +1321,7 @@ elif _librefuse:
     # The FUSE 3 fuse_operations defined above is struct fuse_operations_v38 (used for FUSE_USE_VERSION 38..310).
     _REFUSE_OP_VERSION = 38
     # Look it up at import time: without it, falling back to the fuse_main_real shim would crash.
-    _refuse_fuse_main = getattr(_libfuse, '__fuse_main')
+    _refuse_fuse_main = getattr(_libfuse, '__fuse_main')  # noqa: B009
 
     def fuse_main_real(argc, argv, fuse_ops_v, sizeof_fuse_ops, ctx_p):
         return _refuse_fuse_main(argc, argv, fuse_ops_v, _REFUSE_OP_VERSION, ctx_p)
@@ -1379,7 +1379,7 @@ def fuse_exit() -> None:
 
 
 class FuseOSError(OSError):
-    def __init__(self, errno):
+    def __init__(self, errno):  # noqa: B042
         super().__init__(errno, os.strerror(errno))
 
 
@@ -1606,7 +1606,7 @@ class FUSE:
                 log.exception("Uncaught exception from FUSE operation %s, returning errno.EINVAL.", callback_name)
                 return -errno.EINVAL
 
-        except BaseException as e:
+        except BaseException as e:  # noqa: B036
             self.__critical_exception = e
             log.critical(
                 "Uncaught critical exception from FUSE operation %s, aborting.",

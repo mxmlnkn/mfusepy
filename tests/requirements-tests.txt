@@ -1,6 +1,8 @@
+bandit
 black
 codespell
 flake8
+flake8-bugbear
 ioctl-opt
 paramiko
 types-paramiko
