@@ -52,17 +52,18 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          uv pip install ioctl-opt paramiko types-paramiko pytest
+          # Install all static-code-check tools in a single call so that uv resolves and installs only once.
+          # ruff is pinned because new default rules can fail the CI without any change to this repository.
+          uv pip install \
+            ioctl-opt paramiko types-paramiko pytest \
+            ruff~=0.14 black codespell flake8 pylint pytype types-dataclasses mypy
 
       - name: Style Check With Ruff
         run: |
-          # I hate when the CI fails after not pushing for a while because ruff has new default rules.
-          uv pip install ruff~=0.14
           ruff check --config tests/.ruff.toml -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Style Check With Black
         run: |
-          uv pip install black
           black -q --diff --line-length 120 --skip-string-normalization $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
           if [ -s black.diff ]; then
               cat black.diff
@@ -71,28 +72,23 @@ jobs:
 
       - name: Lint With Codespell
         run: |
-          uv pip install codespell
           codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)$' )
 
       - name: Lint With Flake8
         run: |
-          uv pip install flake8
           flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Pylint
         run: |
-          uv pip install pylint
           pylint --rcfile tests/.pylintrc $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
           ! 'egrep' ': E[0-9]{4}: ' pylint.log
 
       - name: Lint With Pytype
         run: |
-          uv pip install pytype
           pytype -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Mypy
         run: |
-          uv pip install --upgrade types-dataclasses mypy
           mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
