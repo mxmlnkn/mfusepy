@@ -1506,13 +1506,13 @@ class FUSE:
                 if method is not None and hasattr(self, name):
                     raise RuntimeError(
                         "Internal Error: Only either suffixed or non-suffixed methods must exist!"
-                        f"Found both for '{name}'."
+                        f"Found both for {name!r}."
                     )
 
                 if method is None:
                     method = getattr(self, name, None)
                     if method is None:
-                        raise RuntimeError(f"Internal Error: Method wrapper for FUSE callback '{name}' is missing!")
+                        raise RuntimeError(f"Internal Error: Method wrapper for FUSE callback {name!r} is missing!")
 
                 log.debug("Set libFUSE callback for '%s' to wrapped %s wrapping %s", name, method, value)
                 value = prototype(functools.partial(self._wrapper, name, method))
