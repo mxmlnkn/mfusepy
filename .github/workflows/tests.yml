@@ -349,12 +349,9 @@ jobs:
                 sudo -E pkg_add sshfs-fuse  # needed for sideeffect of having fuse 2.6?
 
                 # Install pip Dependencies
-                # The venv's pip comes from the interpreter's bundled ensurepip and may predate --group
-                # (pip 25.1), so the dependencies are still listed explicitly here.
-                # Keep them in sync with [dependency-groups].test in pyproject.toml.
                 python3 -m venv .venv
                 source .venv/bin/activate
-                python3 -m pip install pytest pytest-order ioctl-opt
+                python3 -m pip install --group test
 
                 # Test Installation From Source
                 python3 -m pip install .
@@ -386,7 +383,6 @@ jobs:
                 sudo chmod 666 /dev/puffs
 
                 # Install pip Dependencies
-                # The pkgin-provided pip supports PEP 735 --group (pip 25.1 and later).
                 python3 -m pip install --group test
 
                 # Test Installation From Source
@@ -436,9 +432,7 @@ jobs:
                 popd
 
                 # Install pip Dependencies
-                # The pip version in this image is not known to support --group (pip 25.1), so the
-                # dependencies are still listed explicitly here. Keep them in sync with [dependency-groups].test.
-                python3 -m pip install pytest pytest-order ioctl-opt
+                python3 -m pip install --group test
 
                 # Fix PATH
                 export PATH="/home/runner/.local/bin:$PATH"
