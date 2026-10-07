@@ -47,3 +47,55 @@ content-type = "text/markdown"
 [tool.setuptools]
 py-modules = ["mfusepy"]
 license-files = ["LICENSE"]
+
+[tool.pytest.ini_options]
+# Needed by tests/conftest.py to count the executed assertions. It lives here instead of tests/pytest.ini so
+# that it also applies when pytest is invoked without an explicit tests path, e.g., by a package manager.
+enable_assertion_pass_hook = true
+testpaths = ["tests"]
+# Declare the mark explicitly so that a run without pytest-order still does not warn about an unknown mark.
+# If pytest-order is installed, it turns this into an actual ordering directive.
+markers = [
+    "order: run tests in the given order; provided by pytest-order",
+]
+
+# Development-only dependencies. PEP 735 groups are metadata only: they are shipped in the sdist's
+# pyproject.toml but never in the wheel's METADATA, and they are not exposed as an extra. Unlike an extra, a
+# group can be installed without also installing the package itself.
+[dependency-groups]
+test = [
+    "pytest",
+    "pytest-order",
+    # Only used by the ioctl test in tests/test_examples.py, which only runs on Linux.
+    "ioctl-opt; sys_platform == 'linux'",
+]
+lint = [
+    "bandit",
+    "black",
+    "codespell",
+    "flake8",
+    "flake8-bugbear",
+    "mypy",
+    "pylint",
+    "pytype",
+    # Pin ruff to a minor version because new rules can fail the CI without any change here.
+    # Use three components because for 0.x releases "ruff~=0.16" would still allow any 0.x.
+    "ruff~=0.16.0",
+    "types-paramiko",
+]
+examples = [
+    "paramiko",
+]
+build = [
+    "build",
+    # Keep in sync with the constraint in [build-system].requires.
+    "setuptools >= 61, < 83",
+    "twine",
+    "wheel",
+]
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "examples"},
+    {include-group = "build"},
+]

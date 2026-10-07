@@ -1,0 +1,5 @@
+# Include the tests and the example filesystems they exercise in the source distribution so that the test suite
+# can be run from the release artifact, e.g., by distribution packagers. They stay out of the wheel because only
+# py-modules are packaged.
+recursive-include examples *.py
+recursive-include tests *.py
