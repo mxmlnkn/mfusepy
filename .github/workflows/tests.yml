@@ -386,8 +386,8 @@ jobs:
                 sudo chmod 666 /dev/puffs
 
                 # Install pip Dependencies
-                # Keep this list in sync with [dependency-groups].test in pyproject.toml.
-                python3 -m pip install pytest pytest-order ioctl-opt
+                # The pkgin-provided pip supports PEP 735 --group (pip 25.1 and later).
+                python3 -m pip install --group test
 
                 # Test Installation From Source
                 python3 -m pip install .
