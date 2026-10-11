@@ -1156,8 +1156,10 @@ FUSE_CAP_DIRECT_IO_ALLOW_MMAP = 1 << 28
 FUSE_CAP_PASSTHROUGH = 1 << 29
 FUSE_CAP_NO_EXPORT_SUPPORT = 1 << 30
 FUSE_CAP_OVER_IO_URING = 1 << 31
+# These only exist in libfuse master, i.e., in none of the releases up to 3.18.3.
 FUSE_CAP_ALLOW_IDMAP = 1 << 32
 FUSE_CAP_SECURITY_CTX = 1 << 33
+FUSE_CAP_IO_URING_BUFPOOL = 1 << 34
 
 
 def feature_flag_names(flags: int) -> str:
