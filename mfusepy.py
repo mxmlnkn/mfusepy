@@ -1122,10 +1122,31 @@ elif fuse_version_major == 3 or _system == 'NetBSD':
 
 # Feature flags for fuse_conn_info as defined in fuse_common.h. The kernel announces the supported
 # features in 'capable' and the file system requests the features it wants to be enabled in 'want'.
-# Note that libfuse 2 only knows the flags up to FUSE_CAP_IOCTL_DIR and that flags beyond 32 bits
-# require libfuse 3.17 or newer, which added the 64-bit 'capable_ext' and 'want_ext' members.
 # Use fuse_conn_info.set_feature_flag or Operations.wanted_features to request features because
 # requesting a feature that the kernel is not capable of makes libfuse fail the mount.
+#
+# The values below are the libfuse ones, but only the flags up to FUSE_CAP_IOCTL_DIR mean the same
+# thing on all supported platforms. The implementations differ as follows:
+#  - libfuse (Linux, FreeBSD ports): 2.8 added 'capable' and 'want' and defines the flags up to
+#    FUSE_CAP_IOCTL_DIR, 3.0 those up to FUSE_CAP_HANDLE_KILLPRIV, and 3.17 added the 64-bit
+#    'capable_ext' and 'want_ext' members, which are required for the flags beyond 32 bits.
+#    https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
+#    libfuse 2.7 and older have neither 'capable' nor 'want', only the 'reserved' members at the
+#    same offsets, i.e., is_capable reads zeros there and no feature can be requested.
+#    https://github.com/libfuse/libfuse/blob/fuse_2_7_4/include/fuse_common.h
+#  - NetBSD librefuse: defines the flags up to FUSE_CAP_HANDLE_KILLPRIV plus FUSE_CAP_CACHE_SYMLINKS
+#    and FUSE_CAP_NO_OPENDIR_SUPPORT with the libfuse values, FUSE_CAP_POSIX_ACL included.
+#    https://github.com/NetBSD/src/blob/trunk/lib/librefuse/fuse.h
+#  - macFUSE: defines the flags up to FUSE_CAP_IOCTL_DIR and uses the bits 23 to 31 for
+#    Apple-specific features (ACCESS_EXTENDED, NODE_RWLOCK, RENAME_SWAP, RENAME_EXCL, ALLOCATE,
+#    EXCHANGE_DATA, CASE_INSENSITIVE, VOL_RENAME, XTIMES), i.e., for exactly the bits that libfuse 3
+#    uses for FUSE_CAP_CACHE_SYMLINKS to FUSE_CAP_OVER_IO_URING!
+#    https://github.com/macfuse/library/blob/master/include/fuse_common.h
+#  - WinFsp: defines the flags up to FUSE_CAP_DONT_MASK and uses the bits 21 to 24 for its own
+#    features and the bits 27 to 31 for the Apple-specific ones.
+#    https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse_common.h
+# So requesting one of the higher flags on macFUSE or WinFsp may enable an entirely different
+# feature than the name suggests, should the implementation announce that bit as capable.
 FUSE_CAP_ASYNC_READ = 1 << 0
 FUSE_CAP_POSIX_LOCKS = 1 << 1
 FUSE_CAP_ATOMIC_O_TRUNC = 1 << 3
@@ -1190,21 +1211,33 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
     _WANT_MASK = 0xFFFF_FFFF
 
     def is_capable(self, flags: int) -> bool:
-        'Return whether the kernel supports all of the given FUSE_CAP_* feature flags.'
+        '''
+        Return whether the kernel announced all of the given FUSE_CAP_* feature flags as supported.
+        No given flag is trivially supported, i.e., this returns True for 0.
+        Note that this only reflects what was announced in 'capable', which is not a promise that
+        the respective feature works as documented by libfuse on all platforms.
+        '''
         capable = self.capable_ext if self._has_extended_features else self.capable
         return (capable & flags) == flags
 
     def is_wanted(self, flags: int) -> bool:
-        'Return whether all of the given FUSE_CAP_* feature flags are requested to be enabled.'
+        '''
+        Return whether all of the given FUSE_CAP_* feature flags are requested to be enabled.
+        No given flag is trivially requested, i.e., this returns True for 0.
+        '''
         want = self.want_ext if self._has_extended_features else self.want
         return (want & flags) == flags
 
     def set_feature_flag(self, flags: int) -> bool:
         '''
-        Request the given FUSE_CAP_* features to be enabled, see fuse_set_feature_flag.
+        Request the given FUSE_CAP_* features to be enabled, similar to fuse_set_feature_flag.
         Does nothing and returns False if the kernel or the loaded libfuse version is not
         capable of all of the given features. Requesting an unsupported feature would make
         libfuse abort the mount with EPROTO.
+
+        There are two intentional differences to fuse_set_feature_flag: all given flags have to be
+        capable instead of any of them, and no given flag trivially succeeds, i.e., this returns
+        True and does nothing for 0, while fuse_set_feature_flag returns false.
         '''
         if not self.is_capable(flags):
             return False

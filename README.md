@@ -112,6 +112,14 @@ Overwrite `init_with_config` to check with `conn_info.is_wanted(flag)` whether a
 enabled, or to request (`conn_info.set_feature_flag`) and disable (`conn_info.unset_feature_flag`)
 features programmatically.
 
+The `FUSE_CAP_*` values are the libfuse ones and only the flags up to `FUSE_CAP_IOCTL_DIR` mean the
+same thing on all supported platforms.
+In particular, macFUSE and WinFsp use the high bits for their own features, e.g. bit 29 is
+`FUSE_CAP_PASSTHROUGH` for libfuse 3 but `FUSE_CAP_CASE_INSENSITIVE` for macFUSE, so requesting such
+a flag is only meaningful on Linux.
+See the comment next to the flag definitions in `mfusepy.py` for the per-platform details and links
+to the respective headers.
+
 ## POSIX ACLs
 
 `FUSE_CAP_POSIX_ACL` (Linux-only) makes the kernel *enforce* the POSIX ACLs that `getxattr` returns
