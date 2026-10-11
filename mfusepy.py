@@ -1163,9 +1163,13 @@ FUSE_CAP_IO_URING_BUFPOOL = 1 << 34
 
 
 def feature_flag_names(flags: int) -> str:
-    'Return a human-readable representation of the given FUSE_CAP_* flags, e.g. for logging.'
-    names = [name for name, value in globals().items() if name.startswith('FUSE_CAP_') and value & flags]
-    return ' | '.join(sorted(names)) if names else hex(flags)
+    '''
+    Return a human-readable representation of the given FUSE_CAP_* flags, e.g. for logging.
+    Bits without a known name are listed as 'unknown bit <n>' instead of being omitted.
+    '''
+    known_flags = {value: name for name, value in globals().items() if name.startswith('FUSE_CAP_')}
+    names = [known_flags.get(1 << bit, f'unknown bit {bit}') for bit in range(flags.bit_length()) if flags & (1 << bit)]
+    return ' | '.join(names) if names else 'no flags'
 
 
 # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak

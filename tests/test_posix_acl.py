@@ -76,9 +76,16 @@ def test_feature_flags():
 
 def test_feature_flag_names():
     assert mfusepy.feature_flag_names(mfusepy.FUSE_CAP_POSIX_ACL) == 'FUSE_CAP_POSIX_ACL'
-    assert mfusepy.feature_flag_names(0) == '0x0'
+    assert mfusepy.feature_flag_names(0) == 'no flags'
     assert mfusepy.feature_flag_names(mfusepy.FUSE_CAP_POSIX_ACL | mfusepy.FUSE_CAP_ASYNC_READ) == (
         'FUSE_CAP_ASYNC_READ | FUSE_CAP_POSIX_ACL'
+    )
+
+    # Bits without a name must still show up. Bit 60 should stay unused for a while, and bit 22 is
+    # an example for a bit that libfuse skipped between HANDLE_KILLPRIV_V2 and CACHE_SYMLINKS.
+    assert mfusepy.feature_flag_names(1 << 60) == 'unknown bit 60'
+    assert mfusepy.feature_flag_names(mfusepy.FUSE_CAP_POSIX_ACL | (1 << 22) | (1 << 60)) == (
+        'FUSE_CAP_POSIX_ACL | unknown bit 22 | unknown bit 60'
     )
 
 
