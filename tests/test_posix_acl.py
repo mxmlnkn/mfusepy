@@ -74,6 +74,31 @@ def test_feature_flags():
         assert connection.want_ext == 0
 
 
+def test_feature_flags_beyond_32_bits():
+    connection = mfusepy.fuse_conn_info()
+
+    if connection._has_extended_features:
+        connection.capable_ext = mfusepy.FUSE_CAP_ALLOW_IDMAP
+        assert connection.is_capable(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        assert connection.set_feature_flag(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        assert connection.is_wanted(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        # The flag does not fit into the 32-bit 'want' member, which must be left alone instead of
+        # being wrapped around into some other flag.
+        assert connection.want_ext == mfusepy.FUSE_CAP_ALLOW_IDMAP
+        assert connection.want == 0
+
+        connection.unset_feature_flag(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        assert connection.want_ext == 0
+        assert connection.want == 0
+    else:
+        # libfuse older than 3.17 has no 'want_ext', so flags beyond bit 31 can never be capable
+        # and still must not end up in the 32-bit 'want' member.
+        connection.capable = 0xFFFF_FFFF
+        assert not connection.is_capable(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        assert not connection.set_feature_flag(mfusepy.FUSE_CAP_ALLOW_IDMAP)
+        assert connection.want == 0
+
+
 def test_feature_flag_names():
     assert mfusepy.feature_flag_names(mfusepy.FUSE_CAP_POSIX_ACL) == 'FUSE_CAP_POSIX_ACL'
     assert mfusepy.feature_flag_names(0) == 'no flags'

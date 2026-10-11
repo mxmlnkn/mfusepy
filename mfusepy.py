@@ -1184,6 +1184,11 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
     # fuse_set_feature_flag does, is what works for all libfuse versions.
     _has_extended_features = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
 
+    # 'want' is only 32 bits wide, so the flags beyond bit 31, which exist only in 'want_ext', have
+    # to be masked out when writing it. In 'unset_feature_flag', this additionally turns the
+    # negative Python integer '~flags' into the 32-bit clear mask that the member expects.
+    _WANT_MASK = 0xFFFF_FFFF
+
     def is_capable(self, flags: int) -> bool:
         'Return whether the kernel supports all of the given FUSE_CAP_* feature flags.'
         capable = self.capable_ext if self._has_extended_features else self.capable
@@ -1205,14 +1210,14 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
             return False
         if self._has_extended_features:
             self.want_ext |= flags
-        self.want |= flags & 0xFFFF_FFFF
+        self.want |= flags & self._WANT_MASK
         return True
 
     def unset_feature_flag(self, flags: int) -> None:
         'Request the given FUSE_CAP_* features to be disabled, see fuse_unset_feature_flag.'
         if self._has_extended_features:
             self.want_ext &= ~flags
-        self.want &= ~flags & 0xFFFF_FFFF
+        self.want &= ~flags & self._WANT_MASK
 
 
 if (fuse_version_major, fuse_version_minor) >= (3, 17):
