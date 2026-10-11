@@ -117,6 +117,11 @@ same thing on all supported platforms.
 In particular, macFUSE and WinFsp use the high bits for their own features, e.g. bit 29 is
 `FUSE_CAP_PASSTHROUGH` for libfuse 3 but `FUSE_CAP_CASE_INSENSITIVE` for macFUSE, so requesting such
 a flag is only meaningful on Linux.
+Requesting such a flag anyway is refused with a warning instead of being passed on, because the
+implementation may well announce that bit as capable for its own feature: macFUSE, for example,
+announces the bits 23 to 27 and 29 to 31.
+`mfusepy.SUPPORTED_FEATURE_FLAGS` is the mask of the flags that the loaded implementation defines
+with the documented meaning.
 See the comment next to the flag definitions in `mfusepy.py` for the per-platform details and links
 to the respective headers.
 

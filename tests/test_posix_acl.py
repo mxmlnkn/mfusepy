@@ -37,41 +37,101 @@ FILE_CONTENTS = b'Hello ACL!\n'
 
 def test_feature_flags():
     connection = mfusepy.fuse_conn_info()
+    # FUSE_CAP_ATOMIC_O_TRUNC because all implementations define it with the same meaning, see
+    # SUPPORTED_FEATURE_FLAGS, while e.g. FUSE_CAP_POSIX_ACL only exists on Linux and NetBSD.
+    flag = mfusepy.FUSE_CAP_ATOMIC_O_TRUNC
+    other_flag = mfusepy.FUSE_CAP_ASYNC_READ
 
-    assert not connection.is_capable(mfusepy.FUSE_CAP_POSIX_ACL)
-    assert not connection.is_wanted(mfusepy.FUSE_CAP_POSIX_ACL)
+    assert not connection.is_capable(flag)
+    assert not connection.is_wanted(flag)
     # Requesting a feature that the kernel is not capable of must not change anything because
     # libfuse aborts the mount with EPROTO for unknown 'want' flags.
-    assert not connection.set_feature_flag(mfusepy.FUSE_CAP_POSIX_ACL)
+    assert not connection.set_feature_flag(flag)
     assert connection.want == 0
 
     if connection._has_extended_features:
-        connection.capable_ext = mfusepy.FUSE_CAP_POSIX_ACL | mfusepy.FUSE_CAP_ASYNC_READ
+        connection.capable_ext = flag | other_flag
     else:
-        connection.capable = mfusepy.FUSE_CAP_POSIX_ACL | mfusepy.FUSE_CAP_ASYNC_READ
+        connection.capable = flag | other_flag
 
-    assert connection.is_capable(mfusepy.FUSE_CAP_POSIX_ACL)
-    assert not connection.is_capable(mfusepy.FUSE_CAP_POSIX_ACL | mfusepy.FUSE_CAP_PASSTHROUGH)
+    assert connection.is_capable(flag)
+    assert not connection.is_capable(flag | mfusepy.FUSE_CAP_DONT_MASK)
     # No requested feature is trivially supported and requesting none trivially succeeds.
     assert connection.is_capable(0)
     assert connection.is_wanted(0)
     assert connection.set_feature_flag(0)
     assert connection.want == 0
 
-    assert connection.set_feature_flag(mfusepy.FUSE_CAP_POSIX_ACL)
-    assert connection.is_wanted(mfusepy.FUSE_CAP_POSIX_ACL)
-    assert not connection.is_wanted(mfusepy.FUSE_CAP_ASYNC_READ)
+    assert connection.set_feature_flag(flag)
+    assert connection.is_wanted(flag)
+    assert not connection.is_wanted(other_flag)
     # 'want' must be kept in sync with 'want_ext' for libfuse < 3.17 and also for newer versions,
     # which only convert 'want' into 'want_ext' if exactly one of both has been changed.
-    assert connection.want == mfusepy.FUSE_CAP_POSIX_ACL
+    assert connection.want == flag
     if connection._has_extended_features:
-        assert connection.want_ext == mfusepy.FUSE_CAP_POSIX_ACL
+        assert connection.want_ext == flag
 
-    connection.unset_feature_flag(mfusepy.FUSE_CAP_POSIX_ACL)
-    assert not connection.is_wanted(mfusepy.FUSE_CAP_POSIX_ACL)
+    connection.unset_feature_flag(flag)
+    assert not connection.is_wanted(flag)
     assert connection.want == 0
     if connection._has_extended_features:
         assert connection.want_ext == 0
+
+
+def test_supported_feature_flags():
+    # Every flag in the mask must be one of the known ones, or a name is missing above it.
+    assert 'unknown' not in mfusepy.feature_flag_names(mfusepy.SUPPORTED_FEATURE_FLAGS)
+    # No FUSE implementation ever defined the bits 2 and 22.
+    assert not mfusepy.SUPPORTED_FEATURE_FLAGS & ((1 << 2) | (1 << 22))
+    # This one is defined with the same meaning by all of them.
+    assert mfusepy.SUPPORTED_FEATURE_FLAGS & mfusepy.FUSE_CAP_ATOMIC_O_TRUNC
+
+    if sys.platform == 'darwin':
+        # macFUSE uses the bits 23 to 31 for Apple-specific features and has no POSIX ACL support.
+        assert not mfusepy.SUPPORTED_FEATURE_FLAGS & mfusepy.FUSE_CAP_PASSTHROUGH
+        assert not mfusepy.SUPPORTED_FEATURE_FLAGS & mfusepy.FUSE_CAP_POSIX_ACL
+    elif sys.platform == 'linux' and mfusepy.fuse_version_major == 3:
+        assert mfusepy.SUPPORTED_FEATURE_FLAGS & mfusepy.FUSE_CAP_POSIX_ACL
+
+
+def _flag_outside_the_supported_mask() -> int:
+    'Return a flag that the loaded FUSE implementation does not define with the documented meaning.'
+    for flag in [mfusepy.FUSE_CAP_PASSTHROUGH, mfusepy.FUSE_CAP_POSIX_ACL, mfusepy.FUSE_CAP_WRITEBACK_CACHE]:
+        if not mfusepy.SUPPORTED_FEATURE_FLAGS & flag:
+            return flag
+    # libfuse skips bit 22 and WinFsp uses it for FSP_FUSE_CAP_READ_ONLY, i.e., it is never one of
+    # the documented flags. Staying inside 32 bits keeps it announceable via 'capable' as well.
+    return 1 << 22
+
+
+def test_feature_flags_outside_the_supported_mask():
+    flag = _flag_outside_the_supported_mask()
+    connection = mfusepy.fuse_conn_info()
+
+    # Pretend that everything is announced, which is what macFUSE does for its own features.
+    connection.capable = 0xFFFF_FFFF
+    if connection._has_extended_features:
+        connection.capable_ext = 0xFFFF_FFFF_FFFF_FFFF
+
+    assert connection.is_capable(flag)  # It is announced as capable ...
+    assert not connection.set_feature_flag(flag)  # ... but still must not be requested by name.
+    assert connection.want == 0
+    if connection._has_extended_features:
+        assert connection.want_ext == 0
+
+    # Unsetting such a flag must not clear whatever feature that bit stands for here either.
+    if flag < 1 << 32:
+        connection.want = flag
+        connection.unset_feature_flag(flag)
+        assert connection.want == flag
+    elif connection._has_extended_features:
+        connection.want_ext = flag
+        connection.unset_feature_flag(flag)
+        assert connection.want_ext == flag
+
+    # A flag that this implementation does define with the documented meaning still works.
+    assert connection.set_feature_flag(mfusepy.FUSE_CAP_ATOMIC_O_TRUNC)
+    assert connection.is_wanted(mfusepy.FUSE_CAP_ATOMIC_O_TRUNC)
 
 
 def test_feature_flags_beyond_32_bits():

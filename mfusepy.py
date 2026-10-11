@@ -1183,6 +1183,78 @@ FUSE_CAP_SECURITY_CTX = 1 << 33
 FUSE_CAP_IO_URING_BUFPOOL = 1 << 34
 
 
+# Mask of the FUSE_CAP_* flags that the loaded FUSE implementation defines with the meaning
+# documented above, i.e., the flags that may be requested by name. fuse_conn_info.set_feature_flag
+# refuses everything outside of this mask even when the implementation announces that bit as
+# capable, because the bit then stands for one of the other features listed above. For example,
+# macFUSE announces the bits 23 to 27 and 29 to 31, which are its Apple-specific features, so
+# requesting FUSE_CAP_PASSTHROUGH there would actually request FUSE_CAP_CASE_INSENSITIVE.
+_FEATURE_FLAGS_FUSE_2 = (
+    FUSE_CAP_ASYNC_READ
+    | FUSE_CAP_POSIX_LOCKS
+    | FUSE_CAP_ATOMIC_O_TRUNC
+    | FUSE_CAP_EXPORT_SUPPORT
+    | FUSE_CAP_BIG_WRITES
+    | FUSE_CAP_DONT_MASK
+    | FUSE_CAP_SPLICE_WRITE
+    | FUSE_CAP_SPLICE_MOVE
+    | FUSE_CAP_SPLICE_READ
+    | FUSE_CAP_FLOCK_LOCKS
+    | FUSE_CAP_IOCTL_DIR
+)
+_FEATURE_FLAGS_FUSE_3 = (
+    (_FEATURE_FLAGS_FUSE_2 & ~FUSE_CAP_BIG_WRITES)  # Removed in libfuse 3, which is always big.
+    | FUSE_CAP_AUTO_INVAL_DATA
+    | FUSE_CAP_READDIRPLUS
+    | FUSE_CAP_READDIRPLUS_AUTO
+    | FUSE_CAP_ASYNC_DIO
+    | FUSE_CAP_WRITEBACK_CACHE
+    | FUSE_CAP_NO_OPEN_SUPPORT
+    | FUSE_CAP_PARALLEL_DIROPS
+    | FUSE_CAP_POSIX_ACL
+    | FUSE_CAP_HANDLE_KILLPRIV
+    | FUSE_CAP_HANDLE_KILLPRIV_V2
+    | FUSE_CAP_CACHE_SYMLINKS
+    | FUSE_CAP_NO_OPENDIR_SUPPORT
+    | FUSE_CAP_EXPLICIT_INVAL_DATA
+    | FUSE_CAP_EXPIRE_ONLY
+    | FUSE_CAP_SETXATTR_EXT
+    | FUSE_CAP_DIRECT_IO_ALLOW_MMAP
+    | FUSE_CAP_PASSTHROUGH
+    | FUSE_CAP_NO_EXPORT_SUPPORT
+    | FUSE_CAP_OVER_IO_URING
+    | FUSE_CAP_ALLOW_IDMAP
+    | FUSE_CAP_SECURITY_CTX
+    | FUSE_CAP_IO_URING_BUFPOOL
+)
+
+if _system == 'Windows':
+    # WinFsp only defines the flags up to FUSE_CAP_DONT_MASK with the libfuse meaning.
+    SUPPORTED_FEATURE_FLAGS = (
+        FUSE_CAP_ASYNC_READ
+        | FUSE_CAP_POSIX_LOCKS
+        | FUSE_CAP_ATOMIC_O_TRUNC
+        | FUSE_CAP_EXPORT_SUPPORT
+        | FUSE_CAP_BIG_WRITES
+        | FUSE_CAP_DONT_MASK
+    )
+elif _system == 'NetBSD':
+    # NetBSD announces FUSE 2.9, but its librefuse defines the flags up to FUSE_CAP_HANDLE_KILLPRIV,
+    # i.e. the bits 0 to 20, plus FUSE_CAP_CACHE_SYMLINKS and FUSE_CAP_NO_OPENDIR_SUPPORT.
+    SUPPORTED_FEATURE_FLAGS = (
+        ((_FEATURE_FLAGS_FUSE_2 | _FEATURE_FLAGS_FUSE_3) & ((1 << 21) - 1))
+        | FUSE_CAP_CACHE_SYMLINKS
+        | FUSE_CAP_NO_OPENDIR_SUPPORT
+    )
+elif fuse_version_major == 2:
+    # This includes macFUSE and FUSE-T, which use the bits 23 to 31 for Apple-specific features,
+    # and OpenBSD, which announces FUSE 2.6 but does have 'capable' and 'want'. For libfuse 2.7 and
+    # older, which have neither, nothing can be requested anyway because 'capable' reads as zero.
+    SUPPORTED_FEATURE_FLAGS = _FEATURE_FLAGS_FUSE_2
+else:
+    SUPPORTED_FEATURE_FLAGS = _FEATURE_FLAGS_FUSE_3
+
+
 def feature_flag_names(flags: int) -> str:
     '''
     Return a human-readable representation of the given FUSE_CAP_* flags, e.g. for logging.
@@ -1235,10 +1307,20 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
         capable of all of the given features. Requesting an unsupported feature would make
         libfuse abort the mount with EPROTO.
 
+        Flags outside of SUPPORTED_FEATURE_FLAGS are refused even when they are announced as
+        capable because the loaded FUSE implementation then uses those bits for other features.
+
         There are two intentional differences to fuse_set_feature_flag: all given flags have to be
         capable instead of any of them, and no given flag trivially succeeds, i.e., this returns
         True and does nothing for 0, while fuse_set_feature_flag returns false.
         '''
+        if flags & ~SUPPORTED_FEATURE_FLAGS:
+            log.debug(
+                "Refuse to request features that the loaded FUSE implementation does not define "
+                "with this meaning: %s",
+                feature_flag_names(flags & ~SUPPORTED_FEATURE_FLAGS),
+            )
+            return False
         if not self.is_capable(flags):
             return False
         if self._has_extended_features:
@@ -1247,7 +1329,12 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
         return True
 
     def unset_feature_flag(self, flags: int) -> None:
-        'Request the given FUSE_CAP_* features to be disabled, see fuse_unset_feature_flag.'
+        '''
+        Request the given FUSE_CAP_* features to be disabled, see fuse_unset_feature_flag.
+        Flags outside of SUPPORTED_FEATURE_FLAGS are ignored for the same reason as in
+        set_feature_flag, i.e., in order to not clear some other feature of that implementation.
+        '''
+        flags &= SUPPORTED_FEATURE_FLAGS
         if self._has_extended_features:
             self.want_ext &= ~flags
         self.want &= ~flags & self._WANT_MASK
@@ -2156,6 +2243,12 @@ class FUSE:
                 continue
             if conn.set_feature_flag(flag):
                 log.debug("Requested FUSE feature: %s", feature_flag_names(flag))
+            elif flag & ~SUPPORTED_FEATURE_FLAGS:
+                log.warning(
+                    "Ignore the requested FUSE feature %s because the loaded FUSE implementation "
+                    "does not define it or uses that bit for a different feature!",
+                    feature_flag_names(flag),
+                )
             else:
                 log.warning(
                     "The kernel or the loaded libfuse version does not support the requested FUSE feature: %s",
