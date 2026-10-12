@@ -14,78 +14,15 @@ mode bits returned by 'getattr' instead of the ACL.
 '''
 
 import argparse
-import enum
 import errno
 import logging
 import os
-import struct
-from typing import NamedTuple
 
 import mfusepy as fuse
+from mfusepy import ACL_UNDEFINED_ID, ACLPermission, ACLTag, PosixACLEntry, posix_acl_to_xattr
 
 # https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
 FUSE_CAP_POSIX_ACL = 1 << 19
-
-# POSIX ACLs are exchanged with the Linux kernel as extended attributes with these keys:
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/xattr.h#L91
-XATTR_NAME_POSIX_ACL_ACCESS = 'system.posix_acl_access'
-XATTR_NAME_POSIX_ACL_DEFAULT = 'system.posix_acl_default'
-
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl_xattr.h
-POSIX_ACL_XATTR_VERSION = 0x0002
-# Qualifier of PosixACLEntry for tags that do not have one, defined as -1 in the kernel but converted to uint32_t.
-ACL_UNDEFINED_ID = 0xFFFF_FFFF
-
-
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl.h
-class ACLTag(enum.Enum):
-    'What the permissions of an ACL entry applies to.'
-
-    # fmt: off
-    USER_OBJ  = 0x01   # The usual non-ACL owning user
-    USER      = 0x02
-    GROUP_OBJ = 0x04   # The usual non-ACL owning group
-    GROUP     = 0x08
-    MASK      = 0x10
-    OTHER     = 0x20
-    # fmt: on
-
-
-class ACLPermission(enum.IntFlag):
-    'Permissions of an ACL entry, a combination of READ, WRITE, and EXECUTE.'
-
-    # fmt: off
-    READ    = 0x04
-    WRITE   = 0x02
-    EXECUTE = 0x01
-    # fmt: on
-
-
-class PosixACLEntry(NamedTuple):
-    tag: ACLTag
-    permissions: ACLPermission
-    qualifier: int = ACL_UNDEFINED_ID  # uid for ACLTag.USER, gid for ACLTag.GROUP, else undefined
-
-
-# struct posix_acl_xattr_header { __le32 a_version; }
-_POSIX_ACL_XATTR_HEADER = struct.Struct('<I')
-# struct posix_acl_xattr_entry { __le16 e_tag; __le16 e_perm; __le32 e_id; }
-_POSIX_ACL_XATTR_ENTRY = struct.Struct('<HHI')
-
-
-def posix_acl_to_xattr(entries: list[PosixACLEntry]) -> bytes:
-    'Pack (tag, permissions, qualifier) triples into the Linux-specific system.posix_acl_access binary format.'
-    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L840-L876
-    # The entries are sorted into the canonical order required by the kernel's posix_acl_valid() in
-    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L243 via a state machine.
-    # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
-    # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
-    ordered = sorted(entries, key=lambda entry: entry.tag.value)
-    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(
-        # In case qualifier is -1, which the kernel allows in its interface, bit mask to 32-bit to avoid struct.error.
-        _POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, entry.permissions, entry.qualifier & 0xFFFF_FFFF)
-        for entry in ordered
-    )
 
 
 class PosixACL(fuse.Operations):
@@ -148,11 +85,11 @@ class PosixACL(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def listxattr(self, path):
-        return [XATTR_NAME_POSIX_ACL_ACCESS] if path in self.files else []
+        return [fuse.XATTR_NAME_POSIX_ACL_ACCESS] if path in self.files else []
 
     @fuse.overrides(fuse.Operations)
     def getxattr(self, path, name, position=0):
-        if path in self.files and name == XATTR_NAME_POSIX_ACL_ACCESS:
+        if path in self.files and name == fuse.XATTR_NAME_POSIX_ACL_ACCESS:
             return self.files[path][1]
         raise fuse.FuseOSError(fuse.ENOATTR)
 

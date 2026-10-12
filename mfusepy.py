@@ -19,19 +19,21 @@
 
 import contextlib
 import ctypes
+import enum
 import errno
 import functools
 import inspect
 import logging
 import os
 import platform
+import struct
 import warnings
 from collections.abc import Iterable, Sequence
 from ctypes import CFUNCTYPE, POINTER, c_char_p, c_int, c_size_t, c_ssize_t, c_uint, c_void_p
 from ctypes.util import find_library
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, Optional, Union, get_type_hints
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
 BitFieldsEntry = tuple[str, type, int]
@@ -194,6 +196,101 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Lin
 # But, on some other platforms, ENOATTR is missing; use the same value as ENODATA there.
 # We have a test that makes sure this is not None for all platforms we test on.
 ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
+
+
+# POSIX ACLs are exchanged with the Linux kernel as extended attributes with these keys:
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/xattr.h#L91
+XATTR_NAME_POSIX_ACL_ACCESS = 'system.posix_acl_access'
+XATTR_NAME_POSIX_ACL_DEFAULT = 'system.posix_acl_default'
+
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl_xattr.h
+POSIX_ACL_XATTR_VERSION = 0x0002
+# Qualifier of PosixACLEntry for tags that do not have one, defined as -1 in the kernel but converted to uint32_t.
+ACL_UNDEFINED_ID = 0xFFFF_FFFF
+
+
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl.h
+class ACLTag(enum.Enum):
+    'What the permissions of an ACL entry applies to.'
+
+    # fmt: off
+    USER_OBJ  = 0x01   # The usual non-ACL owning user
+    USER      = 0x02
+    GROUP_OBJ = 0x04   # The usual non-ACL owning group
+    GROUP     = 0x08
+    MASK      = 0x10
+    OTHER     = 0x20
+    # fmt: on
+
+
+class ACLPermission(enum.IntFlag):
+    'Permissions of an ACL entry, a combination of READ, WRITE, and EXECUTE.'
+
+    # fmt: off
+    READ    = 0x04
+    WRITE   = 0x02
+    EXECUTE = 0x01
+    # fmt: on
+
+
+class PosixACLEntry(NamedTuple):
+    tag: ACLTag
+    permissions: ACLPermission
+    qualifier: int = ACL_UNDEFINED_ID  # uid for ACLTag.USER, gid for ACLTag.GROUP, else undefined
+
+
+# struct posix_acl_xattr_header { __le32 a_version; }
+_POSIX_ACL_XATTR_HEADER = struct.Struct('<I')
+# struct posix_acl_xattr_entry { __le16 e_tag; __le16 e_perm; __le32 e_id; }
+_POSIX_ACL_XATTR_ENTRY = struct.Struct('<HHI')
+
+
+def posix_acl_to_xattr(entries: Iterable[PosixACLEntry]) -> bytes:
+    'Pack (tag, permissions, qualifier) triples into the Linux-specific system.posix_acl_access binary format.'
+
+    # Only Linux implements POSIX ACLs as extended file attributes.
+    # FreeBSD's fusefs marks FUSE_POSIX_ACL as "not yet implemented":
+    #   https://github.com/freebsd/freebsd-src/blob/release/15.1.0/sys/fs/fuse/fuse_internal.c#L1104-L1119
+    # macOS uses NFSv4 ACLs and macFUSE does not define the capability at all:
+    #   https://github.com/macfuse/library/blob/master/include/fuse_common.h
+    if _system != 'Linux':
+        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
+
+    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L840-L876
+    # The entries are sorted into the canonical order required by the kernel's posix_acl_valid() in
+    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L243 via a state machine.
+    # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
+    # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
+    ordered = sorted(entries, key=lambda entry: entry.tag.value)
+    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(
+        # In case qualifier is -1, which the kernel allows in its interface, bit mask to 32-bit to avoid struct.error.
+        _POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, entry.permissions, entry.qualifier & 0xFFFF_FFFF)
+        for entry in ordered
+    )
+
+
+def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
+    'Parses the Linux-specific xattr ACL binary format. The inverse of posix_acl_to_xattr.'
+
+    if _system != 'Linux':
+        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
+
+    header_size = _POSIX_ACL_XATTR_HEADER.size
+    entry_size = _POSIX_ACL_XATTR_ENTRY.size
+    if len(value) < header_size or (len(value) - header_size) % entry_size != 0:
+        raise ValueError(f"POSIX ACL of size {len(value)} is truncated or contains trailing bytes!")
+
+    version = _POSIX_ACL_XATTR_HEADER.unpack_from(value)[0]
+    if version != POSIX_ACL_XATTR_VERSION:
+        raise ValueError(f"Expected POSIX ACL version {POSIX_ACL_XATTR_VERSION} but got: {version}!")
+
+    return [
+        PosixACLEntry(ACLTag(tag), ACLPermission(permissions), qualifier)
+        for tag, permissions, qualifier in (
+            _POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset) for offset in range(header_size, len(value), entry_size)
+        )
+    ]
+
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git
 # and check the diff with:
