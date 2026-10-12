@@ -83,6 +83,13 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             raise fuse.FuseOSError(fuse.ENOATTR)
 
     @fuse.overrides(fuse.Operations)
+    def init_with_config(self, conn_info, config_3) -> None:
+        # Request and then release asynchronous reads, mirroring the libfuse hello example, to
+        # demonstrate 'enable'/'disable'. ASYNC_READ is enabled by default, so nothing changes.
+        conn_info.enable(fuse.FuseCapability.ASYNC_READ)
+        conn_info.disable(fuse.FuseCapability.ASYNC_READ)
+
+    @fuse.overrides(fuse.Operations)
     def listxattr(self, path: str) -> Iterable[str]:
         attrs = self.files[path].get('attrs', {})
         return attrs.keys()

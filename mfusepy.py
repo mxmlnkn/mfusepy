@@ -1128,13 +1128,291 @@ elif fuse_version_major == 3 or _librefuse:
         ]
 
 
+class FuseCapability(enum.Enum):
+    '''
+    A FUSE feature that a file system can request via 'fuse_conn_info.enable' inside 'init_with_config'.
+
+    This is a cross-platform enumeration over the capabilities of the supported FUSE implementations.
+    '''
+
+    # libfuse: https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
+    # Enum values remove the 'FUSE_CAP_' prefix for readability.
+    # (E) Enabled by default (in libfuse 3.18+) when supported by the kernel.
+    # fmt: off
+    # libfuse 2.9.9 capabilities
+    ASYNC_READ           = enum.auto()  # (E)
+    POSIX_LOCKS          = enum.auto()  # (E)
+    ATOMIC_O_TRUNC       = enum.auto()  # (E)
+    EXPORT_SUPPORT       = enum.auto()
+    BIG_WRITES           = enum.auto()  # removed in libfuse 3
+    DONT_MASK            = enum.auto()
+    SPLICE_WRITE         = enum.auto()
+    SPLICE_MOVE          = enum.auto()
+    SPLICE_READ          = enum.auto()  # (E)
+    FLOCK_LOCKS          = enum.auto()  # (E)
+    IOCTL_DIR            = enum.auto()  # (E)
+    # libfuse 3.0+ capabilities
+    AUTO_INVAL_DATA      = enum.auto()  # (E)
+    READDIRPLUS          = enum.auto()  # (E)  enabled by default when readdirplus exists
+    READDIRPLUS_AUTO     = enum.auto()  # (E)  enabled by default when readdirplus and readdir exist
+    ASYNC_DIO            = enum.auto()  # (E)
+    WRITEBACK_CACHE      = enum.auto()
+    NO_OPEN_SUPPORT      = enum.auto()
+    PARALLEL_DIROPS      = enum.auto()
+    POSIX_ACL            = enum.auto()
+    HANDLE_KILLPRIV      = enum.auto()  # bit 20
+    # Bit 21 (HANDLE_KILLPRIV_V2) and 22 have weirdly been used only much later than bit 24 (NO_OPENDIR_SUPPORT).
+    HANDLE_KILLPRIV_V2   = enum.auto()  # libfuse 3.17+ bit 21
+    # bit 22 has never been assigned a meaning (writing this as of libfuse 3.18).
+    CACHE_SYMLINKS       = enum.auto()  # libfuse 3.10+ bit 23
+    NO_OPENDIR_SUPPORT   = enum.auto()  # libfuse 3.5+  bit 24
+    EXPLICIT_INVAL_DATA  = enum.auto()  # libfuse 3.9+
+    EXPIRE_ONLY          = enum.auto()  # libfuse 3.13+
+    SETXATTR_EXT         = enum.auto()  # libfuse 3.15+
+    DIRECT_IO_ALLOW_MMAP = enum.auto()  # libfuse 3.17+
+    PASSTHROUGH          = enum.auto()  # libfuse 3.17+
+    NO_EXPORT_SUPPORT    = enum.auto()  # libfuse 3.17+
+    OVER_IO_URING        = enum.auto()  # libfuse 3.18+
+    ALLOW_IDMAP          = enum.auto()  # libfuse 3.19+
+    SECURITY_CTX         = enum.auto()  # (E) libfuse 3.19+
+    IO_URING_BUFPOOL     = enum.auto()  # libfuse 3.19+
+
+    # macFUSE: https://github.com/macfuse/library/blob/master/include/fuse_common.h
+    ACCESS_EXTENDED      = enum.auto()  # 23
+    NODE_RWLOCK          = enum.auto()  # 24
+    RENAME_SWAP          = enum.auto()  # 25
+    RENAME_EXCL          = enum.auto()  # 26
+
+    # WinFsp: https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
+    # READDIR_PLUS        = enum.auto()  # bit 21, file system supports enhanced readdir -> conflate with READDIRPLUS?
+    READ_ONLY            = enum.auto()  # bit 22, file system is marked read-only
+    STAT_EX              = enum.auto()  # bit 23, file system supports fuse_stat_ex
+    DELETE_ACCESS        = enum.auto()  # bit 24, file system supports access with DELETE_OK
+
+    # Shared by macFUSE and WinFsp, originally from OSXFUSE.
+    ALLOCATE             = enum.auto()  # 27
+    EXCHANGE_DATA        = enum.auto()  # 28
+    CASE_INSENSITIVE     = enum.auto()  # 29
+    VOL_RENAME           = enum.auto()  # 30
+    XTIMES               = enum.auto()  # 31
+    # fmt: on
+
+
+_HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
+
+# Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which differ for some flags,
+# e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/fuse.h#L452-L497
+# libfuse translates between the two.
+# https://github.com/libfuse/libfuse/blob/fuse-3.18.3/include/fuse_common.h#L185-L521
+# fmt:off
+_LIBFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+    # libfuse 2.9.9 capabilities
+    FuseCapability.ASYNC_READ           : 1 << 0,
+    FuseCapability.POSIX_LOCKS          : 1 << 1,
+    FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
+    FuseCapability.EXPORT_SUPPORT       : 1 << 4,
+    FuseCapability.BIG_WRITES           : 1 << 5,
+    FuseCapability.DONT_MASK            : 1 << 6,
+    FuseCapability.SPLICE_WRITE         : 1 << 7,
+    FuseCapability.SPLICE_MOVE          : 1 << 8,
+    FuseCapability.SPLICE_READ          : 1 << 9,
+    FuseCapability.FLOCK_LOCKS          : 1 << 10,
+    FuseCapability.IOCTL_DIR            : 1 << 11,
+    # libfuse 3.0+ capabilities
+    FuseCapability.AUTO_INVAL_DATA      : 1 << 12,
+    FuseCapability.READDIRPLUS          : 1 << 13,
+    FuseCapability.READDIRPLUS_AUTO     : 1 << 14,
+    FuseCapability.ASYNC_DIO            : 1 << 15,
+    FuseCapability.WRITEBACK_CACHE      : 1 << 16,
+    FuseCapability.NO_OPEN_SUPPORT      : 1 << 17,
+    FuseCapability.PARALLEL_DIROPS      : 1 << 18,
+    FuseCapability.POSIX_ACL            : 1 << 19,
+    FuseCapability.HANDLE_KILLPRIV      : 1 << 20,
+    # libfuse 3.5+ capabilities
+    FuseCapability.HANDLE_KILLPRIV_V2   : 1 << 21,
+    FuseCapability.CACHE_SYMLINKS       : 1 << 23,
+    FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
+    FuseCapability.EXPLICIT_INVAL_DATA  : 1 << 25,
+    FuseCapability.EXPIRE_ONLY          : 1 << 26,
+    FuseCapability.SETXATTR_EXT         : 1 << 27,
+    FuseCapability.DIRECT_IO_ALLOW_MMAP : 1 << 28,
+    FuseCapability.PASSTHROUGH          : 1 << 29,
+    FuseCapability.NO_EXPORT_SUPPORT    : 1 << 30,
+    FuseCapability.OVER_IO_URING        : 1 << 31,
+    # libfuse 3.19+ capabilities that require libfuse 3.17+ the 64-bit want_ext field!
+    FuseCapability.ALLOW_IDMAP          : 1 << 32,
+    FuseCapability.SECURITY_CTX         : 1 << 33,
+    FuseCapability.IO_URING_BUFPOOL     : 1 << 34,
+}
+# libfuse 2.8+ defines the 'capable' and 'want' members and the flags up to FUSE_CAP_IOCTL_DIR.
+_LIBFUSE2CAPABILITY_BITS: dict[FuseCapability, int] = {
+    capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 11)
+}
+# libfuse 3 removed FUSE_CAP_BIG_WRITES because it is always enabled.
+# We don't have to replicate any libfuse minor version capability differences. Libfuse can check that itself.
+# Flags beyond bit 31 exist only since libfuse 3.17, which added the 64-bit 'capable_ext'/'want_ext' members,
+# and cannot be represented without them, so do not declare them when _HAS_WANT_EXT is false, i.e., before 3.17.
+_LIBFUSE3CAPABILITY_BITS: dict[FuseCapability, int] = {
+    capability: flag
+    for capability, flag in _LIBFUSECAPABILITY_BITS.items()
+    if capability is not FuseCapability.BIG_WRITES and (_HAS_WANT_EXT or flag < 1 << 32)
+}
+# librefuse defines the flags up to FUSE_CAP_HANDLE_KILLPRIV plus these two with libfuse2-compatible bits.
+# https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L143-L164
+_LIBREFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+    **{capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 20)},
+    FuseCapability.CACHE_SYMLINKS       : 1 << 23,
+    FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
+}
+# macFUSE is based on libfuse 2 and reuses the bits 23 to 31 for Apple-specific features.
+# https://github.com/macfuse/library/blob/master/include/fuse_common.h#L163-L184
+_MACFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+    **_LIBFUSE2CAPABILITY_BITS,
+    FuseCapability.ACCESS_EXTENDED      : 1 << 23,  # CACHE_SYMLINKS in libfuse
+    FuseCapability.NODE_RWLOCK          : 1 << 24,  # NO_OPENDIR_SUPPORT in libfuse
+    FuseCapability.RENAME_SWAP          : 1 << 25,
+    FuseCapability.RENAME_EXCL          : 1 << 26,
+    FuseCapability.ALLOCATE             : 1 << 27,
+    FuseCapability.EXCHANGE_DATA        : 1 << 28,
+    FuseCapability.CASE_INSENSITIVE     : 1 << 29,
+    FuseCapability.VOL_RENAME           : 1 << 30,
+    FuseCapability.XTIMES               : 1 << 31,
+}
+# WinFsp defines the flags up to FUSE_CAP_DONT_MASK (bit 6), the FSP-specific flags at 21-24.
+# Also reserves ALLOCATE, EXCHANGE_DATA, VOL_RENAME, XTIMES for OSXFUSE but does not use those flag.
+# Even though it reserves from for OSXFUSE, there are still clashes with macfuse.
+# https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
+_WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
+    FuseCapability.ASYNC_READ           : 1 << 0,
+    FuseCapability.POSIX_LOCKS          : 1 << 1,
+    FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
+    FuseCapability.EXPORT_SUPPORT       : 1 << 4,
+    FuseCapability.BIG_WRITES           : 1 << 5,
+    FuseCapability.DONT_MASK            : 1 << 6,
+    # TODO: Add and test support for this and then simply reuse READDIRPLUS instead of a Windows-custom capability.
+    # FuseCapability.READDIR_PLUS         : 1 << 21,
+    FuseCapability.READ_ONLY            : 1 << 22,
+    FuseCapability.STAT_EX              : 1 << 23,
+    FuseCapability.DELETE_ACCESS        : 1 << 24,
+    FuseCapability.ALLOCATE             : 1 << 27,
+    FuseCapability.EXCHANGE_DATA        : 1 << 28,
+    FuseCapability.CASE_INSENSITIVE     : 1 << 29,
+    FuseCapability.VOL_RENAME           : 1 << 30,
+    FuseCapability.XTIMES               : 1 << 31,
+}
+# fmt:on
+
+if _system == 'Windows' or _system.startswith('CYGWIN'):
+    CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
+elif _librefuse:
+    CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
+elif _system == 'Darwin':
+    CAPABILITY_BITS = _MACFUSECAPABILITY_BITS
+elif fuse_version_major >= 3:
+    CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
+else:
+    CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
+
+
 # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
 class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
+    # The members are defined via '_fields_', which pylint cannot see.
+    # Only the methods below access them on an object whose type pylint knows.
+    # Everywhere else they are accessed via a pointer's '.contents', which pylint treats as Any.
+    # pylint: disable=no-member
     _fields_ = _fuse_conn_info_fields
+
+    def _capable_bits(self) -> int:
+        return self.capable_ext if _HAS_WANT_EXT else self.capable
+
+    def is_capable(self, capability: FuseCapability) -> bool:
+        '''
+        Return whether the kernel announced the given capability as supported.
+
+        This mirrors fuse_get_feature_flag(), i.e., it only reflects 'capable', and returns False
+        for a capability that the loaded implementation does not define with this meaning.
+        '''
+        flag = CAPABILITY_BITS.get(capability)
+        if flag is None:
+            return False
+
+        if _fuse_get_feature_flag is not None:
+            return bool(_fuse_get_feature_flag(ctypes.pointer(self), flag))
+        return (self._capable_bits() & flag) == flag
+
+    def enable(self, capability: FuseCapability) -> bool:
+        '''
+        Request the given capability to be enabled, mirroring fuse_set_feature_flag().
+
+        Returns False without changing anything if the loaded implementation does not define the
+        capability with this meaning or if the kernel is not capable of it. Requesting a feature
+        that the kernel does not support would make libfuse abort the mount with EPROTO.
+        '''
+        flag = CAPABILITY_BITS.get(capability)
+        if flag is None:
+            return False
+
+        # Use libfuse's helper when this is the real struct from the init callback because it also
+        # keeps libfuse's internal state in sync. The helper locates the enclosing session via
+        # container_of() and would corrupt memory for a standalone struct, e.g., in a test, so write
+        # both members directly then, which is equivalent because libfuse only converts 'want' if
+        # exactly one of both was changed (see fuse_convert_to_conn_want_ext).
+        pointer = getattr(self, '_fuse_session_pointer', None)
+        if pointer is not None and _fuse_set_feature_flag is not None:
+            return bool(_fuse_set_feature_flag(pointer, flag))
+        if (self._capable_bits() & flag) != flag:
+            return False
+
+        self.want |= flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
+        if _HAS_WANT_EXT:
+            self.want_ext |= flag
+        return True
+
+    def disable(self, capability: FuseCapability) -> None:
+        '''Request the given capability to be disabled, mirroring fuse_unset_feature_flag().'''
+        flag = CAPABILITY_BITS.get(capability)
+        if flag is None:
+            return
+
+        pointer = getattr(self, '_fuse_session_pointer', None)
+        if pointer is not None and _fuse_unset_feature_flag is not None:
+            _fuse_unset_feature_flag(pointer, flag)
+            return
+
+        # See enable() for why the members are written directly in the fallback.
+        self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
+        if _HAS_WANT_EXT:
+            self.want_ext &= ~flag
 
 
 if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
     assert ctypes.sizeof(fuse_conn_info) == 128
+
+# libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
+# bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
+# the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
+# 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
+# in a session, e.g., in a test.
+# Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
+# This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
+# I encountered some weird error on macos-14 without this!
+# > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
+_fuse_set_feature_flag = None
+_fuse_unset_feature_flag = None
+_fuse_get_feature_flag = None
+if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
+    _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
+    _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
+    _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
+if _fuse_set_feature_flag is not None:
+    _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+    _fuse_set_feature_flag.restype = ctypes.c_bool
+if _fuse_unset_feature_flag is not None:
+    _fuse_unset_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+if _fuse_get_feature_flag is not None:
+    _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+    _fuse_get_feature_flag.restype = ctypes.c_bool
 
 # FUSE 3-only struct for second init argument defined in fuse.h.
 # If a FUSE 2 method is loaded but 'init_with_config' overridden,
@@ -2046,9 +2324,13 @@ class FUSE:
         if hasattr(self.operations, "init_with_config") and not getattr(
             self.operations.init_with_config, "libfuse_ignore", False
         ):
-            self.operations.init_with_config(
-                None if conn is None else conn.contents, None if config is None else config.contents
-            )
+            conn_info = None
+            if conn is not None:
+                conn_info = conn.contents
+                # Mark the real, session-embedded struct so that fuse_conn_info.enable can call
+                # libfuse's fuse_set_feature_flag, which needs the enclosing session.
+                conn_info._fuse_session_pointer = conn
+            self.operations.init_with_config(conn_info, None if config is None else config.contents)
         elif hasattr(self.operations, "init") and not getattr(self.operations.init, "libfuse_ignore", False):
             self.operations.init("/")
 
@@ -2261,6 +2543,10 @@ class Operations:
         Only either 'init' or 'init_with_config' should be overridden.
         Use it instead of __init__ if you start threads on initialization.
         Argument config_3 should be ignored when a FUSE 2 library is loaded.
+
+        Request optional kernel features that this file system makes use of with
+        'conn_info.enable(FuseCapability.WRITEBACK_CACHE)'. It returns False if the loaded
+        implementation does not define the capability or the kernel does not support it.
         '''
 
     @_nullable_dummy_function
