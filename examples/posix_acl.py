@@ -21,9 +21,6 @@ import os
 import mfusepy as fuse
 from mfusepy import ACL_UNDEFINED_ID, ACLPermission, ACLTag, PosixACLEntry, posix_acl_to_xattr
 
-# https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
-FUSE_CAP_POSIX_ACL = 1 << 19
-
 
 class PosixACL(fuse.Operations):
     '''
@@ -68,8 +65,8 @@ class PosixACL(fuse.Operations):
     def init_with_config(self, conn_info, config_3) -> None:
         # The only thing needed to make the kernel enforce POSIX ACLs: request the capability.
         # 'want' is the field for libfuse 2 and libfuse 3 converts it into 'want_ext'.
-        if getattr(conn_info, 'capable_ext', conn_info.capable) & FUSE_CAP_POSIX_ACL:
-            conn_info.want |= FUSE_CAP_POSIX_ACL
+        if conn_info.is_capable(fuse.FuseCapability.POSIX_ACL):
+            conn_info.enable(fuse.FuseCapability.POSIX_ACL)
 
     @fuse.overrides(fuse.Operations)
     def getattr(self, path, fh=None):
