@@ -94,6 +94,7 @@ See some examples of how you can use mfusepy:
 | [loopback](examples/loopback.py) | A loopback filesystem                          |
 | [context](examples/context.py)   | Sample usage of `fuse_get_context()`           |
 | [sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)   |
+| [acl](examples/posix_acl.py)     | A filesystem implementing ACL xattrs           |
 
 
 # Platforms
