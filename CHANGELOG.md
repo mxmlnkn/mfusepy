@@ -1,4 +1,31 @@
 
+# Version 3.2.0 built on 2026-11-18
+
+## Features
+
+ - Add `posix_acl_to_xattr` and `posix_acl_from_xattr`, plus the `PosixACLEntry`, `ACLTag`, and
+   `ACLPermission` helpers for the Linux `system.posix_acl_*` xattr format. See `examples/posix_acl.py`.
+ - Add the cross-platform `FuseCapability` enum and `fuse_conn_info.enable`, which maps capabilities to
+   the loaded implementation and supports `fuse_set_feature_flag` from libfuse 3.17+.
+ - Support OmniOS, including the illumos libfuse 2.7 struct layout and 64-bit library lookup.
+
+## Fixes
+
+ - Model the `fuse_file_info` fields added in libfuse 3.17 and the `statx` slot added to
+   `fuse_operations` in 3.18. This fixes `test_struct_layout` on Debian Trixie and Ubuntu 26.04.
+ - Fix the `struct stat` layout on Linux riscv64.
+ - Fix the `fuse_operations` field order for WinFsp on Windows, which broke symlinks.
+ - Remove the legacy MacFuse lookup, which could abort `import mfusepy` on macOS 14 with macFUSE 5.3.x.
+ - Fix the `fuse_context` size for libfuse < 2.8.
+ - NetBSD: use the base-system librefuse instead of libfuse and perfused, call `__fuse_main` with the
+   FUSE 3 operations layout, detect librefuse via `fuse_pkgversion`, keep its struct layouts independent
+   of the API version, and fall back to the soname when `find_library` fails.
+ - Do not swallow exceptions raised by the `init` callback. They are now re-raised instead of being
+   returned as a bogus `private_data` pointer.
+ - `examples/loopback.py`: do not follow symlinks in `chmod` and `chown`.
+ - Only import `ioctl_opt` on Linux so test collection works on other platforms.
+
+
 # Version 3.1.1 built on 2026-03-13
 
 ## Fixes
