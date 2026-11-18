@@ -2319,6 +2319,10 @@ class FUSE:
 
         encountered_non_zero_offset = False
         for item in items:
+            # Only st_mode and st_ino are forwarded. Reset both here because str, int, and partial dict entries can
+            # follow each other, so a per-branch reset would still leave one of them stale.
+            st.st_mode = 0
+            st.st_ino = 0
             has_stat = False
             if isinstance(item, str):
                 has_stat = True
