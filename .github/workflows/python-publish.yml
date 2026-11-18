@@ -30,6 +30,26 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Check Release Consistency
+        run: |
+          python3 - <<'EOF'
+          import os
+          import pathlib
+          import re
+          import tomllib
+
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          ref_name = os.environ["GITHUB_REF_NAME"]
+          if ref_name != "v" + version:
+              print(f"::error::Tag {ref_name} does not match project.version v{version}.")
+              raise SystemExit(1)
+
+          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          if not re.search(rf"^# Version {re.escape(version)} built on ", changelog, re.MULTILINE):
+              print(f"::error::CHANGELOG.md has no '# Version {version} built on ...' heading.")
+              raise SystemExit(1)
+          EOF
+
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
