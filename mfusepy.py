@@ -1335,7 +1335,7 @@ _WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
 }
 # fmt:on
 
-if _system == 'Windows' or _system.startswith('CYGWIN'):
+if _system == 'Windows':
     CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
 elif _librefuse:
     CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
@@ -1540,10 +1540,11 @@ _fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
     ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
     ('getdir', c_void_p),  # Deprecated, use readdir
 ]
-if _system == 'Windows' or _system.startswith('CYGWIN'):
+if _system == 'Windows':
     # WinFsp has getdir before readlink (libfuse 2 has readlink before getdir), see struct fuse_operations in
     # https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
     # With the wrong order, WinFsp does not find readlink and shows all symlinks as regular files.
+    # Cygwin loads a regular libfuse, so the swap must not apply there.
     _fuse_operations_fields_readlink_getdir.reverse()
 
 # These are unchanged in FUSE 3 and therefore nice to have separate to reduce duplication.
