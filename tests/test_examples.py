@@ -22,12 +22,12 @@ import pytest
 
 # Only needed for the ioctl test, which only runs on Linux.
 ioctl_opt: Optional[ModuleType]
-if sys.platform == 'linux':
+try:
     import ioctl_opt as _ioctl_opt
-
-    ioctl_opt = _ioctl_opt
-else:
+except ImportError:
     ioctl_opt = None
+else:
+    ioctl_opt = _ioctl_opt
 
 pwd: Optional[ModuleType]
 try:
