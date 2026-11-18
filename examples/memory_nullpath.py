@@ -201,7 +201,14 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def symlink(self, target: str, source: str) -> int:
-        self.files[target] = {'st_mode': (stat.S_IFLNK | 0o777), 'st_nlink': 1, 'st_size': len(source)}
+        self.files[target] = {
+            'st_mode': (stat.S_IFLNK | 0o777),
+            'st_nlink': 1,
+            'st_size': len(source),
+            # With a zero inode, some kernels hide the entry, so assign a real inode.
+            'st_ino': self._inode,
+        }
+        self._inode += 1
         self.data[target] = source.encode()
         return 0
 
