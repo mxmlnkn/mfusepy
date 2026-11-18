@@ -1,5 +1,6 @@
 # Copyright (c) 2012 Terence Honles <terence@honles.com> (maintainer)
 # Copyright (c) 2008 Giorgos Verigakis <verigak@gmail.com> (author)
+# Copyright (c) 2024 Maximilian Knespel <mxmlnknp@gmail.com> (maintainer)
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
