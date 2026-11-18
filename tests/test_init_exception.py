@@ -34,7 +34,7 @@ def test_init_fuse_2_oserror_aborts(monkeypatch):
     # The wrapped method is named init_fuse_2, only the passed callback name identifies it as init.
     result = fuse._wrapper("init", fuse.init_fuse_2, None)
     assert isinstance(fuse._FUSE__critical_exception, OSError)
-    assert result == -errno.EFAULT
+    assert result == 0
 
 
 def test_init_fuse_3_exception_aborts(monkeypatch):
@@ -42,7 +42,7 @@ def test_init_fuse_3_exception_aborts(monkeypatch):
     fuse = FakeFUSE()
     result = fuse._wrapper("init", fuse.init_fuse_3, None, None)
     assert isinstance(fuse._FUSE__critical_exception, RuntimeError)
-    assert result == -errno.EFAULT
+    assert result == 0
 
 
 def test_regular_callback_returns_errno(monkeypatch):

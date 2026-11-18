@@ -2023,7 +2023,8 @@ class FUSE:
             # the raised exception (even SystemExit) will be caught by FUSE
             # potentially causing SIGSEGV, so tell system to stop/interrupt FUSE
             fuse_exit()
-            return -errno.EFAULT
+            # The init callback returns void *, so a negative errno would become a bogus non-NULL private_data.
+            return 0 if callback_name == "init" else -errno.EFAULT
 
     def getattr_fuse_2(self, path: bytes, buf: c_stat_p):
         return self.fgetattr(path, buf, None)
