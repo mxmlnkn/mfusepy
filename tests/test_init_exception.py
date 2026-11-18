@@ -26,6 +26,9 @@ class FakeFUSE(mfusepy.FUSE):
     def getattr_fuse_3(self, path, buf, fip):
         raise OSError(errno.ENOENT, "no such file")
 
+    def failing_readlink(self, path):
+        raise SystemExit("critical failure")
+
 
 def test_init_fuse_2_oserror_aborts(monkeypatch):
     # fuse_exit() must not be called for real because there is no FUSE session in this test.
@@ -51,3 +54,13 @@ def test_regular_callback_returns_errno(monkeypatch):
     result = fuse._wrapper("getattr", fuse.getattr_fuse_3, b'/file', None, None)
     assert fuse._FUSE__critical_exception is None
     assert result == -errno.ENOENT
+
+
+def test_later_critical_exception_does_not_overwrite_first(monkeypatch):
+    monkeypatch.setattr(mfusepy, 'fuse_exit', lambda: None)
+    fuse = FakeFUSE()
+    assert fuse._wrapper("init", fuse.init_fuse_2, None) == 0
+    first_exception = fuse._FUSE__critical_exception
+    assert isinstance(first_exception, OSError)
+    assert fuse._wrapper("readlink", fuse.failing_readlink, b'/file') == -errno.EFAULT
+    assert fuse._FUSE__critical_exception is first_exception

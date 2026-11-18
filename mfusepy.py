@@ -1838,6 +1838,8 @@ class FUSE:
         self.raw_fi = raw_fi
         self.encoding = encoding
         self.errors = errors
+        # Store exception raised during Operations.init because those are critical and should call fuse_exit.
+        # Introduced in 2018-03-11. A more descriptive name might be: __critical_init_exception.
         self.__critical_exception: Optional[BaseException] = None
 
         self.use_ns = getattr(self.operations, 'use_ns', False)
@@ -2014,7 +2016,28 @@ class FUSE:
                 return -errno.EINVAL
 
         except BaseException as e:  # noqa: B036
-            self.__critical_exception = e
+            # Do not overwrite the first exception with e.g. the exception from fuse_operations.destroy,
+            # which is still called, even if init raises. Other callback methods are not called during init.
+            #
+            # FUSE.__init__
+            # -> fuse_main_real
+            # |  -> fuse_operations.init
+            # |     -> FUSE._wrapper
+            # |        -> FUSE.init_fuse_2/3
+            # |        |  -> FUSE._init
+            # |        |     -> Operations.init
+            # |        |        ! may raise an exception that FUSE._wrapper catches
+            # |        -> self.__critical_exception = ...
+            # |        -> fuse_exit()
+            # |           -> fuse_operations.destroy
+            # |              -> FUSE._wrapper
+            # |                 -> FUSE.destroy
+            # |                    -> Operations.destroy
+            # |                       ! can raise again and overwrite self.__critical_exception
+            # -> FUSE.__init__ raises the stored exception
+            if self.__critical_exception is None:
+                self.__critical_exception = e
+
             log.critical(
                 "Uncaught critical exception from FUSE operation %s, aborting.",
                 callback_name,
