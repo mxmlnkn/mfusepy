@@ -5,6 +5,8 @@ import errno
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import mfusepy  # noqa: E402
@@ -28,6 +30,18 @@ class FakeFUSE(mfusepy.FUSE):
 
     def failing_readlink(self, path):
         raise SystemExit("critical failure")
+
+
+class FalseyError(Exception):
+    def __bool__(self):
+        return False
+
+
+class RaisingInitOperations:
+    use_ns = True
+
+    def init(self, path):
+        raise FalseyError("init failed")
 
 
 def test_init_fuse_2_oserror_aborts(monkeypatch):
@@ -64,3 +78,17 @@ def test_later_critical_exception_does_not_overwrite_first(monkeypatch):
     assert isinstance(first_exception, OSError)
     assert fuse._wrapper("readlink", fuse.failing_readlink, b'/file') == -errno.EFAULT
     assert fuse._FUSE__critical_exception is first_exception
+
+
+def test_falsey_critical_exception_is_raised(monkeypatch):
+    def fake_fuse_main_real(argc, argv, fuse_ops_v, sizeof_fuse_ops, ctx_p):
+        if mfusepy.fuse_version_major == 2:
+            fuse_ops_v.contents.init(None)
+        else:
+            fuse_ops_v.contents.init(None, None)
+        return 0
+
+    monkeypatch.setattr(mfusepy, 'fuse_main_real', fake_fuse_main_real)
+    monkeypatch.setattr(mfusepy, 'fuse_exit', lambda: None)
+    with pytest.raises(FalseyError):
+        mfusepy.FUSE(RaisingInitOperations(), '/tmp/mfusepy-test-mount')

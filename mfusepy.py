@@ -1943,7 +1943,7 @@ class FUSE:
             pass
 
         del self.operations  # Invoke the destructor
-        if self.__critical_exception:
+        if self.__critical_exception is not None:
             raise self.__critical_exception
         if err:
             raise RuntimeError(err)
