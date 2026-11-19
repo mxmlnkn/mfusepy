@@ -62,7 +62,12 @@ jobs:
               exit 123
           fi
 
+      - name: Add Codespell Problem Matcher
+        run: echo "::add-matcher::.github/problem-matchers/codespell.json"
+
       - name: Lint With Codespell
+        # Typos are surfaced as annotations through the problem matcher instead of failing the job.
+        continue-on-error: true
         run: codespell $( git ls-tree -r --name-only HEAD | 'grep' -E '[.](py|md|txt|sh|yml)$' )
 
       - name: Lint With Flake8
