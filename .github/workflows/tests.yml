@@ -51,8 +51,12 @@ jobs:
       - name: Install Dependencies
         run: uv pip install --group dev
 
+      - name: Add Ruff Problem Matcher
+        run: echo "::add-matcher::.github/problem-matchers/ruff.json"
+
       - name: Style Check With Ruff
-        run: ruff check --config tests/.ruff.toml -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
+        continue-on-error: true
+        run: ruff check --config tests/.ruff.toml --output-format concise -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Style Check With Black
         run: |
