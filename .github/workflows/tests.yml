@@ -377,6 +377,8 @@ jobs:
                 sudo chmod 666 /dev/puffs
 
                 # Install pip Dependencies
+                # The bundled pip may predate --group (pip 25.1), so upgrade it first.
+                python3 -m pip install --upgrade pip
                 python3 -m pip install --group test
 
                 # Test Installation From Source
@@ -426,6 +428,8 @@ jobs:
                 popd
 
                 # Install pip Dependencies
+                # The bundled pip may predate --group (pip 25.1), so upgrade it first.
+                python3 -m pip install --upgrade pip
                 python3 -m pip install --group test
 
                 # Fix PATH
