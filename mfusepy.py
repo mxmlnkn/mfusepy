@@ -1042,7 +1042,7 @@ elif fuse_version_major == 3:
         _fuse_file_info_fields_bitfield += [('cache_readdir', ctypes.c_uint, 1)]
     if fuse_version_minor >= 11:
         _fuse_file_info_fields_bitfield += [('noflush', ctypes.c_uint, 1)]
-    if fuse_version_minor >= 17:
+    if _FUSE_VERSION >= (3, 17, 1):
         _fuse_file_info_fields_bitfield += [
             ('parallel_direct_writes', _fuse_uint32, 1),
         ]
@@ -1059,14 +1059,14 @@ elif fuse_version_major == 3:
     # https://github.com/libfuse/libfuse/pull/1081
     # This padding did always exist because fh was aligned to an offset modulo 8 B,
     # but libfuse 3.17 made this explicit and I'm not fully sure how ctypes behaves.
-    if fuse_version_minor >= 17:
+    if _FUSE_VERSION >= (3, 17, 1):
         _fuse_file_info_fields_ += [('padding3', _fuse_uint32)]
 
     _fuse_file_info_fields_ += [
         ('fh', ctypes.c_uint64),
         ('lock_owner', ctypes.c_uint64),
     ]
-    if fuse_version_minor >= 17:
+    if _FUSE_VERSION >= (3, 17, 1):
         _fuse_file_info_fields_ += [
             ('poll_events', ctypes.c_uint32),
             ('backing_id', ctypes.c_int32),
@@ -1084,7 +1084,7 @@ class fuse_file_info(ctypes.Structure):
 if _librefuse:
     if ctypes.alignment(ctypes.c_uint64) == 8:
         assert ctypes.sizeof(fuse_file_info) == 40
-elif ctypes.sizeof(ctypes.c_int) == 4 and (fuse_version_major, fuse_version_minor) >= (3, 17):
+elif ctypes.sizeof(ctypes.c_int) == 4 and _FUSE_VERSION >= (3, 17, 1):
     assert ctypes.sizeof(fuse_file_info) == 64
 
 
