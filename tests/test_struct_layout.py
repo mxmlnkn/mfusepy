@@ -87,6 +87,12 @@ STRUCT_NAMES = {
 
 STRUCT_NAMES['fuse_file_info'] = ['flags', 'fh', 'lock_owner']
 
+if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) >= (2, 9) and not mfusepy._librefuse:
+    STRUCT_NAMES['fuse_buf'] = ['size', 'flags', 'mem', 'fd', 'pos']
+    if mfusepy._FUSE_VERSION >= (3, 17, 1):
+        STRUCT_NAMES['fuse_buf'] += ['mem_size']
+    STRUCT_NAMES['fuse_bufvec'] = ['count', 'idx', 'off', 'buf']
+
 if platform.system() == 'SunOS':
     STRUCT_NAMES['statvfs'] += ['f_basetype', 'f_fstr']
 

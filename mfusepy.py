@@ -1124,6 +1124,8 @@ class fuse_buf(ctypes.Structure):
         ('fd', ctypes.c_int),
         ('pos', c_off_t),
     ]
+    if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+        _fields_ += [('mem_size', ctypes.c_size_t)]
 
 
 class fuse_bufvec(ctypes.Structure):
@@ -1131,7 +1133,7 @@ class fuse_bufvec(ctypes.Structure):
         ('count', ctypes.c_size_t),
         ('idx', ctypes.c_size_t),
         ('off', ctypes.c_size_t),
-        ('buf', ctypes.POINTER(fuse_buf)),
+        ('buf', fuse_buf * 1),  # Inline struct fuse_buf buf[1], not a pointer.
     ]
 
 
