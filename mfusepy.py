@@ -28,13 +28,16 @@ import logging
 import os
 import platform
 import struct
+import sys
 import warnings
 from collections.abc import Iterable, Sequence
 from ctypes import CFUNCTYPE, POINTER, c_char_p, c_int, c_size_t, c_ssize_t, c_uint, c_void_p
 from ctypes.util import find_library
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, get_type_hints
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, cast, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
 BitFieldsEntry = tuple[str, type, int]
@@ -120,16 +123,16 @@ class FuseCapability(enum.Enum):
     # fmt: on
 
 
-def get_fuse_version(libfuse):
+def get_fuse_version(libfuse: ctypes.CDLL) -> tuple[int, int]:
     version = libfuse.fuse_version()
     if version < 100:
         return version // 10, version % 10
     if version < 1000:
         return version // 100, version % 100
-    raise AttributeError(f"Version {version} of found library {_libfuse._name} cannot be parsed!")
+    raise AttributeError(f"Version {version} of found library {libfuse._name} cannot be parsed!")
 
 
-def _get_fuse_version_hotfix(libfuse):
+def _get_fuse_version_hotfix(libfuse: ctypes.CDLL) -> int:
     'Parse the hotfix version from fuse_pkgversion(), which was added in libfuse 3.17.'
     package_version = getattr(libfuse, 'fuse_pkgversion', None)
     if package_version is None:
@@ -144,114 +147,145 @@ def _get_fuse_version_hotfix(libfuse):
     return int(parts[2])
 
 
-_system = platform.system()
-_machine = platform.machine()
+@dataclass(frozen=True)
+class _FuseContext:
+    """Inputs that determine the ctypes layouts constructed by _FuseTypes."""
+
+    system: str
+    machine: str
+    fuse_version: tuple[int, int, int]
+    librefuse: bool = False
+    has_feature_flags: bool = False
+    libfuse: Optional[ctypes.CDLL] = dataclass_field(default=None, repr=False, compare=False)
+
+    @classmethod
+    def from_runtime(cls) -> '_FuseContext':
+        "Detect the current platform, the FUSE library, and its API version."
+
+        _system = platform.system()
+        _machine = platform.machine()
 
 
-# Beware that FUSE_LIBRARY_PATH path was unchecked! If it is set to libfuse3.so.3.14.0,
-# then it will mount without error, but when trying to access the mount point, will give:
-#     Uncaught exception from FUSE operation setxattr, returning errno.EINVAL:
-#         'utf-8' codec can't decode byte 0xe8 in position 1: invalid continuation byte
-#     Traceback (most recent call last):
-#       File "fuse.py", line 820, in _wrapper
-#         return func(*args, **kwargs) or 0
-#                ^^^^^^^^^^^^^^^^^^^^^
-#       File "fuse.py", line 991, in setxattr
-#         name.decode(self.encoding),
-#         ^^^^^^^^^^^^^^^^^^^^^^^^^^
-#     UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe8 in position 1:
-#     invalid continuation byte
-_libfuse_path = os.environ.get('FUSE_LIBRARY_PATH')
-if not _libfuse_path:
-    if _system == 'Darwin':
-        # libfuse dependency
-        _libiconv = ctypes.CDLL(find_library('iconv'), ctypes.RTLD_GLOBAL)
+        # Beware that FUSE_LIBRARY_PATH path was unchecked! If it is set to libfuse3.so.3.14.0,
+        # then it will mount without error, but when trying to access the mount point, will give:
+        #     Uncaught exception from FUSE operation setxattr, returning errno.EINVAL:
+        #         'utf-8' codec can't decode byte 0xe8 in position 1: invalid continuation byte
+        #     Traceback (most recent call last):
+        #       File "fuse.py", line 820, in _wrapper
+        #         return func(*args, **kwargs) or 0
+        #                ^^^^^^^^^^^^^^^^^^^^^
+        #       File "fuse.py", line 991, in setxattr
+        #         name.decode(self.encoding),
+        #         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #     UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe8 in position 1:
+        #     invalid continuation byte
+        _libfuse_path = os.environ.get('FUSE_LIBRARY_PATH')
+        if not _libfuse_path:
+            if _system == 'Darwin':
+                # libfuse dependency
+                _libiconv = ctypes.CDLL(find_library('iconv'), ctypes.RTLD_GLOBAL)
 
-        _libfuse_path = (
-            find_library('fuse4x') or find_library('osxfuse') or find_library('fuse') or find_library('fuse-t')
+                _libfuse_path = (
+                    find_library('fuse4x') or find_library('osxfuse') or find_library('fuse') or find_library('fuse-t')
+                )
+            elif _system == 'NetBSD':
+                # On NetBSD 10+ librefuse implements FUSE 3, targeting 3.10 compatibility.
+                # On NetBSD, find_library only works if a C compiler or ld is in PATH (and e.g. not within pkgsrc builds,
+                # where the compiler wrappers drop -lrefuse), so fall back to the soname of the base system library.
+                _libfuse_path = find_library('refuse') or 'librefuse.so.2'
+            elif _system == 'Windows':
+                # pytype: disable=module-attr
+                try:
+                    import _winreg as reg  # pytype: disable=import-error
+                except ImportError:
+                    import winreg as reg  # pytype: disable=import-error
+
+                def reg32_get_value(rootkey, keyname, valname):
+                    key, val = None, None
+                    try:
+                        key = reg.OpenKey(
+                            rootkey, keyname, 0, reg.KEY_READ | reg.KEY_WOW64_32KEY
+                        )  # pytype: disable=import-error
+                        val = str(reg.QueryValueEx(key, valname)[0])
+                    except OSError:  # pylint: disable=undefined-variable  # pytype: disable=name-error
+                        pass
+                    finally:
+                        if key is not None:
+                            reg.CloseKey(key)
+                    return val
+
+                _libfuse_path = reg32_get_value(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WinFsp", r"InstallDir")
+                if _libfuse_path:
+                    arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
+                    _libfuse_path += f"bin\\winfsp-{arch}.dll"
+                # pytype: enable=module-attr
+            elif _system == 'SunOS':
+                _libfuse_path = find_library(os.environ.get('FUSE_LIBRARY_NAME', 'fuse'))
+                if not _libfuse_path:
+                    # On Solaris/illumos, find_library only consults the default library path reported by
+                    # crle -64 (/lib/64:/usr/lib/64). libfuse is not packaged by OmniOS, so also look where
+                    # the SFE package and self-built installations put it. Only 64-bit directories are
+                    # searched because a 64-bit Python cannot load 32-bit libraries.
+                    for path in [
+                        '/usr/gnu/lib/amd64/libfuse.so',
+                        '/usr/local/lib/amd64/libfuse.so',
+                        '/opt/local/lib/amd64/libfuse.so',
+                        '/usr/lib/amd64/libfuse.so.2',
+                        '/usr/lib/amd64/libfuse.so',
+                        '/lib/amd64/libfuse.so.2',
+                    ]:
+                        if os.path.exists(path):
+                            _libfuse_path = path
+                            break
+            elif _libfuse_name := os.environ.get('FUSE_LIBRARY_NAME'):
+                _libfuse_path = find_library(_libfuse_name)
+            else:
+                _libfuse_path = find_library('fuse')
+                if not _libfuse_path:
+                    _libfuse_path = find_library('fuse3')
+
+        if not _libfuse_path:
+            raise OSError('Unable to find libfuse')
+        _libfuse = ctypes.CDLL(_libfuse_path)
+
+        # NetBSD's librefuse is a FUSE reimplementation on top of puffs (no perfused daemon needed).
+        # Its struct layouts differ from libfuse and are fixed, i.e. independent of the FUSE API version.
+        # fuse_pkgversion() returns e.g. "ReFUSE 3.10" for librefuse, but e.g. "3.18.2" for libfuse 3 (pkgsrc fuse3).
+        _librefuse = False
+        if _system == 'NetBSD' and hasattr(_libfuse, 'fuse_pkgversion'):
+            _libfuse.fuse_pkgversion.restype = ctypes.c_char_p
+            _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
+
+
+        fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
+        _fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
+        _FUSE_VERSION = (fuse_version_major, fuse_version_minor, _fuse_version_hotfix)
+        if fuse_version_major == 2 and fuse_version_minor < 6:
+            raise AttributeError(
+                f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
+                "There have been several ABI breaks in each version. Libfuse < 2.6 is not supported!"
+            )
+        if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Linux', 'NetBSD')):
+            raise AttributeError(
+                f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. "
+                "Expected FUSE 2, or FUSE 3 on Linux and NetBSD!"
+            )
+
+        has_feature_flags = (
+            _FUSE_VERSION >= (3, 17, 1)
+            and not _librefuse
+            and hasattr(_libfuse, 'fuse_set_feature_flag')
+            and hasattr(_libfuse, 'fuse_get_feature_flag')
+            and hasattr(_libfuse, 'fuse_unset_feature_flag')
         )
-    elif _system == 'NetBSD':
-        # On NetBSD 10+ librefuse implements FUSE 3, targeting 3.10 compatibility.
-        # On NetBSD, find_library only works if a C compiler or ld is in PATH (and e.g. not within pkgsrc builds,
-        # where the compiler wrappers drop -lrefuse), so fall back to the soname of the base system library.
-        _libfuse_path = find_library('refuse') or 'librefuse.so.2'
-    elif _system == 'Windows':
-        # pytype: disable=module-attr
-        try:
-            import _winreg as reg  # pytype: disable=import-error
-        except ImportError:
-            import winreg as reg  # pytype: disable=import-error
-
-        def reg32_get_value(rootkey, keyname, valname):
-            key, val = None, None
-            try:
-                key = reg.OpenKey(
-                    rootkey, keyname, 0, reg.KEY_READ | reg.KEY_WOW64_32KEY
-                )  # pytype: disable=import-error
-                val = str(reg.QueryValueEx(key, valname)[0])
-            except OSError:  # pylint: disable=undefined-variable  # pytype: disable=name-error
-                pass
-            finally:
-                if key is not None:
-                    reg.CloseKey(key)
-            return val
-
-        _libfuse_path = reg32_get_value(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WinFsp", r"InstallDir")
-        if _libfuse_path:
-            arch = "x64" if sys.maxsize > 0xFFFFFFFF else "x86"
-            _libfuse_path += f"bin\\winfsp-{arch}.dll"
-        # pytype: enable=module-attr
-    elif _system == 'SunOS':
-        _libfuse_path = find_library(os.environ.get('FUSE_LIBRARY_NAME', 'fuse'))
-        if not _libfuse_path:
-            # On Solaris/illumos, find_library only consults the default library path reported by
-            # crle -64 (/lib/64:/usr/lib/64). libfuse is not packaged by OmniOS, so also look where
-            # the SFE package and self-built installations put it. Only 64-bit directories are
-            # searched because a 64-bit Python cannot load 32-bit libraries.
-            for path in [
-                '/usr/gnu/lib/amd64/libfuse.so',
-                '/usr/local/lib/amd64/libfuse.so',
-                '/opt/local/lib/amd64/libfuse.so',
-                '/usr/lib/amd64/libfuse.so.2',
-                '/usr/lib/amd64/libfuse.so',
-                '/lib/amd64/libfuse.so.2',
-            ]:
-                if os.path.exists(path):
-                    _libfuse_path = path
-                    break
-    elif _libfuse_name := os.environ.get('FUSE_LIBRARY_NAME'):
-        _libfuse_path = find_library(_libfuse_name)
-    else:
-        _libfuse_path = find_library('fuse')
-        if not _libfuse_path:
-            _libfuse_path = find_library('fuse3')
-
-if not _libfuse_path:
-    raise OSError('Unable to find libfuse')
-_libfuse = ctypes.CDLL(_libfuse_path)
-
-# NetBSD's librefuse is a FUSE reimplementation on top of puffs (no perfused daemon needed).
-# Its struct layouts differ from libfuse and are fixed, i.e. independent of the FUSE API version.
-# fuse_pkgversion() returns e.g. "ReFUSE 3.10" for librefuse, but e.g. "3.18.2" for libfuse 3 (pkgsrc fuse3).
-_librefuse = False
-if _system == 'NetBSD' and hasattr(_libfuse, 'fuse_pkgversion'):
-    _libfuse.fuse_pkgversion.restype = ctypes.c_char_p
-    _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
-
-
-fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
-_fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
-_FUSE_VERSION = (fuse_version_major, fuse_version_minor, _fuse_version_hotfix)
-if fuse_version_major == 2 and fuse_version_minor < 6:
-    raise AttributeError(
-        f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
-        "There have been several ABI breaks in each version. Libfuse < 2.6 is not supported!"
-    )
-if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Linux', 'NetBSD')):
-    raise AttributeError(
-        f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. "
-        "Expected FUSE 2, or FUSE 3 on Linux and NetBSD!"
-    )
+        return cls(
+            system=_system,
+            machine=_machine,
+            fuse_version=_FUSE_VERSION,
+            librefuse=_librefuse,
+            has_feature_flags=has_feature_flags,
+            libfuse=_libfuse,
+        )
 
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git
@@ -299,1408 +333,1553 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Lin
 #    for reasoning.
 
 
-if _system == 'Windows' or _system.startswith('CYGWIN'):
-    # NOTE:
-    #
-    # sizeof(long)==4 on Windows 32-bit and 64-bit
-    # sizeof(long)==4 on Cygwin 32-bit and ==8 on Cygwin 64-bit
-    #
-    # We have to fix up c_long and c_ulong so that it matches the
-    # Cygwin (and UNIX) sizes when run on Windows.
-    import sys
+class _FuseTypes:
+    """Construct the ctypes types for the FUSE implementation described by a _FuseContext."""
 
-    c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
-    c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
+    def __init__(self, context: _FuseContext) -> None:
+        self.context = context
+        _system = context.system
+        _machine = context.machine
+        fuse_version_major, fuse_version_minor, _fuse_version_hotfix = context.fuse_version
+        _FUSE_VERSION = context.fuse_version
+        _librefuse = context.librefuse
 
+        # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
+        # bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
+        # the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
+        # 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
+        # in a session, e.g., in a test.
+        # Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
+        # This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
+        # I encountered some weird error on macos-14 without this!
+        # > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
+        _fuse_set_feature_flag = None
+        _fuse_unset_feature_flag = None
+        _fuse_get_feature_flag = None
+        if (_libfuse := context.libfuse) is not None and context.has_feature_flags:
+            _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
+            _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
+            _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
 
-class c_timespec(ctypes.Structure):
-    if _system == 'Windows' or _system.startswith('CYGWIN'):
-        _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-    elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
-        # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/timespec.h#L47
-        # https://github.com/NetBSD/src/blob/netbsd-10/sys/arch/hpc/stand/include/machine/types.h#L40
-        _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
-    else:
-        _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
+        if _system == 'Windows' or _system.startswith('CYGWIN'):
+            # NOTE:
+            #
+            # sizeof(long)==4 on Windows 32-bit and 64-bit
+            # sizeof(long)==4 on Cygwin 32-bit and ==8 on Cygwin 64-bit
+            #
+            # We have to fix up c_long and c_ulong so that it matches the
+            # Cygwin (and UNIX) sizes when run on Windows.
+            import sys
 
-
-class c_utimbuf(ctypes.Structure):
-    _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
-
-
-# Set non-FUSE-specific kernel type definitions.
-if _system in ('Darwin', 'FreeBSD'):
-    ENOTSUP = 45
-
-    c_dev_t: type = ctypes.c_int32
-    c_fsblkcnt_t: type = ctypes.c_ulong
-    c_fsfilcnt_t: type = ctypes.c_ulong
-    c_gid_t: type = ctypes.c_uint32
-    c_mode_t: type = ctypes.c_uint16
-    c_off_t: type = ctypes.c_int64
-    c_pid_t: type = ctypes.c_int32
-    c_uid_t: type = ctypes.c_uint32
-    if _system == 'Darwin':
-        # macFUSE's fuse.h adds a uint32_t position argument to setxattr and getxattr (#ifdef __APPLE__),
-        # see Operations.getxattr.
-        setxattr_t = ctypes.CFUNCTYPE(
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            c_byte_p,
-            ctypes.c_size_t,
-            ctypes.c_int,
-            ctypes.c_uint32,
-        )
-        getxattr_t = ctypes.CFUNCTYPE(
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            c_byte_p,
-            ctypes.c_size_t,
-            ctypes.c_uint32,
-        )
-        c_fsblkcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
-        c_fsfilcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
-        # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/stat.h
-        _c_stat__fields_: Sequence[FieldsEntry] = [
-            ('st_dev', c_dev_t),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_uint16),
-            ('st_ino', ctypes.c_uint64),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('st_birthtimespec', c_timespec),
-            ('st_size', c_off_t),
-            ('st_blocks', ctypes.c_int64),
-            ('st_blksize', ctypes.c_int32),
-            ('st_flags', ctypes.c_int32),
-            ('st_gen', ctypes.c_int32),
-            ('st_lspare', ctypes.c_int32),
-            ('st_qspare', ctypes.c_int64 * 2),
-        ]
-    else:
-        # FreeBSD uses vanilla libfuse: unlike macFUSE, there is no position argument.
-        setxattr_t = ctypes.CFUNCTYPE(
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            c_byte_p,
-            ctypes.c_size_t,
-            ctypes.c_int,
-        )
-        getxattr_t = ctypes.CFUNCTYPE(
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            c_byte_p,
-            ctypes.c_size_t,
-        )
-        # FreeBSD amd64 struct stat layout
-        # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/stat.h#L159
-        # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
-        _c_stat__fields_ = [
-            ('st_dev', ctypes.c_uint64),
-            ('st_ino', ctypes.c_uint64),
-            ('st_nlink', ctypes.c_uint64),
-            ('st_mode', c_mode_t),
-            ('st_bsdflags', ctypes.c_int16),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_padding1', ctypes.c_uint32),
-            ('st_rdev', ctypes.c_uint64),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('st_birthtimespec', c_timespec),
-            ('st_size', c_off_t),
-            ('st_blocks', ctypes.c_int64),
-            ('st_blksize', ctypes.c_uint32),
-            ('st_flags', ctypes.c_uint32),
-            ('st_gen', ctypes.c_uint32),
-            ('st_filerev', ctypes.c_uint64),
-            ('st_spare', ctypes.c_int64 * 9),
-        ]
-elif _system == 'Linux':
-    ENOTSUP = 95
-
-    # sys/statvfs.h
-    c_fsblkcnt_t = ctypes.c_ulonglong
-    c_fsfilcnt_t = ctypes.c_ulonglong
-
-    # https://man7.org/linux/man-pages/man0/sys_types.h.0p.html
-    c_dev_t = ctypes.c_ulonglong
-    c_gid_t = ctypes.c_uint
-    c_mode_t = ctypes.c_uint
-    c_off_t = ctypes.c_longlong
-    c_pid_t = ctypes.c_int
-    c_uid_t = ctypes.c_uint
-
-    # sys/xattr.h
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t, ctypes.c_int
-    )
-    getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
-
-    # https://github.com/torvalds/linux/blob/v6.18/arch/x86/include/uapi/asm/stat.h#L83-L104
-    # -> See /arch/<arch> subfolders. Unfortunately, arch=arm64 does not have stat.h for some reason.
-    if _machine == 'x86_64':
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('st_ino', ctypes.c_ulong),
-            ('st_nlink', ctypes.c_ulong),
-            ('st_mode', c_mode_t),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('__pad0', ctypes.c_int),
-            ('st_rdev', c_dev_t),
-            ('st_size', c_off_t),
-            ('st_blksize', ctypes.c_long),
-            ('st_blocks', ctypes.c_long),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('reserved', ctypes.c_long * 3),
-        ]
-    elif _machine == 'mips':
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('__pad1_1', ctypes.c_ulong),
-            ('__pad1_2', ctypes.c_ulong),
-            ('__pad1_3', ctypes.c_ulong),
-            ('st_ino', ctypes.c_ulong),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_ulong),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('__pad2_1', ctypes.c_ulong),
-            ('__pad2_2', ctypes.c_ulong),
-            ('st_size', c_off_t),
-            ('__pad3', ctypes.c_ulong),
-            ('st_atimespec', c_timespec),
-            ('__pad4', ctypes.c_ulong),
-            ('st_mtimespec', c_timespec),
-            ('__pad5', ctypes.c_ulong),
-            ('st_ctimespec', c_timespec),
-            ('__pad6', ctypes.c_ulong),
-            ('st_blksize', ctypes.c_long),
-            ('st_blocks', ctypes.c_long),
-            ('__pad7_1', ctypes.c_ulong),
-            ('__pad7_2', ctypes.c_ulong),
-            ('__pad7_3', ctypes.c_ulong),
-            ('__pad7_4', ctypes.c_ulong),
-            ('__pad7_5', ctypes.c_ulong),
-            ('__pad7_6', ctypes.c_ulong),
-            ('__pad7_7', ctypes.c_ulong),
-            ('__pad7_8', ctypes.c_ulong),
-            ('__pad7_9', ctypes.c_ulong),
-            ('__pad7_10', ctypes.c_ulong),
-            ('__pad7_11', ctypes.c_ulong),
-            ('__pad7_12', ctypes.c_ulong),
-            ('__pad7_13', ctypes.c_ulong),
-            ('__pad7_14', ctypes.c_ulong),
-        ]
-    elif _machine == 'ppc':
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('st_ino', ctypes.c_ulonglong),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_uint),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('__pad2', ctypes.c_ushort),
-            ('st_size', c_off_t),
-            ('st_blksize', ctypes.c_long),
-            ('st_blocks', ctypes.c_longlong),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-        ]
-    elif _machine in ('ppc64', 'ppc64le'):
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('st_ino', ctypes.c_ulong),
-            ('st_nlink', ctypes.c_ulong),
-            ('st_mode', c_mode_t),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('__pad', ctypes.c_uint),
-            ('st_rdev', c_dev_t),
-            ('st_size', c_off_t),
-            ('st_blksize', ctypes.c_long),
-            ('st_blocks', ctypes.c_long),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-        ]
-    elif _machine in ('aarch64', 'riscv64'):
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('st_ino', ctypes.c_ulong),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_uint),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('__pad1', ctypes.c_ulong),
-            ('st_size', c_off_t),
-            ('st_blksize', ctypes.c_int),
-            ('__pad2', ctypes.c_int),
-            ('st_blocks', ctypes.c_long),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('__reserved', ctypes.c_ulong),  # unclear what this is
-        ]
-    else:
-        # i686, use as fallback for everything else
-        _c_stat__fields_ = [
-            ('st_dev', c_dev_t),
-            ('__pad1', ctypes.c_ushort),
-            ('__st_ino', ctypes.c_ulong),
-            ('st_mode', c_mode_t),
-            ('st_nlink', ctypes.c_uint),
-            ('st_uid', c_uid_t),
-            ('st_gid', c_gid_t),
-            ('st_rdev', c_dev_t),
-            ('__pad2', ctypes.c_ushort),
-            ('st_size', c_off_t),
-            ('st_blksize', ctypes.c_long),
-            ('st_blocks', ctypes.c_longlong),
-            ('st_atimespec', c_timespec),
-            ('st_mtimespec', c_timespec),
-            ('st_ctimespec', c_timespec),
-            ('st_ino', ctypes.c_ulonglong),
-        ]
-elif _system == 'Windows' or _system.startswith('CYGWIN'):
-    ENOTSUP = 129 if _system == 'Windows' else 134
-    c_dev_t = ctypes.c_uint
-    c_fsblkcnt_t = c_win_ulong
-    c_fsfilcnt_t = c_win_ulong
-    c_gid_t = ctypes.c_uint
-    c_mode_t = ctypes.c_uint
-    c_off_t = ctypes.c_longlong
-    c_pid_t = ctypes.c_int
-    c_uid_t = ctypes.c_uint
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    )
-    getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
-    _c_stat__fields_ = [
-        ('st_dev', c_dev_t),
-        ('st_ino', ctypes.c_ulonglong),
-        ('st_mode', c_mode_t),
-        ('st_nlink', ctypes.c_ushort),
-        ('st_uid', c_uid_t),
-        ('st_gid', c_gid_t),
-        ('st_rdev', c_dev_t),
-        ('st_size', c_off_t),
-        ('st_atimespec', c_timespec),
-        ('st_mtimespec', c_timespec),
-        ('st_ctimespec', c_timespec),
-        ('st_blksize', ctypes.c_int),
-        ('st_blocks', ctypes.c_longlong),
-        ('st_birthtimespec', c_timespec),
-    ]
-elif _system == 'OpenBSD':
-    ENOTSUP = 91
-    c_dev_t = ctypes.c_int32
-    c_uid_t = ctypes.c_uint32
-    c_gid_t = ctypes.c_uint32
-    c_mode_t = ctypes.c_uint32
-    c_off_t = ctypes.c_int64
-    c_pid_t = ctypes.c_int32
-    c_ino_t = ctypes.c_uint64
-    c_nlink_t = ctypes.c_uint32
-    c_blkcnt_t = ctypes.c_int64
-    c_blksize_t = ctypes.c_int32
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-    )
-    c_fsblkcnt_t = ctypes.c_uint64
-    c_fsfilcnt_t = ctypes.c_uint64
-    _c_stat__fields_ = [
-        ('st_mode', c_mode_t),
-        ('st_dev', c_dev_t),
-        ('st_ino', c_ino_t),
-        ('st_nlink', c_nlink_t),
-        ('st_uid', c_uid_t),
-        ('st_gid', c_gid_t),
-        ('st_rdev', c_dev_t),
-        ('st_atimespec', c_timespec),
-        ('st_mtimespec', c_timespec),
-        ('st_ctimespec', c_timespec),
-        ('st_size', c_off_t),
-        ('st_blocks', c_blkcnt_t),
-        ('st_blksize', c_blksize_t),
-        ('st_flags', ctypes.c_uint32),
-        ('st_gen', ctypes.c_uint32),
-        ('st_birthtimespec', c_timespec),
-    ]
-elif _system == 'NetBSD':
-    ENOTSUP = 45
-    c_dev_t = ctypes.c_uint64
-    c_uid_t = ctypes.c_uint32
-    c_gid_t = ctypes.c_uint32
-    c_mode_t = ctypes.c_uint32
-    c_off_t = ctypes.c_int64
-    c_pid_t = ctypes.c_int32
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
-        ctypes.c_size_t,
-        ctypes.c_int,
-    )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int64,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_byte),
-        ctypes.c_size_t,
-    )
-    c_fsblkcnt_t = ctypes.c_uint64
-    c_fsfilcnt_t = ctypes.c_uint64
-    # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/stat.h#L59-L89
-    _c_stat__fields_ = [
-        ('st_dev', c_dev_t),
-        ('st_mode', c_mode_t),
-        ('_padding0', ctypes.c_uint32),  # alignment padding implied by the next member
-        ('st_ino', ctypes.c_uint64),
-        ('st_nlink', ctypes.c_uint32),
-        ('st_uid', c_uid_t),
-        ('st_gid', c_gid_t),
-        ('_padding1', ctypes.c_uint32),  # alignment padding implied by the next member
-        ('st_rdev', c_dev_t),
-        ('st_atimespec', c_timespec),
-        ('st_mtimespec', c_timespec),
-        ('st_ctimespec', c_timespec),
-        ('st_birthtimespec', c_timespec),
-        ('st_size', c_off_t),
-        ('st_blocks', ctypes.c_int64),
-        ('st_blksize', ctypes.c_uint32),
-        ('st_flags', ctypes.c_uint32),
-        ('st_gen', ctypes.c_uint32),
-        ('st_spare', ctypes.c_uint32 * 2),
-    ]
-elif _system == 'SunOS':
-    ENOTSUP = 48
-    c_dev_t = ctypes.c_uint64
-    c_uid_t = ctypes.c_uint32
-    c_gid_t = ctypes.c_uint32
-    c_mode_t = ctypes.c_uint32
-    c_off_t = ctypes.c_int64
-    c_pid_t = ctypes.c_int32
-    setxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    )
-    getxattr_t = ctypes.CFUNCTYPE(
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        c_byte_p,
-        ctypes.c_size_t,
-    )
-    c_fsblkcnt_t = ctypes.c_uint64
-    c_fsfilcnt_t = ctypes.c_uint64
-    _c_stat__fields_ = [
-        ('st_dev', c_dev_t),
-        ('st_ino', ctypes.c_uint64),
-        ('st_mode', c_mode_t),
-        ('st_nlink', ctypes.c_uint32),
-        ('st_uid', c_uid_t),
-        ('st_gid', c_gid_t),
-        ('st_rdev', c_dev_t),
-        ('st_size', c_off_t),
-        ('st_atimespec', c_timespec),
-        ('st_mtimespec', c_timespec),
-        ('st_ctimespec', c_timespec),
-        ('st_blksize', ctypes.c_int32),
-        ('st_blocks', ctypes.c_int64),
-        ('st_fstype', ctypes.c_char * 16),
-    ]
-else:
-    raise NotImplementedError(_system + ' is not supported.')
+            c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
+            c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
 
 
-class c_stat(ctypes.Structure):
-    _fields_ = _c_stat__fields_
+        class c_timespec(ctypes.Structure):
+            if _system == 'Windows' or _system.startswith('CYGWIN'):
+                _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
+            elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
+                # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/timespec.h#L47
+                # https://github.com/NetBSD/src/blob/netbsd-10/sys/arch/hpc/stand/include/machine/types.h#L40
+                _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
+            else:
+                _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
 
 
-# https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_statvfs.h.html
-if _system == 'FreeBSD':
-    c_fsblkcnt_t = ctypes.c_uint64
-    c_fsfilcnt_t = ctypes.c_uint64
+        class c_utimbuf(ctypes.Structure):
+            _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
 
 
-class c_statvfs(ctypes.Structure):
-    if _system == 'FreeBSD':
-        # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e56632e13711/sys/sys/statvfs.h#L57-L68
-        _fields_ = [
-            ('f_bavail', c_fsblkcnt_t),
-            ('f_bfree', c_fsblkcnt_t),
-            ('f_blocks', c_fsblkcnt_t),
-            ('f_favail', c_fsfilcnt_t),
-            ('f_ffree', c_fsfilcnt_t),
-            ('f_files', c_fsfilcnt_t),
-            ('f_bsize', ctypes.c_ulong),
-            ('f_flag', ctypes.c_ulong),
-            ('f_frsize', ctypes.c_ulong),
-            ('f_fsid', ctypes.c_ulong),
-            ('f_namemax', ctypes.c_ulong),
-        ]
-    elif _system == 'Windows' or _system.startswith('CYGWIN'):
-        _fields_ = [
-            ('f_bsize', c_win_ulong),
-            ('f_frsize', c_win_ulong),
-            ('f_blocks', c_fsblkcnt_t),
-            ('f_bfree', c_fsblkcnt_t),
-            ('f_bavail', c_fsblkcnt_t),
-            ('f_files', c_fsfilcnt_t),
-            ('f_ffree', c_fsfilcnt_t),
-            ('f_favail', c_fsfilcnt_t),
-            ('f_fsid', c_win_ulong),
-            ('f_flag', c_win_ulong),
-            ('f_namemax', c_win_ulong),
-        ]
-    elif _system == 'NetBSD':
-        # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/statvfs.h#L66-L100
-        _fields_ = [
-            ('f_flag', ctypes.c_ulong),
-            ('f_bsize', ctypes.c_ulong),
-            ('f_frsize', ctypes.c_ulong),
-            ('f_iosize', ctypes.c_ulong),
-            ('f_blocks', c_fsblkcnt_t),
-            ('f_bfree', c_fsblkcnt_t),
-            ('f_bavail', c_fsblkcnt_t),
-            ('f_bresvd', c_fsblkcnt_t),
-            ('f_files', c_fsfilcnt_t),
-            ('f_ffree', c_fsfilcnt_t),
-            ('f_favail', c_fsfilcnt_t),
-            ('f_fresvd', c_fsfilcnt_t),
-            ('f_syncreads', ctypes.c_uint64),
-            ('f_syncwrites', ctypes.c_uint64),
-            ('f_asyncreads', ctypes.c_uint64),
-            ('f_asyncwrites', ctypes.c_uint64),
-            ('f_fsidx', ctypes.c_int32 * 2),  # NetBSD compatible fsid
-            ('f_fsid', ctypes.c_ulong),  # POSIX compatible fsid
-            ('f_namemax', ctypes.c_ulong),
-            ('f_owner', c_uid_t),
-            ('f_spare', ctypes.c_uint64 * 4),
-            ('f_fstypename', ctypes.c_char * 32),
-            ('f_mntonname', ctypes.c_char * 1024),
-            ('f_mntfromname', ctypes.c_char * 1024),
-            ('f_mntfromlabel', ctypes.c_char * 1024),
-        ]
-    elif _system == 'SunOS':
-        # Source: /usr/include/sys/statvfs.h
-        _fields_ = [
-            ('f_bsize', ctypes.c_ulong),
-            ('f_frsize', ctypes.c_ulong),
-            ('f_blocks', c_fsblkcnt_t),
-            ('f_bfree', c_fsblkcnt_t),
-            ('f_bavail', c_fsblkcnt_t),
-            ('f_files', c_fsfilcnt_t),
-            ('f_ffree', c_fsfilcnt_t),
-            ('f_favail', c_fsfilcnt_t),
-            ('f_fsid', ctypes.c_ulong),
-            ('f_basetype', ctypes.c_char * 16),
-            ('f_flag', ctypes.c_ulong),
-            ('f_namemax', ctypes.c_ulong),
-            ('f_fstr', ctypes.c_char * 32),
-        ]
-    else:
-        # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
-        _fields_ = [
-            ('f_bsize', ctypes.c_ulong),
-            ('f_frsize', ctypes.c_ulong),
-            ('f_blocks', c_fsblkcnt_t),
-            ('f_bfree', c_fsblkcnt_t),
-            ('f_bavail', c_fsblkcnt_t),
-            ('f_files', c_fsfilcnt_t),
-            ('f_ffree', c_fsfilcnt_t),
-            ('f_favail', c_fsfilcnt_t),
-            ('f_fsid', ctypes.c_ulong),
-            ('f_flag', ctypes.c_ulong),
-            ('f_namemax', ctypes.c_ulong),
-        ]
-        if _system == 'Linux':  # Linux x86_64 and aarch64
-            _fields_ += [
-                ('f_type', ctypes.c_uint),
-                ('__f_spare', ctypes.c_uint * 5),
+        # Set non-FUSE-specific kernel type definitions.
+        if _system in ('Darwin', 'FreeBSD'):
+            ENOTSUP = 45
+
+            c_dev_t: type = ctypes.c_int32
+            c_fsblkcnt_t: type = ctypes.c_ulong
+            c_fsfilcnt_t: type = ctypes.c_ulong
+            c_gid_t: type = ctypes.c_uint32
+            c_mode_t: type = ctypes.c_uint16
+            c_off_t: type = ctypes.c_int64
+            c_pid_t: type = ctypes.c_int32
+            c_uid_t: type = ctypes.c_uint32
+            if _system == 'Darwin':
+                # macFUSE's fuse.h adds a uint32_t position argument to setxattr and getxattr (#ifdef __APPLE__),
+                # see Operations.getxattr.
+                setxattr_t = ctypes.CFUNCTYPE(
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_char_p,
+                    c_byte_p,
+                    ctypes.c_size_t,
+                    ctypes.c_int,
+                    ctypes.c_uint32,
+                )
+                getxattr_t = ctypes.CFUNCTYPE(
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_char_p,
+                    c_byte_p,
+                    ctypes.c_size_t,
+                    ctypes.c_uint32,
+                )
+                c_fsblkcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
+                c_fsfilcnt_t: type = ctypes.c_uint  # type: ignore[no-redef]
+                # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/stat.h
+                _c_stat__fields_: Sequence[FieldsEntry] = [
+                    ('st_dev', c_dev_t),
+                    ('st_mode', c_mode_t),
+                    ('st_nlink', ctypes.c_uint16),
+                    ('st_ino', ctypes.c_uint64),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_rdev', c_dev_t),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                    ('st_birthtimespec', c_timespec),
+                    ('st_size', c_off_t),
+                    ('st_blocks', ctypes.c_int64),
+                    ('st_blksize', ctypes.c_int32),
+                    ('st_flags', ctypes.c_int32),
+                    ('st_gen', ctypes.c_int32),
+                    ('st_lspare', ctypes.c_int32),
+                    ('st_qspare', ctypes.c_int64 * 2),
+                ]
+            else:
+                # FreeBSD uses vanilla libfuse: unlike macFUSE, there is no position argument.
+                setxattr_t = ctypes.CFUNCTYPE(
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_char_p,
+                    c_byte_p,
+                    ctypes.c_size_t,
+                    ctypes.c_int,
+                )
+                getxattr_t = ctypes.CFUNCTYPE(
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_char_p,
+                    c_byte_p,
+                    ctypes.c_size_t,
+                )
+                # FreeBSD amd64 struct stat layout
+                # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/stat.h#L159
+                # Use explicit 64-bit integers for dev and ino to avoid changing global typedefs.
+                _c_stat__fields_ = [
+                    ('st_dev', ctypes.c_uint64),
+                    ('st_ino', ctypes.c_uint64),
+                    ('st_nlink', ctypes.c_uint64),
+                    ('st_mode', c_mode_t),
+                    ('st_bsdflags', ctypes.c_int16),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_padding1', ctypes.c_uint32),
+                    ('st_rdev', ctypes.c_uint64),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                    ('st_birthtimespec', c_timespec),
+                    ('st_size', c_off_t),
+                    ('st_blocks', ctypes.c_int64),
+                    ('st_blksize', ctypes.c_uint32),
+                    ('st_flags', ctypes.c_uint32),
+                    ('st_gen', ctypes.c_uint32),
+                    ('st_filerev', ctypes.c_uint64),
+                    ('st_spare', ctypes.c_int64 * 9),
+                ]
+        elif _system == 'Linux':
+            ENOTSUP = 95
+
+            # sys/statvfs.h
+            c_fsblkcnt_t = ctypes.c_ulonglong
+            c_fsfilcnt_t = ctypes.c_ulonglong
+
+            # https://man7.org/linux/man-pages/man0/sys_types.h.0p.html
+            c_dev_t = ctypes.c_ulonglong
+            c_gid_t = ctypes.c_uint
+            c_mode_t = ctypes.c_uint
+            c_off_t = ctypes.c_longlong
+            c_pid_t = ctypes.c_int
+            c_uid_t = ctypes.c_uint
+
+            # sys/xattr.h
+            setxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t, ctypes.c_int
+            )
+            getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
+
+            # https://github.com/torvalds/linux/blob/v6.18/arch/x86/include/uapi/asm/stat.h#L83-L104
+            # -> See /arch/<arch> subfolders. Unfortunately, arch=arm64 does not have stat.h for some reason.
+            if _machine == 'x86_64':
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('st_ino', ctypes.c_ulong),
+                    ('st_nlink', ctypes.c_ulong),
+                    ('st_mode', c_mode_t),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('__pad0', ctypes.c_int),
+                    ('st_rdev', c_dev_t),
+                    ('st_size', c_off_t),
+                    ('st_blksize', ctypes.c_long),
+                    ('st_blocks', ctypes.c_long),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                    ('reserved', ctypes.c_long * 3),
+                ]
+            elif _machine == 'mips':
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('__pad1_1', ctypes.c_ulong),
+                    ('__pad1_2', ctypes.c_ulong),
+                    ('__pad1_3', ctypes.c_ulong),
+                    ('st_ino', ctypes.c_ulong),
+                    ('st_mode', c_mode_t),
+                    ('st_nlink', ctypes.c_ulong),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_rdev', c_dev_t),
+                    ('__pad2_1', ctypes.c_ulong),
+                    ('__pad2_2', ctypes.c_ulong),
+                    ('st_size', c_off_t),
+                    ('__pad3', ctypes.c_ulong),
+                    ('st_atimespec', c_timespec),
+                    ('__pad4', ctypes.c_ulong),
+                    ('st_mtimespec', c_timespec),
+                    ('__pad5', ctypes.c_ulong),
+                    ('st_ctimespec', c_timespec),
+                    ('__pad6', ctypes.c_ulong),
+                    ('st_blksize', ctypes.c_long),
+                    ('st_blocks', ctypes.c_long),
+                    ('__pad7_1', ctypes.c_ulong),
+                    ('__pad7_2', ctypes.c_ulong),
+                    ('__pad7_3', ctypes.c_ulong),
+                    ('__pad7_4', ctypes.c_ulong),
+                    ('__pad7_5', ctypes.c_ulong),
+                    ('__pad7_6', ctypes.c_ulong),
+                    ('__pad7_7', ctypes.c_ulong),
+                    ('__pad7_8', ctypes.c_ulong),
+                    ('__pad7_9', ctypes.c_ulong),
+                    ('__pad7_10', ctypes.c_ulong),
+                    ('__pad7_11', ctypes.c_ulong),
+                    ('__pad7_12', ctypes.c_ulong),
+                    ('__pad7_13', ctypes.c_ulong),
+                    ('__pad7_14', ctypes.c_ulong),
+                ]
+            elif _machine == 'ppc':
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('st_ino', ctypes.c_ulonglong),
+                    ('st_mode', c_mode_t),
+                    ('st_nlink', ctypes.c_uint),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_rdev', c_dev_t),
+                    ('__pad2', ctypes.c_ushort),
+                    ('st_size', c_off_t),
+                    ('st_blksize', ctypes.c_long),
+                    ('st_blocks', ctypes.c_longlong),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                ]
+            elif _machine in ('ppc64', 'ppc64le'):
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('st_ino', ctypes.c_ulong),
+                    ('st_nlink', ctypes.c_ulong),
+                    ('st_mode', c_mode_t),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('__pad', ctypes.c_uint),
+                    ('st_rdev', c_dev_t),
+                    ('st_size', c_off_t),
+                    ('st_blksize', ctypes.c_long),
+                    ('st_blocks', ctypes.c_long),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                ]
+            elif _machine in ('aarch64', 'riscv64'):
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('st_ino', ctypes.c_ulong),
+                    ('st_mode', c_mode_t),
+                    ('st_nlink', ctypes.c_uint),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_rdev', c_dev_t),
+                    ('__pad1', ctypes.c_ulong),
+                    ('st_size', c_off_t),
+                    ('st_blksize', ctypes.c_int),
+                    ('__pad2', ctypes.c_int),
+                    ('st_blocks', ctypes.c_long),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                    ('__reserved', ctypes.c_ulong),  # unclear what this is
+                ]
+            else:
+                # i686, use as fallback for everything else
+                _c_stat__fields_ = [
+                    ('st_dev', c_dev_t),
+                    ('__pad1', ctypes.c_ushort),
+                    ('__st_ino', ctypes.c_ulong),
+                    ('st_mode', c_mode_t),
+                    ('st_nlink', ctypes.c_uint),
+                    ('st_uid', c_uid_t),
+                    ('st_gid', c_gid_t),
+                    ('st_rdev', c_dev_t),
+                    ('__pad2', ctypes.c_ushort),
+                    ('st_size', c_off_t),
+                    ('st_blksize', ctypes.c_long),
+                    ('st_blocks', ctypes.c_longlong),
+                    ('st_atimespec', c_timespec),
+                    ('st_mtimespec', c_timespec),
+                    ('st_ctimespec', c_timespec),
+                    ('st_ino', ctypes.c_ulonglong),
+                ]
+        elif _system == 'Windows' or _system.startswith('CYGWIN'):
+            ENOTSUP = 129 if _system == 'Windows' else 134
+            c_dev_t = ctypes.c_uint
+            c_fsblkcnt_t = c_win_ulong
+            c_fsfilcnt_t = c_win_ulong
+            c_gid_t = ctypes.c_uint
+            c_mode_t = ctypes.c_uint
+            c_off_t = ctypes.c_longlong
+            c_pid_t = ctypes.c_int
+            c_uid_t = ctypes.c_uint
+            setxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                c_byte_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+            )
+            getxattr_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, c_byte_p, ctypes.c_size_t)
+            _c_stat__fields_ = [
+                ('st_dev', c_dev_t),
+                ('st_ino', ctypes.c_ulonglong),
+                ('st_mode', c_mode_t),
+                ('st_nlink', ctypes.c_ushort),
+                ('st_uid', c_uid_t),
+                ('st_gid', c_gid_t),
+                ('st_rdev', c_dev_t),
+                ('st_size', c_off_t),
+                ('st_atimespec', c_timespec),
+                ('st_mtimespec', c_timespec),
+                ('st_ctimespec', c_timespec),
+                ('st_blksize', ctypes.c_int),
+                ('st_blocks', ctypes.c_longlong),
+                ('st_birthtimespec', c_timespec),
             ]
-
-
-if (
-    _system == 'Linux' and not (_machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4)
-) or _system.startswith('CYGWIN'):
-    # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/include/uapi/asm-generic/fcntl.h#L195
-    # Cygwin's struct flock uses the generic Linux/BSD layout.
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_type', ctypes.c_short),
-            ('l_whence', ctypes.c_short),
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_pid', c_pid_t),
-        ]
-
-elif _system == 'Linux':
-    # 32-bit MIPS has l_sysid and a four-long pad, see __ARCH_FLOCK_EXTRA_SYSID and __ARCH_FLOCK_PAD in
-    # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/arch/mips/include/uapi/asm/fcntl.h#L53
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_type', ctypes.c_short),
-            ('l_whence', ctypes.c_short),
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_sysid', ctypes.c_long),
-            ('l_pid', c_pid_t),
-            ('l_pad', ctypes.c_long * 4),
-        ]
-
-elif _system == 'FreeBSD':
-    # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/fcntl.h#L305
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_pid', c_pid_t),
-            ('l_type', ctypes.c_short),
-            ('l_whence', ctypes.c_short),
-            ('l_sysid', ctypes.c_int),  # Additional over OpenBSD-variants
-        ]
-
-elif _system in ('NetBSD', 'OpenBSD', 'Darwin'):
-    # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/fcntl.h#L262
-    # https://github.com/openbsd/src/blob/a465f6177bcfdb2ffa9f98c7ca0780392688fc0d/sys/sys/fcntl.h#L180
-    # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/fcntl.h#L504
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_pid', c_pid_t),
-            ('l_type', ctypes.c_short),
-            ('l_whence', ctypes.c_short),
-        ]
-
-elif _system == 'SunOS':
-    # https://github.com/illumos/illumos-gate/blob/master/usr/src/uts/common/sys/fcntl.h#L247
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_type', ctypes.c_short),
-            ('l_whence', ctypes.c_short),
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_sysid', ctypes.c_int),
-            ('l_pid', c_pid_t),
-            ('l_pad', ctypes.c_long * 4),
-        ]
-
-elif _system == 'Windows':
-    # WinFsp uses struct fuse_flock with this layout instead of the system struct flock, see
-    # https://github.com/winfsp/winfsp/blob/master/inc/fuse/winfsp_fuse.h#L195
-    class c_flock_t(ctypes.Structure):  # type: ignore
-        _fields_ = [
-            ('l_type', ctypes.c_int16),
-            ('l_whence', ctypes.c_int16),
-            ('l_start', c_off_t),
-            ('l_len', c_off_t),
-            ('l_pid', c_pid_t),
-        ]
-
-else:
-    raise NotImplementedError(f"struct flock layout for {_system} is not known!")
-
-
-# fuse_file_info as defined in fuse_common.h. Changes in FUSE 3:
-#  - fh_old was removed
-#  - poll_events was added
-#  - writepage was added to the bitfield, but the padding was not decreased,
-#    so now there are 33 bits in total, which probably lead to some unwanted
-#    padding in libfuse 3.0.2. This has been made explicit since libfuse 3.7.0:
-#    https://github.com/libfuse/libfuse/commit/1d8e8ca94a3faa635afd1a3bd8d7d26472063a3f
-#  - 3.0.0 -> 3.4.2: no change (flags and padding did add up to 33 bits from the beginning)
-#  - 3.4.2 -> 3.5.0: cache_readdir added correctly
-#  - 3.5.0 -> 3.6.2: no change
-#  - 3.6.2 -> 3.7.0: padding 2 was explicitly added but did exist because of alignment
-#  - 3.7.0 -> 3.10.5: no change
-#  - 3.10.5 -> 3.11.0: noflush added correctly
-#  - 3.11.0 -> 3.13.1: no change
-#  - 3.13.1 -> 3.14.1: parallel_direct_writes was added in the middle.
-#                      Padding was correctly decreased by 1.
-#  - 3.14.1 -> 3.16.2: no change
-#  - 3.16.2 -> 3.17.1: padding3 was made explicit, backing_id, compat_flags and reserved[2] were added
-#                      at the end, which increases the size from 40 B to 64 B.
-#  - 3.17.1 -> 3.18.0: statx was added to fuse_operations
-#  - 3.18.3: kill_suidgid was added to the bitfield
-_fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
-_fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
-_fuse_file_info_fields_: list[FieldsEntry] = []
-_fuse_file_info_fields_bitfield: list[BitFieldsEntry] = []
-if _librefuse:
-    # librefuse has one fuse_file_info layout for all API versions: fh_old still exists (removed in FUSE 3),
-    # writepage is a bitfield and poll_events exists (both as in FUSE 3).
-    # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L100-L129
-    _fuse_file_info_fields_ = [
-        ('flags', ctypes.c_int32),
-        ('fh_old', ctypes.c_uint32),
-        ('writepage', ctypes.c_uint32, 1),
-        ('direct_io', ctypes.c_uint32, 1),
-        ('keep_cache', ctypes.c_uint32, 1),
-        ('flush', ctypes.c_uint32, 1),
-        ('nonseekable', ctypes.c_uint32, 1),
-        ('flock_release', ctypes.c_uint32, 1),
-        ('cache_readdir', ctypes.c_uint32, 1),
-        # As in fuse.h: 7 + 26 bits do not fit into 32 bits, so padding starts a new 32-bit unit (as in C).
-        ('padding', ctypes.c_uint32, 26),
-        ('fh', ctypes.c_uint64),
-        ('lock_owner', ctypes.c_uint64),
-        ('poll_events', ctypes.c_uint32),
-    ]
-elif fuse_version_major == 2:
-    _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' or _system.startswith('CYGWIN') else ctypes.c_ulong
-    _fuse_file_info_fields_ = [
-        ('flags', ctypes.c_int),
-        ('fh_old', _fh_old_type),
-        ('writepage', ctypes.c_int),
-        ('direct_io', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
-        ('keep_cache', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
-        ('flush', ctypes.c_uint, 1),  # Introduced in libfuse 2.6
-    ]
-    if _system == 'OpenBSD':
-        # OpenBSD announces FUSE 2.6 but has nonseekable and flock_release after 27 padding bits.
-        _fuse_file_info_fields_ += [
-            ('nonseekable', ctypes.c_uint, 1),
-            ('__padd', ctypes.c_uint, 27),
-            ('flock_release', ctypes.c_uint, 1),
-        ]
-    else:
-        if fuse_version_minor >= 8:
-            _fuse_file_info_fields_ += [('nonseekable', ctypes.c_uint, 1)]  # Introduced in libfuse 2.8
-        if fuse_version_minor >= 9:
-            _fuse_file_info_fields_ += [('flock_release', ctypes.c_uint, 1)]  # Introduced in libfuse 2.9
-        flag_bits = sum(field[2] for field in _fuse_file_info_fields_ if len(field) == 3)
-        _fuse_file_info_fields_ += [('padding', ctypes.c_uint, 32 - flag_bits)]
-    _fuse_file_info_fields_ += [
-        ('fh', ctypes.c_uint64),
-        ('lock_owner', ctypes.c_uint64),
-    ]
-elif fuse_version_major == 3:
-    _fuse_file_info_fields_ = [('flags', _fuse_int32)]
-
-    # Bit flag types were changed from unsigned int to uint32_t in libfuse 3.17,
-    # but as far as I understand this change does not matter because it is only 1 bit.
-
-    _fuse_file_info_fields_bitfield = [
-        ('writepage', _fuse_uint32, 1),
-        ('direct_io', _fuse_uint32, 1),
-        ('keep_cache', _fuse_uint32, 1),
-    ]
-    # Introduced in 3.14.1, not 3.14.0, and its placement is an API-incompatible change / bug!
-    # https://github.com/libfuse/libfuse/issues/1029
-    if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1):
-        _fuse_file_info_fields_bitfield += [
-            ('parallel_direct_writes', _fuse_uint32, 1),
-        ]
-    _fuse_file_info_fields_bitfield += [
-        ('flush', _fuse_uint32, 1),
-        ('nonseekable', _fuse_uint32, 1),
-        ('flock_release', _fuse_uint32, 1),
-    ]
-    if fuse_version_minor >= 5:
-        _fuse_file_info_fields_bitfield += [('cache_readdir', ctypes.c_uint, 1)]
-    if fuse_version_minor >= 11:
-        _fuse_file_info_fields_bitfield += [('noflush', ctypes.c_uint, 1)]
-    if _FUSE_VERSION >= (3, 17, 1):
-        _fuse_file_info_fields_bitfield += [
-            ('parallel_direct_writes', _fuse_uint32, 1),
-        ]
-    if _FUSE_VERSION >= (3, 18, 3) and not _librefuse:
-        _fuse_file_info_fields_bitfield += [
-            ('kill_suidgid', _fuse_uint32, 1),
-        ]
-
-    _fuse_file_info_flag_count = sum(x[2] for x in _fuse_file_info_fields_bitfield)
-    assert _fuse_file_info_flag_count < ctypes.sizeof(_fuse_uint32) * 8
-
-    _fuse_file_info_fields_ += _fuse_file_info_fields_bitfield
-    _fuse_file_info_fields_ += [
-        ('padding', _fuse_uint32, ctypes.sizeof(_fuse_uint32) * 8 - _fuse_file_info_flag_count),
-        ('padding2', _fuse_uint32),
-    ]
-    # https://github.com/libfuse/libfuse/pull/1038#discussion_r1775112524
-    # https://github.com/libfuse/libfuse/pull/1081
-    # This padding did always exist because fh was aligned to an offset modulo 8 B,
-    # but libfuse 3.17 made this explicit and I'm not fully sure how ctypes behaves.
-    if _FUSE_VERSION >= (3, 17, 1):
-        _fuse_file_info_fields_ += [('padding3', _fuse_uint32)]
-
-    _fuse_file_info_fields_ += [
-        ('fh', ctypes.c_uint64),
-        ('lock_owner', ctypes.c_uint64),
-    ]
-    if _FUSE_VERSION >= (3, 17, 1):
-        _fuse_file_info_fields_ += [
-            ('poll_events', ctypes.c_uint32),
-            ('backing_id', ctypes.c_int32),
-            ('compat_flags', ctypes.c_uint64),
-            ('reserved', ctypes.c_uint64 * 2),
-        ]
-    else:
-        _fuse_file_info_fields_ += [('poll_events', _fuse_uint32)]
-
-
-class fuse_file_info(ctypes.Structure):
-    _fields_ = _fuse_file_info_fields_
-
-
-if _librefuse:
-    if ctypes.alignment(ctypes.c_uint64) == 8:
-        assert ctypes.sizeof(fuse_file_info) == 40
-elif ctypes.sizeof(ctypes.c_int) == 4 and _FUSE_VERSION >= (3, 17, 1):
-    assert ctypes.sizeof(fuse_file_info) == 64
-
-
-class fuse_context(ctypes.Structure):
-    _fields_ = [
-        ('fuse', ctypes.c_void_p),
-        ('uid', c_uid_t),
-        ('gid', c_gid_t),
-        ('pid', c_pid_t),
-        ('private_data', ctypes.c_void_p),
-    ]
-    # OpenBSD announces 2.6, but still has the umask struct member.
-    if fuse_version_major == 3 or (fuse_version_major == 2 and fuse_version_minor >= 8) or _system == 'OpenBSD':
-        _fields_ += [
-            # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
-            # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
-            # shared library! It shouldn't hurt the other way around to have a larger struct than
-            # the shared library expects. The newer members will simply be ignored.
-            ('umask', c_mode_t),
-        ]
-
-
-_libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
-
-
-# FUSE_BUF_IS_FD    = (1 << 1),
-# FUSE_BUF_FD_SEEK  = (1 << 2),
-# FUSE_BUF_FD_RETRY = (1 << 3),
-fuse_buf_flags = ctypes.c_int
-
-
-class fuse_buf(ctypes.Structure):
-    _fields_ = [
-        ('size', ctypes.c_size_t),
-        ('flags', fuse_buf_flags),
-        ('mem', ctypes.c_void_p),
-        ('fd', ctypes.c_int),
-        ('pos', c_off_t),
-    ]
-    if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
-        _fields_ += [('mem_size', ctypes.c_size_t)]
-
-
-class fuse_bufvec(ctypes.Structure):
-    _fields_ = [
-        ('count', ctypes.c_size_t),
-        ('idx', ctypes.c_size_t),
-        ('off', ctypes.c_size_t),
-        ('buf', fuse_buf * 1),  # Inline struct fuse_buf buf[1], not a pointer.
-    ]
-
-
-if TYPE_CHECKING:
-    fuse_fi_p = ctypes._Pointer[fuse_file_info]  # noqa: W212
-    c_stat_p = ctypes._Pointer[c_stat]  # noqa: W212
-    c_statvfs_p = ctypes._Pointer[c_statvfs]  # noqa: W212
-    c_utimbuf_p = ctypes._Pointer[c_utimbuf]  # noqa: W212
-    fuse_bufvec_p = ctypes._Pointer[fuse_bufvec]  # noqa: W212
-    fuse_bufvec_pp = ctypes._Pointer[fuse_bufvec_p]  # noqa: W212
-else:
-    fuse_fi_p = ctypes.POINTER(fuse_file_info)
-    c_stat_p = ctypes.POINTER(c_stat)
-    c_statvfs_p = ctypes.POINTER(c_statvfs)
-    c_utimbuf_p = ctypes.POINTER(c_utimbuf)
-    fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
-    fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
-
-
-# fuse_conn_info struct as defined and documented in fuse_common.h
-_fuse_conn_info_fields: list[FieldsEntry] = [
-    ('proto_major', ctypes.c_uint),
-    ('proto_minor', ctypes.c_uint),
-]
-# librefuse has one fuse_conn_info layout for all API versions, containing the FUSE 2 and FUSE 3 members.
-# https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h
-if fuse_version_major == 2 or _librefuse:
-    _fuse_conn_info_fields += [('async_read', _fuse_uint32)]
-_fuse_conn_info_fields += [('max_write', _fuse_uint32)]
-if fuse_version_major == 3 or _librefuse:
-    _fuse_conn_info_fields += [('max_read', _fuse_uint32)]
-_fuse_conn_info_fields += [('max_readahead', _fuse_uint32)]
-if _system == 'Darwin':
-    _fuse_conn_info_fields += [('enable', _fuse_uint32)]  # TODO: is a bitfield
-_fuse_conn_info_fields += [
-    ('capable', _fuse_uint32),  # Added in 2.8
-    ('want', _fuse_uint32),  # Added in 2.8
-]
-# OpenBSD advertises FUSE 2.6 but has the full layout of a newer libfuse.
-_conn_info_minor = 9 if _system == 'OpenBSD' else fuse_version_minor
-if _librefuse or fuse_version_major == 3 or (fuse_version_major == 2 and _conn_info_minor >= 9):
-    _fuse_conn_info_fields += [
-        ('max_background', _fuse_uint32),  # Added in 2.9
-        ('congestion_threshold', _fuse_uint32),  # Added in 2.9
-    ]
-if fuse_version_major == 2 and not _librefuse:
-    _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (32 - len(_fuse_conn_info_fields)))]
-elif fuse_version_major == 3 or _librefuse:
-    _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
-    if _FUSE_VERSION < (3, 17, 1) or _librefuse:
-        _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 22)]
-    else:
-        _fuse_conn_info_fields += [
-            ('max_backing_stack_depth', ctypes.c_uint32),
-            ('no_interrupt', ctypes.c_uint32, 1),
-            ('padding', ctypes.c_uint32, 31),
-            ('capable_ext', ctypes.c_uint64),
-            ('want_ext', ctypes.c_uint64),
-        ]
-        if _FUSE_VERSION >= (3, 18, 0):
-            _fuse_conn_info_fields += [
-                ('request_timeout', ctypes.c_uint16),
-                ('reserved', ctypes.c_uint16 * 31),
+        elif _system == 'OpenBSD':
+            ENOTSUP = 91
+            c_dev_t = ctypes.c_int32
+            c_uid_t = ctypes.c_uint32
+            c_gid_t = ctypes.c_uint32
+            c_mode_t = ctypes.c_uint32
+            c_off_t = ctypes.c_int64
+            c_pid_t = ctypes.c_int32
+            c_ino_t = ctypes.c_uint64
+            c_nlink_t = ctypes.c_uint32
+            c_blkcnt_t = ctypes.c_int64
+            c_blksize_t = ctypes.c_int32
+            setxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                c_byte_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+            )
+            getxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                c_byte_p,
+                ctypes.c_size_t,
+            )
+            c_fsblkcnt_t = ctypes.c_uint64
+            c_fsfilcnt_t = ctypes.c_uint64
+            _c_stat__fields_ = [
+                ('st_mode', c_mode_t),
+                ('st_dev', c_dev_t),
+                ('st_ino', c_ino_t),
+                ('st_nlink', c_nlink_t),
+                ('st_uid', c_uid_t),
+                ('st_gid', c_gid_t),
+                ('st_rdev', c_dev_t),
+                ('st_atimespec', c_timespec),
+                ('st_mtimespec', c_timespec),
+                ('st_ctimespec', c_timespec),
+                ('st_size', c_off_t),
+                ('st_blocks', c_blkcnt_t),
+                ('st_blksize', c_blksize_t),
+                ('st_flags', ctypes.c_uint32),
+                ('st_gen', ctypes.c_uint32),
+                ('st_birthtimespec', c_timespec),
+            ]
+        elif _system == 'NetBSD':
+            ENOTSUP = 45
+            c_dev_t = ctypes.c_uint64
+            c_uid_t = ctypes.c_uint32
+            c_gid_t = ctypes.c_uint32
+            c_mode_t = ctypes.c_uint32
+            c_off_t = ctypes.c_int64
+            c_pid_t = ctypes.c_int32
+            setxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                ctypes.POINTER(ctypes.c_byte),
+                ctypes.c_size_t,
+                ctypes.c_int,
+            )
+            getxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int64,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                ctypes.POINTER(ctypes.c_byte),
+                ctypes.c_size_t,
+            )
+            c_fsblkcnt_t = ctypes.c_uint64
+            c_fsfilcnt_t = ctypes.c_uint64
+            # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/stat.h#L59-L89
+            _c_stat__fields_ = [
+                ('st_dev', c_dev_t),
+                ('st_mode', c_mode_t),
+                ('_padding0', ctypes.c_uint32),  # alignment padding implied by the next member
+                ('st_ino', ctypes.c_uint64),
+                ('st_nlink', ctypes.c_uint32),
+                ('st_uid', c_uid_t),
+                ('st_gid', c_gid_t),
+                ('_padding1', ctypes.c_uint32),  # alignment padding implied by the next member
+                ('st_rdev', c_dev_t),
+                ('st_atimespec', c_timespec),
+                ('st_mtimespec', c_timespec),
+                ('st_ctimespec', c_timespec),
+                ('st_birthtimespec', c_timespec),
+                ('st_size', c_off_t),
+                ('st_blocks', ctypes.c_int64),
+                ('st_blksize', ctypes.c_uint32),
+                ('st_flags', ctypes.c_uint32),
+                ('st_gen', ctypes.c_uint32),
+                ('st_spare', ctypes.c_uint32 * 2),
+            ]
+        elif _system == 'SunOS':
+            ENOTSUP = 48
+            c_dev_t = ctypes.c_uint64
+            c_uid_t = ctypes.c_uint32
+            c_gid_t = ctypes.c_uint32
+            c_mode_t = ctypes.c_uint32
+            c_off_t = ctypes.c_int64
+            c_pid_t = ctypes.c_int32
+            setxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                c_byte_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+            )
+            getxattr_t = ctypes.CFUNCTYPE(
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                c_byte_p,
+                ctypes.c_size_t,
+            )
+            c_fsblkcnt_t = ctypes.c_uint64
+            c_fsfilcnt_t = ctypes.c_uint64
+            _c_stat__fields_ = [
+                ('st_dev', c_dev_t),
+                ('st_ino', ctypes.c_uint64),
+                ('st_mode', c_mode_t),
+                ('st_nlink', ctypes.c_uint32),
+                ('st_uid', c_uid_t),
+                ('st_gid', c_gid_t),
+                ('st_rdev', c_dev_t),
+                ('st_size', c_off_t),
+                ('st_atimespec', c_timespec),
+                ('st_mtimespec', c_timespec),
+                ('st_ctimespec', c_timespec),
+                ('st_blksize', ctypes.c_int32),
+                ('st_blocks', ctypes.c_int64),
+                ('st_fstype', ctypes.c_char * 16),
             ]
         else:
-            _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
+            raise NotImplementedError(_system + ' is not supported.')
 
 
-_HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
-
-# Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which differ for some flags,
-# e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/fuse.h#L452-L497
-# libfuse translates between the two.
-# https://github.com/libfuse/libfuse/blob/fuse-3.18.3/include/fuse_common.h#L185-L521
-# fmt:off
-_LIBFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
-    # libfuse 2.9.9 capabilities
-    FuseCapability.ASYNC_READ           : 1 << 0,
-    FuseCapability.POSIX_LOCKS          : 1 << 1,
-    FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
-    FuseCapability.EXPORT_SUPPORT       : 1 << 4,
-    FuseCapability.BIG_WRITES           : 1 << 5,
-    FuseCapability.DONT_MASK            : 1 << 6,
-    FuseCapability.SPLICE_WRITE         : 1 << 7,
-    FuseCapability.SPLICE_MOVE          : 1 << 8,
-    FuseCapability.SPLICE_READ          : 1 << 9,
-    FuseCapability.FLOCK_LOCKS          : 1 << 10,
-    FuseCapability.IOCTL_DIR            : 1 << 11,
-    # libfuse 3.0+ capabilities
-    FuseCapability.AUTO_INVAL_DATA      : 1 << 12,
-    FuseCapability.READDIRPLUS          : 1 << 13,
-    FuseCapability.READDIRPLUS_AUTO     : 1 << 14,
-    FuseCapability.ASYNC_DIO            : 1 << 15,
-    FuseCapability.WRITEBACK_CACHE      : 1 << 16,
-    FuseCapability.NO_OPEN_SUPPORT      : 1 << 17,
-    FuseCapability.PARALLEL_DIROPS      : 1 << 18,
-    FuseCapability.POSIX_ACL            : 1 << 19,
-    FuseCapability.HANDLE_KILLPRIV      : 1 << 20,
-    # libfuse 3.5+ capabilities
-    FuseCapability.HANDLE_KILLPRIV_V2   : 1 << 21,
-    FuseCapability.CACHE_SYMLINKS       : 1 << 23,
-    FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
-    FuseCapability.EXPLICIT_INVAL_DATA  : 1 << 25,
-    FuseCapability.EXPIRE_ONLY          : 1 << 26,
-    FuseCapability.SETXATTR_EXT         : 1 << 27,
-    FuseCapability.DIRECT_IO_ALLOW_MMAP : 1 << 28,
-    FuseCapability.PASSTHROUGH          : 1 << 29,
-    FuseCapability.NO_EXPORT_SUPPORT    : 1 << 30,
-    FuseCapability.OVER_IO_URING        : 1 << 31,
-    # libfuse 3.19+ capabilities that require libfuse 3.17+ the 64-bit want_ext field!
-    FuseCapability.ALLOW_IDMAP          : 1 << 32,
-    FuseCapability.SECURITY_CTX         : 1 << 33,
-    FuseCapability.IO_URING_BUFPOOL     : 1 << 34,
-}
-# libfuse 2.8+ defines the 'capable' and 'want' members and the flags up to FUSE_CAP_IOCTL_DIR.
-_LIBFUSE2CAPABILITY_BITS: dict[FuseCapability, int] = {
-    capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 11)
-}
-# libfuse 3 removed FUSE_CAP_BIG_WRITES because it is always enabled.
-# We don't have to replicate any libfuse minor version capability differences. Libfuse can check that itself.
-# Flags beyond bit 31 exist only since libfuse 3.17, which added the 64-bit 'capable_ext'/'want_ext' members,
-# and cannot be represented without them, so do not declare them when _HAS_WANT_EXT is false, i.e., before 3.17.
-_LIBFUSE3CAPABILITY_BITS: dict[FuseCapability, int] = {
-    capability: flag
-    for capability, flag in _LIBFUSECAPABILITY_BITS.items()
-    if capability is not FuseCapability.BIG_WRITES and (_HAS_WANT_EXT or flag < 1 << 32)
-}
-# librefuse defines the flags up to FUSE_CAP_HANDLE_KILLPRIV plus these two with libfuse2-compatible bits.
-# https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L143-L164
-_LIBREFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
-    **{capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 20)},
-    FuseCapability.CACHE_SYMLINKS       : 1 << 23,
-    FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
-}
-# macFUSE is based on libfuse 2 and reuses the bits 23 to 31 for Apple-specific features.
-# https://github.com/macfuse/library/blob/master/include/fuse_common.h#L163-L184
-_MACFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
-    **_LIBFUSE2CAPABILITY_BITS,
-    FuseCapability.ACCESS_EXTENDED      : 1 << 23,  # CACHE_SYMLINKS in libfuse
-    FuseCapability.NODE_RWLOCK          : 1 << 24,  # NO_OPENDIR_SUPPORT in libfuse
-    FuseCapability.RENAME_SWAP          : 1 << 25,
-    FuseCapability.RENAME_EXCL          : 1 << 26,
-    FuseCapability.ALLOCATE             : 1 << 27,
-    FuseCapability.EXCHANGE_DATA        : 1 << 28,
-    FuseCapability.CASE_INSENSITIVE     : 1 << 29,
-    FuseCapability.VOL_RENAME           : 1 << 30,
-    FuseCapability.XTIMES               : 1 << 31,
-}
-# WinFsp defines the flags up to FUSE_CAP_DONT_MASK (bit 6), the FSP-specific flags at 21-24.
-# Also reserves ALLOCATE, EXCHANGE_DATA, VOL_RENAME, XTIMES for OSXFUSE but does not use those flag.
-# Even though it reserves from for OSXFUSE, there are still clashes with macfuse.
-# https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
-_WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
-    FuseCapability.ASYNC_READ           : 1 << 0,
-    FuseCapability.POSIX_LOCKS          : 1 << 1,
-    FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
-    FuseCapability.EXPORT_SUPPORT       : 1 << 4,
-    FuseCapability.BIG_WRITES           : 1 << 5,
-    FuseCapability.DONT_MASK            : 1 << 6,
-    # TODO: Add and test support for this and then simply reuse READDIRPLUS instead of a Windows-custom capability.
-    # FuseCapability.READDIR_PLUS         : 1 << 21,
-    FuseCapability.READ_ONLY            : 1 << 22,
-    FuseCapability.STAT_EX              : 1 << 23,
-    FuseCapability.DELETE_ACCESS        : 1 << 24,
-    FuseCapability.ALLOCATE             : 1 << 27,
-    FuseCapability.EXCHANGE_DATA        : 1 << 28,
-    FuseCapability.CASE_INSENSITIVE     : 1 << 29,
-    FuseCapability.VOL_RENAME           : 1 << 30,
-    FuseCapability.XTIMES               : 1 << 31,
-}
-# fmt:on
-
-if _system == 'Windows' or _system.startswith('CYGWIN'):
-    CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
-elif _librefuse:
-    CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
-elif _system == 'Darwin':
-    CAPABILITY_BITS = _MACFUSECAPABILITY_BITS
-elif fuse_version_major >= 3:
-    CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
-else:
-    CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
+        class c_stat(ctypes.Structure):
+            _fields_ = _c_stat__fields_
 
 
-# https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
-class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
-    # The members are defined via '_fields_', which pylint cannot see.
-    # Only the methods below access them on an object whose type pylint knows.
-    # Everywhere else they are accessed via a pointer's '.contents', which pylint treats as Any.
-    # pylint: disable=no-member
-    _fields_ = _fuse_conn_info_fields
-
-    def _capable_bits(self) -> int:
-        return self.capable_ext if _HAS_WANT_EXT else self.capable
-
-    def is_capable(self, capability: FuseCapability) -> bool:
-        '''
-        Return whether the kernel announced the given capability as supported.
-
-        This mirrors fuse_get_feature_flag(), i.e., it only reflects 'capable', and returns False
-        for a capability that the loaded implementation does not define with this meaning.
-        '''
-        flag = CAPABILITY_BITS.get(capability)
-        if flag is None:
-            return False
-
-        if _fuse_get_feature_flag is not None:
-            return bool(_fuse_get_feature_flag(ctypes.pointer(self), flag))
-        return (self._capable_bits() & flag) == flag
-
-    def enable_capability(self, capability: FuseCapability) -> bool:
-        '''
-        Request the given capability to be enabled, mirroring fuse_set_feature_flag().
-
-        Returns False without changing anything if the loaded implementation does not define the
-        capability with this meaning or if the kernel is not capable of it. Requesting a feature
-        that the kernel does not support would make libfuse abort the mount with EPROTO.
-        '''
-        flag = CAPABILITY_BITS.get(capability)
-        if flag is None:
-            return False
-
-        # Use libfuse's helper when this is the real struct from the init callback because it also
-        # keeps libfuse's internal state in sync. The helper locates the enclosing session via
-        # container_of() and would corrupt memory for a standalone struct, e.g., in a test, so write
-        # both members directly then, which is equivalent because libfuse only converts 'want' if
-        # exactly one of both was changed (see fuse_convert_to_conn_want_ext).
-        pointer = getattr(self, '_fuse_session_pointer', None)
-        if pointer is not None and _fuse_set_feature_flag is not None:
-            return bool(_fuse_set_feature_flag(pointer, flag))
-        if (self._capable_bits() & flag) != flag:
-            return False
-
-        self.want |= flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
-        if _HAS_WANT_EXT:
-            self.want_ext |= flag
-        return True
-
-    def disable_capability(self, capability: FuseCapability) -> None:
-        '''Request the given capability to be disabled, mirroring fuse_unset_feature_flag().'''
-        flag = CAPABILITY_BITS.get(capability)
-        if flag is None:
-            return
-
-        pointer = getattr(self, '_fuse_session_pointer', None)
-        if pointer is not None and _fuse_unset_feature_flag is not None:
-            _fuse_unset_feature_flag(pointer, flag)
-            return
-
-        # See enable_capability() for why the members are written directly in the fallback.
-        self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
-        if _HAS_WANT_EXT:
-            self.want_ext &= ~flag
+        # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_statvfs.h.html
+        if _system == 'FreeBSD':
+            c_fsblkcnt_t = ctypes.c_uint64
+            c_fsfilcnt_t = ctypes.c_uint64
 
 
-if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
-    assert ctypes.sizeof(fuse_conn_info) == 128
+        class c_statvfs(ctypes.Structure):
+            if _system == 'FreeBSD':
+                # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e56632e13711/sys/sys/statvfs.h#L57-L68
+                _fields_ = [
+                    ('f_bavail', c_fsblkcnt_t),
+                    ('f_bfree', c_fsblkcnt_t),
+                    ('f_blocks', c_fsblkcnt_t),
+                    ('f_favail', c_fsfilcnt_t),
+                    ('f_ffree', c_fsfilcnt_t),
+                    ('f_files', c_fsfilcnt_t),
+                    ('f_bsize', ctypes.c_ulong),
+                    ('f_flag', ctypes.c_ulong),
+                    ('f_frsize', ctypes.c_ulong),
+                    ('f_fsid', ctypes.c_ulong),
+                    ('f_namemax', ctypes.c_ulong),
+                ]
+            elif _system == 'Windows' or _system.startswith('CYGWIN'):
+                _fields_ = [
+                    ('f_bsize', c_win_ulong),
+                    ('f_frsize', c_win_ulong),
+                    ('f_blocks', c_fsblkcnt_t),
+                    ('f_bfree', c_fsblkcnt_t),
+                    ('f_bavail', c_fsblkcnt_t),
+                    ('f_files', c_fsfilcnt_t),
+                    ('f_ffree', c_fsfilcnt_t),
+                    ('f_favail', c_fsfilcnt_t),
+                    ('f_fsid', c_win_ulong),
+                    ('f_flag', c_win_ulong),
+                    ('f_namemax', c_win_ulong),
+                ]
+            elif _system == 'NetBSD':
+                # https://github.com/NetBSD/src/blob/2a172fadee81450ba400e49c8ed98857bedec65c/sys/sys/statvfs.h#L66-L100
+                _fields_ = [
+                    ('f_flag', ctypes.c_ulong),
+                    ('f_bsize', ctypes.c_ulong),
+                    ('f_frsize', ctypes.c_ulong),
+                    ('f_iosize', ctypes.c_ulong),
+                    ('f_blocks', c_fsblkcnt_t),
+                    ('f_bfree', c_fsblkcnt_t),
+                    ('f_bavail', c_fsblkcnt_t),
+                    ('f_bresvd', c_fsblkcnt_t),
+                    ('f_files', c_fsfilcnt_t),
+                    ('f_ffree', c_fsfilcnt_t),
+                    ('f_favail', c_fsfilcnt_t),
+                    ('f_fresvd', c_fsfilcnt_t),
+                    ('f_syncreads', ctypes.c_uint64),
+                    ('f_syncwrites', ctypes.c_uint64),
+                    ('f_asyncreads', ctypes.c_uint64),
+                    ('f_asyncwrites', ctypes.c_uint64),
+                    ('f_fsidx', ctypes.c_int32 * 2),  # NetBSD compatible fsid
+                    ('f_fsid', ctypes.c_ulong),  # POSIX compatible fsid
+                    ('f_namemax', ctypes.c_ulong),
+                    ('f_owner', c_uid_t),
+                    ('f_spare', ctypes.c_uint64 * 4),
+                    ('f_fstypename', ctypes.c_char * 32),
+                    ('f_mntonname', ctypes.c_char * 1024),
+                    ('f_mntfromname', ctypes.c_char * 1024),
+                    ('f_mntfromlabel', ctypes.c_char * 1024),
+                ]
+            elif _system == 'SunOS':
+                # Source: /usr/include/sys/statvfs.h
+                _fields_ = [
+                    ('f_bsize', ctypes.c_ulong),
+                    ('f_frsize', ctypes.c_ulong),
+                    ('f_blocks', c_fsblkcnt_t),
+                    ('f_bfree', c_fsblkcnt_t),
+                    ('f_bavail', c_fsblkcnt_t),
+                    ('f_files', c_fsfilcnt_t),
+                    ('f_ffree', c_fsfilcnt_t),
+                    ('f_favail', c_fsfilcnt_t),
+                    ('f_fsid', ctypes.c_ulong),
+                    ('f_basetype', ctypes.c_char * 16),
+                    ('f_flag', ctypes.c_ulong),
+                    ('f_namemax', ctypes.c_ulong),
+                    ('f_fstr', ctypes.c_char * 32),
+                ]
+            else:
+                # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
+                _fields_ = [
+                    ('f_bsize', ctypes.c_ulong),
+                    ('f_frsize', ctypes.c_ulong),
+                    ('f_blocks', c_fsblkcnt_t),
+                    ('f_bfree', c_fsblkcnt_t),
+                    ('f_bavail', c_fsblkcnt_t),
+                    ('f_files', c_fsfilcnt_t),
+                    ('f_ffree', c_fsfilcnt_t),
+                    ('f_favail', c_fsfilcnt_t),
+                    ('f_fsid', ctypes.c_ulong),
+                    ('f_flag', ctypes.c_ulong),
+                    ('f_namemax', ctypes.c_ulong),
+                ]
+                if _system == 'Linux':  # Linux x86_64 and aarch64
+                    _fields_ += [
+                        ('f_type', ctypes.c_uint),
+                        ('__f_spare', ctypes.c_uint * 5),
+                    ]
 
-# FUSE 3-only struct for second init argument defined in fuse.h.
-# If a FUSE 2 method is loaded but 'init_with_config' overridden,
-# then this argument will only be zero-initialized and should be ignored.
-# 3.0.0 -> 3.10.5: no change
-# 3.10.5 -> 3.11.0: no_rofd_flush was added in the middle causing an ABI break
-# 3.11.0 -> 3.13.1: no change
-# 3.13.1 -> 3.14.1: parallel_direct_writes was added in the middle causing an ABI break
-# 3.14.1 -> 3.16.2: no change
-# 3.16.2 -> 3.17.0: Changed all types to uint32_t, added reserved bytes, reverted order to 3.10.
-# https://github.com/libfuse/libfuse/pull/1081
-_fuse_config_fields_: list[FieldsEntry] = [
-    ('set_gid', _fuse_int32),
-    ('gid', _fuse_uint32),
-    ('set_uid', _fuse_int32),
-    ('uid', _fuse_uint32),
-    ('set_mode', _fuse_int32),
-    ('umask', _fuse_uint32),
-    ('entry_timeout', ctypes.c_double),
-    ('negative_timeout', ctypes.c_double),
-    ('attr_timeout', ctypes.c_double),
-    ('intr', _fuse_int32),
-    ('intr_signal', _fuse_int32),
-    ('remember', _fuse_int32),
-    ('hard_remove', _fuse_int32),
-    ('use_ino', _fuse_int32),
-    ('readdir_ino', _fuse_int32),
-    ('direct_io', _fuse_int32),
-    ('kernel_cache', _fuse_int32),
-    ('auto_cache', _fuse_int32),
-]
-if fuse_version_major == 3:
-    # Adding this member in the middle of the struct was an ABI-incompatible change!
-    # librefuse has one fuse_config layout for all API versions, i.e. none of the version-dependent members below.
-    if fuse_version_minor >= 11 and fuse_version_minor < 17 and not _librefuse:
-        _fuse_config_fields_ += [('no_rofd_flush', ctypes.c_int)]
 
-    _fuse_config_fields_ += [
-        ('ac_attr_timeout_set', _fuse_int32),
-        ('ac_attr_timeout', ctypes.c_double),
-        # If this option is given the file-system handlers for the
-        # following operations will not receive path information:
-        # read, write, flush, release, fallocate, fsync, readdir,
-        # releasedir, fsyncdir, lock, ioctl and poll.
-        #
-        # For the truncate, getattr, chmod, chown and utimens
-        # operations the path will be provided only if the struct
-        # fuse_file_info argument is NULL.
-        ('nullpath_ok', _fuse_int32),
-    ]
+        if (
+            _system == 'Linux' and not (_machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4)
+        ) or _system.startswith('CYGWIN'):
+            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/include/uapi/asm-generic/fcntl.h#L195
+            # Cygwin's struct flock uses the generic Linux/BSD layout.
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_type', ctypes.c_short),
+                    ('l_whence', ctypes.c_short),
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_pid', c_pid_t),
+                ]
 
-    # Another ABI break as discussed here: https://lists.debian.org/debian-devel/2024/03/msg00278.html
-    # The break was in 3.14.1, not 3.14.0. The hotfix version from fuse_pkgversion() distinguishes them.
-    if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1) and not _librefuse:
-        _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
+        elif _system == 'Linux':
+            # 32-bit MIPS has l_sysid and a four-long pad, see __ARCH_FLOCK_EXTRA_SYSID and __ARCH_FLOCK_PAD in
+            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/arch/mips/include/uapi/asm/fcntl.h#L53
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_type', ctypes.c_short),
+                    ('l_whence', ctypes.c_short),
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_sysid', ctypes.c_long),
+                    ('l_pid', c_pid_t),
+                    ('l_pad', ctypes.c_long * 4),
+                ]
 
-    if not _librefuse:
-        _fuse_config_fields_ += [
-            ('show_help', _fuse_int32),
-            ('modules', ctypes.c_char_p),
-            ('debug', _fuse_int32),
-        ]
+        elif _system == 'FreeBSD':
+            # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/fcntl.h#L305
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_pid', c_pid_t),
+                    ('l_type', ctypes.c_short),
+                    ('l_whence', ctypes.c_short),
+                    ('l_sysid', ctypes.c_int),  # Additional over OpenBSD-variants
+                ]
 
-    if fuse_version_minor >= 17 and not _librefuse:
-        _fuse_config_fields_ += [
-            ('fmask', ctypes.c_uint32),
-            ('dmask', ctypes.c_uint32),
-            ('no_rofd_flush', ctypes.c_int32),
-            ('parallel_direct_writes', ctypes.c_int32),
-            ('flags', ctypes.c_int32),
-            ('reserved', ctypes.c_uint64 * 48),
-        ]
+        elif _system in ('NetBSD', 'OpenBSD', 'Darwin'):
+            # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/fcntl.h#L262
+            # https://github.com/openbsd/src/blob/a465f6177bcfdb2ffa9f98c7ca0780392688fc0d/sys/sys/fcntl.h#L180
+            # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/fcntl.h#L504
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_pid', c_pid_t),
+                    ('l_type', ctypes.c_short),
+                    ('l_whence', ctypes.c_short),
+                ]
 
+        elif _system == 'SunOS':
+            # https://github.com/illumos/illumos-gate/blob/master/usr/src/uts/common/sys/fcntl.h#L247
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_type', ctypes.c_short),
+                    ('l_whence', ctypes.c_short),
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_sysid', ctypes.c_int),
+                    ('l_pid', c_pid_t),
+                    ('l_pad', ctypes.c_long * 4),
+                ]
 
-class fuse_config(ctypes.Structure):
-    _fields_ = _fuse_config_fields_
+        elif _system == 'Windows':
+            # WinFsp uses struct fuse_flock with this layout instead of the system struct flock, see
+            # https://github.com/winfsp/winfsp/blob/master/inc/fuse/winfsp_fuse.h#L195
+            class c_flock_t(ctypes.Structure):  # type: ignore
+                _fields_ = [
+                    ('l_type', ctypes.c_int16),
+                    ('l_whence', ctypes.c_int16),
+                    ('l_start', c_off_t),
+                    ('l_len', c_off_t),
+                    ('l_pid', c_pid_t),
+                ]
 
-
-if TYPE_CHECKING:
-    FuseConfigPointer = ctypes._Pointer[fuse_config]
-    FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
-else:
-    FuseConfigPointer = ctypes.POINTER(fuse_config)
-    FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
+        else:
+            raise NotImplementedError(f"struct flock layout for {_system} is not known!")
 
 
-fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
-
-
-_fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
-    ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
-    ('getdir', c_void_p),  # Deprecated, use readdir
-]
-if _system == 'Windows' or _system.startswith('CYGWIN'):
-    # WinFsp and cygfuse have getdir before readlink (libfuse 2 has readlink before getdir), see struct
-    # fuse_operations in https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
-    # With the wrong order, WinFsp does not find readlink and shows all symlinks as regular files.
-    _fuse_operations_fields_readlink_getdir.reverse()
-
-# These are unchanged in FUSE 3 and therefore nice to have separate to reduce duplication.
-_fuse_operations_fields_mknod_to_symlink = [
-    ('mknod', CFUNCTYPE(c_int, c_char_p, c_mode_t, c_dev_t)),
-    ('mkdir', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
-    ('unlink', CFUNCTYPE(c_int, c_char_p)),
-    ('rmdir', CFUNCTYPE(c_int, c_char_p)),
-    ('symlink', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-]
-_fuse_operations_fields_open_to_removexattr = [
-    ('open', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-    ('read', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
-    ('write', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
-    ('statfs', CFUNCTYPE(c_int, c_char_p, c_statvfs_p)),
-    ('flush', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-    ('release', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-    ('fsync', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
-    ('setxattr', setxattr_t),
-    ('getxattr', getxattr_t),
-    ('listxattr', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
-    ('removexattr', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-]
-_fuse_operations_fields_2_9 = [
-    ('poll', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, fuse_pollhandle_p, POINTER(c_uint))),
-    ('write_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_p, c_off_t, fuse_fi_p)),
-    ('read_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_pp, c_size_t, c_off_t, fuse_fi_p)),
-    ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
-    ('fallocate', CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, fuse_fi_p)),
-]
-
-if fuse_version_major == 2:
-    _fuse_operations_fields: list[FieldsEntry] = [
-        ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p)),
-        *_fuse_operations_fields_readlink_getdir,
-        *_fuse_operations_fields_mknod_to_symlink,
-        ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-        ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),
-        ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
-        ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t)),
-        ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t)),
-        ('utime', c_void_p),  # Deprecated, use utimens
-        *_fuse_operations_fields_open_to_removexattr,
-    ]
-    if fuse_version_minor >= 3:
-        _fuse_operations_fields += [
-            ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-            (
-                'readdir',
-                CFUNCTYPE(
-                    c_int,
-                    c_char_p,
-                    c_void_p,
-                    CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t),
-                    c_off_t,
-                    fuse_fi_p,
-                ),
-            ),
-            ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
-            ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
-            ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info))),
-            ('destroy', CFUNCTYPE(c_void_p, c_void_p)),
-        ]
-    if fuse_version_minor >= 5:
-        _fuse_operations_fields += [
-            ('access', CFUNCTYPE(c_int, c_char_p, c_int)),
-            ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),
-            ('ftruncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),
-            ('fgetattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),
-        ]
-    if fuse_version_minor >= 6:
-        _fuse_operations_fields += [
-            ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),
-            ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p)),
-            ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),
-        ]
-    if fuse_version_minor >= 8:
-        _fuse_operations_fields += [
-            ('flag_nullpath_ok', c_uint, 1),
-            ('flag_nopath', c_uint, 1),
-            ('flag_utime_omit_ok', c_uint, 1),
-            ('flag_reserved', c_uint, 29),
-            ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
-        ]
-    if fuse_version_minor >= 9 or _system.startswith('CYGWIN'):
-        _fuse_operations_fields += _fuse_operations_fields_2_9
-        if _system.startswith('CYGWIN'):
-            _fuse_operations_fields += [
-                ('reserved00', c_void_p),
-                ('reserved01', c_void_p),
-                ('reserved02', c_void_p),
-                ('statfs_x', c_void_p),
-                ('setvolname', c_void_p),
-                ('exchange', c_void_p),
-                ('getxtimes', c_void_p),
-                ('setbkuptime', c_void_p),
-                ('setchgtime', c_void_p),
-                ('setcrtime', c_void_p),
-                ('chflags', c_void_p),
-                ('setattr_x', c_void_p),
-                ('fsetattr_x', c_void_p),
+        # fuse_file_info as defined in fuse_common.h. Changes in FUSE 3:
+        #  - fh_old was removed
+        #  - poll_events was added
+        #  - writepage was added to the bitfield, but the padding was not decreased,
+        #    so now there are 33 bits in total, which probably lead to some unwanted
+        #    padding in libfuse 3.0.2. This has been made explicit since libfuse 3.7.0:
+        #    https://github.com/libfuse/libfuse/commit/1d8e8ca94a3faa635afd1a3bd8d7d26472063a3f
+        #  - 3.0.0 -> 3.4.2: no change (flags and padding did add up to 33 bits from the beginning)
+        #  - 3.4.2 -> 3.5.0: cache_readdir added correctly
+        #  - 3.5.0 -> 3.6.2: no change
+        #  - 3.6.2 -> 3.7.0: padding 2 was explicitly added but did exist because of alignment
+        #  - 3.7.0 -> 3.10.5: no change
+        #  - 3.10.5 -> 3.11.0: noflush added correctly
+        #  - 3.11.0 -> 3.13.1: no change
+        #  - 3.13.1 -> 3.14.1: parallel_direct_writes was added in the middle.
+        #                      Padding was correctly decreased by 1.
+        #  - 3.14.1 -> 3.16.2: no change
+        #  - 3.16.2 -> 3.17.1: padding3 was made explicit, backing_id, compat_flags and reserved[2] were added
+        #                      at the end, which increases the size from 40 B to 64 B.
+        #  - 3.17.1 -> 3.18.0: statx was added to fuse_operations
+        #  - 3.18.3: kill_suidgid was added to the bitfield
+        _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
+        _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
+        _fuse_file_info_fields_: list[FieldsEntry] = []
+        _fuse_file_info_fields_bitfield: list[BitFieldsEntry] = []
+        if _librefuse:
+            # librefuse has one fuse_file_info layout for all API versions: fh_old still exists (removed in FUSE 3),
+            # writepage is a bitfield and poll_events exists (both as in FUSE 3).
+            # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L100-L129
+            _fuse_file_info_fields_ = [
+                ('flags', ctypes.c_int32),
+                ('fh_old', ctypes.c_uint32),
+                ('writepage', ctypes.c_uint32, 1),
+                ('direct_io', ctypes.c_uint32, 1),
+                ('keep_cache', ctypes.c_uint32, 1),
+                ('flush', ctypes.c_uint32, 1),
+                ('nonseekable', ctypes.c_uint32, 1),
+                ('flock_release', ctypes.c_uint32, 1),
+                ('cache_readdir', ctypes.c_uint32, 1),
+                # As in fuse.h: 7 + 26 bits do not fit into 32 bits, so padding starts a new 32-bit unit (as in C).
+                ('padding', ctypes.c_uint32, 26),
+                ('fh', ctypes.c_uint64),
+                ('lock_owner', ctypes.c_uint64),
+                ('poll_events', ctypes.c_uint32),
             ]
+        elif fuse_version_major == 2:
+            _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' or _system.startswith('CYGWIN') else ctypes.c_ulong
+            _fuse_file_info_fields_ = [
+                ('flags', ctypes.c_int),
+                ('fh_old', _fh_old_type),
+                ('writepage', ctypes.c_int),
+                ('direct_io', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
+                ('keep_cache', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
+                ('flush', ctypes.c_uint, 1),  # Introduced in libfuse 2.6
+            ]
+            if _system == 'OpenBSD':
+                # OpenBSD announces FUSE 2.6 but has nonseekable and flock_release after 27 padding bits.
+                _fuse_file_info_fields_ += [
+                    ('nonseekable', ctypes.c_uint, 1),
+                    ('__padd', ctypes.c_uint, 27),
+                    ('flock_release', ctypes.c_uint, 1),
+                ]
+            else:
+                if fuse_version_minor >= 8:
+                    _fuse_file_info_fields_ += [('nonseekable', ctypes.c_uint, 1)]  # Introduced in libfuse 2.8
+                if fuse_version_minor >= 9:
+                    _fuse_file_info_fields_ += [('flock_release', ctypes.c_uint, 1)]  # Introduced in libfuse 2.9
+                flag_bits = sum(field[2] for field in _fuse_file_info_fields_ if len(field) == 3)
+                _fuse_file_info_fields_ += [('padding', ctypes.c_uint, 32 - flag_bits)]
+            _fuse_file_info_fields_ += [
+                ('fh', ctypes.c_uint64),
+                ('lock_owner', ctypes.c_uint64),
+            ]
+        elif fuse_version_major == 3:
+            _fuse_file_info_fields_ = [('flags', _fuse_int32)]
+
+            # Bit flag types were changed from unsigned int to uint32_t in libfuse 3.17,
+            # but as far as I understand this change does not matter because it is only 1 bit.
+
+            _fuse_file_info_fields_bitfield = [
+                ('writepage', _fuse_uint32, 1),
+                ('direct_io', _fuse_uint32, 1),
+                ('keep_cache', _fuse_uint32, 1),
+            ]
+            # Introduced in 3.14.1, not 3.14.0, and its placement is an API-incompatible change / bug!
+            # https://github.com/libfuse/libfuse/issues/1029
+            if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1):
+                _fuse_file_info_fields_bitfield += [
+                    ('parallel_direct_writes', _fuse_uint32, 1),
+                ]
+            _fuse_file_info_fields_bitfield += [
+                ('flush', _fuse_uint32, 1),
+                ('nonseekable', _fuse_uint32, 1),
+                ('flock_release', _fuse_uint32, 1),
+            ]
+            if fuse_version_minor >= 5:
+                _fuse_file_info_fields_bitfield += [('cache_readdir', ctypes.c_uint, 1)]
+            if fuse_version_minor >= 11:
+                _fuse_file_info_fields_bitfield += [('noflush', ctypes.c_uint, 1)]
+            if _FUSE_VERSION >= (3, 17, 1):
+                _fuse_file_info_fields_bitfield += [
+                    ('parallel_direct_writes', _fuse_uint32, 1),
+                ]
+            if _FUSE_VERSION >= (3, 18, 3) and not _librefuse:
+                _fuse_file_info_fields_bitfield += [
+                    ('kill_suidgid', _fuse_uint32, 1),
+                ]
+
+            _fuse_file_info_flag_count = sum(x[2] for x in _fuse_file_info_fields_bitfield)
+            assert _fuse_file_info_flag_count < ctypes.sizeof(_fuse_uint32) * 8
+
+            _fuse_file_info_fields_ += _fuse_file_info_fields_bitfield
+            _fuse_file_info_fields_ += [
+                ('padding', _fuse_uint32, ctypes.sizeof(_fuse_uint32) * 8 - _fuse_file_info_flag_count),
+                ('padding2', _fuse_uint32),
+            ]
+            # https://github.com/libfuse/libfuse/pull/1038#discussion_r1775112524
+            # https://github.com/libfuse/libfuse/pull/1081
+            # This padding did always exist because fh was aligned to an offset modulo 8 B,
+            # but libfuse 3.17 made this explicit and I'm not fully sure how ctypes behaves.
+            if _FUSE_VERSION >= (3, 17, 1):
+                _fuse_file_info_fields_ += [('padding3', _fuse_uint32)]
+
+            _fuse_file_info_fields_ += [
+                ('fh', ctypes.c_uint64),
+                ('lock_owner', ctypes.c_uint64),
+            ]
+            if _FUSE_VERSION >= (3, 17, 1):
+                _fuse_file_info_fields_ += [
+                    ('poll_events', ctypes.c_uint32),
+                    ('backing_id', ctypes.c_int32),
+                    ('compat_flags', ctypes.c_uint64),
+                    ('reserved', ctypes.c_uint64 * 2),
+                ]
+            else:
+                _fuse_file_info_fields_ += [('poll_events', _fuse_uint32)]
+
+
+        class fuse_file_info(ctypes.Structure):
+            _fields_ = _fuse_file_info_fields_
+
+
+        if _librefuse:
+            if ctypes.alignment(ctypes.c_uint64) == 8:
+                assert ctypes.sizeof(fuse_file_info) == 40
+        elif ctypes.sizeof(ctypes.c_int) == 4 and _FUSE_VERSION >= (3, 17, 1):
+            assert ctypes.sizeof(fuse_file_info) == 64
+
+
+        class fuse_context(ctypes.Structure):
+            _fields_ = [
+                ('fuse', ctypes.c_void_p),
+                ('uid', c_uid_t),
+                ('gid', c_gid_t),
+                ('pid', c_pid_t),
+                ('private_data', ctypes.c_void_p),
+            ]
+            # OpenBSD announces 2.6, but still has the umask struct member.
+            if fuse_version_major == 3 or (fuse_version_major == 2 and fuse_version_minor >= 8) or _system == 'OpenBSD':
+                _fields_ += [
+                    # Added in 2.8. Note that this is an ABI break because programs compiled against 2.7
+                    # will allocate a smaller struct leading to out-of-bound accesses when used for a 2.8
+                    # shared library! It shouldn't hurt the other way around to have a larger struct than
+                    # the shared library expects. The newer members will simply be ignored.
+                    ('umask', c_mode_t),
+                ]
+
+        # FUSE_BUF_IS_FD    = (1 << 1),
+        # FUSE_BUF_FD_SEEK  = (1 << 2),
+        # FUSE_BUF_FD_RETRY = (1 << 3),
+        fuse_buf_flags = ctypes.c_int
+
+
+        class fuse_buf(ctypes.Structure):
+            _fields_ = [
+                ('size', ctypes.c_size_t),
+                ('flags', fuse_buf_flags),
+                ('mem', ctypes.c_void_p),
+                ('fd', ctypes.c_int),
+                ('pos', c_off_t),
+            ]
+            if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+                _fields_ += [('mem_size', ctypes.c_size_t)]
+
+
+        class fuse_bufvec(ctypes.Structure):
+            _fields_ = [
+                ('count', ctypes.c_size_t),
+                ('idx', ctypes.c_size_t),
+                ('off', ctypes.c_size_t),
+                ('buf', fuse_buf * 1),  # Inline struct fuse_buf buf[1], not a pointer.
+            ]
+
+
+        if TYPE_CHECKING:
+            fuse_fi_p = ctypes._Pointer[fuse_file_info]  # noqa: W212
+            c_stat_p = ctypes._Pointer[c_stat]  # noqa: W212
+            c_statvfs_p = ctypes._Pointer[c_statvfs]  # noqa: W212
+            c_utimbuf_p = ctypes._Pointer[c_utimbuf]  # noqa: W212
+            fuse_bufvec_p = ctypes._Pointer[fuse_bufvec]  # noqa: W212
+            fuse_bufvec_pp = ctypes._Pointer[fuse_bufvec_p]  # noqa: W212
+        else:
+            fuse_fi_p = ctypes.POINTER(fuse_file_info)
+            c_stat_p = ctypes.POINTER(c_stat)
+            c_statvfs_p = ctypes.POINTER(c_statvfs)
+            c_utimbuf_p = ctypes.POINTER(c_utimbuf)
+            fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
+            fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
+
+
+        # fuse_conn_info struct as defined and documented in fuse_common.h
+        _fuse_conn_info_fields: list[FieldsEntry] = [
+            ('proto_major', ctypes.c_uint),
+            ('proto_minor', ctypes.c_uint),
+        ]
+        # librefuse has one fuse_conn_info layout for all API versions, containing the FUSE 2 and FUSE 3 members.
+        # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h
+        if fuse_version_major == 2 or _librefuse:
+            _fuse_conn_info_fields += [('async_read', _fuse_uint32)]
+        _fuse_conn_info_fields += [('max_write', _fuse_uint32)]
+        if fuse_version_major == 3 or _librefuse:
+            _fuse_conn_info_fields += [('max_read', _fuse_uint32)]
+        _fuse_conn_info_fields += [('max_readahead', _fuse_uint32)]
+        if _system == 'Darwin':
+            _fuse_conn_info_fields += [('enable', _fuse_uint32)]  # TODO: is a bitfield
+        _fuse_conn_info_fields += [
+            ('capable', _fuse_uint32),  # Added in 2.8
+            ('want', _fuse_uint32),  # Added in 2.8
+        ]
+        # OpenBSD advertises FUSE 2.6 but has the full layout of a newer libfuse.
+        _conn_info_minor = 9 if _system == 'OpenBSD' else fuse_version_minor
+        if _librefuse or fuse_version_major == 3 or (fuse_version_major == 2 and _conn_info_minor >= 9):
+            _fuse_conn_info_fields += [
+                ('max_background', _fuse_uint32),  # Added in 2.9
+                ('congestion_threshold', _fuse_uint32),  # Added in 2.9
+            ]
+        if fuse_version_major == 2 and not _librefuse:
+            _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (32 - len(_fuse_conn_info_fields)))]
+        elif fuse_version_major == 3 or _librefuse:
+            _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
+            if _FUSE_VERSION < (3, 17, 1) or _librefuse:
+                _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 22)]
+            else:
+                _fuse_conn_info_fields += [
+                    ('max_backing_stack_depth', ctypes.c_uint32),
+                    ('no_interrupt', ctypes.c_uint32, 1),
+                    ('padding', ctypes.c_uint32, 31),
+                    ('capable_ext', ctypes.c_uint64),
+                    ('want_ext', ctypes.c_uint64),
+                ]
+                if _FUSE_VERSION >= (3, 18, 0):
+                    _fuse_conn_info_fields += [
+                        ('request_timeout', ctypes.c_uint16),
+                        ('reserved', ctypes.c_uint16 * 31),
+                    ]
+                else:
+                    _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
+
+
+        _HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
+
+        # Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which differ for some flags,
+        # e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
+        # https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/fuse.h#L452-L497
+        # libfuse translates between the two.
+        # https://github.com/libfuse/libfuse/blob/fuse-3.18.3/include/fuse_common.h#L185-L521
+        # fmt:off
+        _LIBFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+            # libfuse 2.9.9 capabilities
+            FuseCapability.ASYNC_READ           : 1 << 0,
+            FuseCapability.POSIX_LOCKS          : 1 << 1,
+            FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
+            FuseCapability.EXPORT_SUPPORT       : 1 << 4,
+            FuseCapability.BIG_WRITES           : 1 << 5,
+            FuseCapability.DONT_MASK            : 1 << 6,
+            FuseCapability.SPLICE_WRITE         : 1 << 7,
+            FuseCapability.SPLICE_MOVE          : 1 << 8,
+            FuseCapability.SPLICE_READ          : 1 << 9,
+            FuseCapability.FLOCK_LOCKS          : 1 << 10,
+            FuseCapability.IOCTL_DIR            : 1 << 11,
+            # libfuse 3.0+ capabilities
+            FuseCapability.AUTO_INVAL_DATA      : 1 << 12,
+            FuseCapability.READDIRPLUS          : 1 << 13,
+            FuseCapability.READDIRPLUS_AUTO     : 1 << 14,
+            FuseCapability.ASYNC_DIO            : 1 << 15,
+            FuseCapability.WRITEBACK_CACHE      : 1 << 16,
+            FuseCapability.NO_OPEN_SUPPORT      : 1 << 17,
+            FuseCapability.PARALLEL_DIROPS      : 1 << 18,
+            FuseCapability.POSIX_ACL            : 1 << 19,
+            FuseCapability.HANDLE_KILLPRIV      : 1 << 20,
+            # libfuse 3.5+ capabilities
+            FuseCapability.HANDLE_KILLPRIV_V2   : 1 << 21,
+            FuseCapability.CACHE_SYMLINKS       : 1 << 23,
+            FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
+            FuseCapability.EXPLICIT_INVAL_DATA  : 1 << 25,
+            FuseCapability.EXPIRE_ONLY          : 1 << 26,
+            FuseCapability.SETXATTR_EXT         : 1 << 27,
+            FuseCapability.DIRECT_IO_ALLOW_MMAP : 1 << 28,
+            FuseCapability.PASSTHROUGH          : 1 << 29,
+            FuseCapability.NO_EXPORT_SUPPORT    : 1 << 30,
+            FuseCapability.OVER_IO_URING        : 1 << 31,
+            # libfuse 3.19+ capabilities that require libfuse 3.17+ the 64-bit want_ext field!
+            FuseCapability.ALLOW_IDMAP          : 1 << 32,
+            FuseCapability.SECURITY_CTX         : 1 << 33,
+            FuseCapability.IO_URING_BUFPOOL     : 1 << 34,
+        }
+        # libfuse 2.8+ defines the 'capable' and 'want' members and the flags up to FUSE_CAP_IOCTL_DIR.
+        _LIBFUSE2CAPABILITY_BITS: dict[FuseCapability, int] = {
+            capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 11)
+        }
+        # libfuse 3 removed FUSE_CAP_BIG_WRITES because it is always enabled.
+        # We don't have to replicate any libfuse minor version capability differences. Libfuse can check that itself.
+        # Flags beyond bit 31 exist only since libfuse 3.17, which added the 64-bit 'capable_ext'/'want_ext' members,
+        # and cannot be represented without them, so do not declare them when _HAS_WANT_EXT is false, i.e., before 3.17.
+        _LIBFUSE3CAPABILITY_BITS: dict[FuseCapability, int] = {
+            capability: flag
+            for capability, flag in _LIBFUSECAPABILITY_BITS.items()
+            if capability is not FuseCapability.BIG_WRITES and (_HAS_WANT_EXT or flag < 1 << 32)
+        }
+        # librefuse defines the flags up to FUSE_CAP_HANDLE_KILLPRIV plus these two with libfuse2-compatible bits.
+        # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L143-L164
+        _LIBREFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+            **{capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 20)},
+            FuseCapability.CACHE_SYMLINKS       : 1 << 23,
+            FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
+        }
+        # macFUSE is based on libfuse 2 and reuses the bits 23 to 31 for Apple-specific features.
+        # https://github.com/macfuse/library/blob/master/include/fuse_common.h#L163-L184
+        _MACFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+            **_LIBFUSE2CAPABILITY_BITS,
+            FuseCapability.ACCESS_EXTENDED      : 1 << 23,  # CACHE_SYMLINKS in libfuse
+            FuseCapability.NODE_RWLOCK          : 1 << 24,  # NO_OPENDIR_SUPPORT in libfuse
+            FuseCapability.RENAME_SWAP          : 1 << 25,
+            FuseCapability.RENAME_EXCL          : 1 << 26,
+            FuseCapability.ALLOCATE             : 1 << 27,
+            FuseCapability.EXCHANGE_DATA        : 1 << 28,
+            FuseCapability.CASE_INSENSITIVE     : 1 << 29,
+            FuseCapability.VOL_RENAME           : 1 << 30,
+            FuseCapability.XTIMES               : 1 << 31,
+        }
+        # WinFsp defines the flags up to FUSE_CAP_DONT_MASK (bit 6), the FSP-specific flags at 21-24.
+        # Also reserves ALLOCATE, EXCHANGE_DATA, VOL_RENAME, XTIMES for OSXFUSE but does not use those flag.
+        # Even though it reserves from for OSXFUSE, there are still clashes with macfuse.
+        # https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
+        _WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
+            FuseCapability.ASYNC_READ           : 1 << 0,
+            FuseCapability.POSIX_LOCKS          : 1 << 1,
+            FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
+            FuseCapability.EXPORT_SUPPORT       : 1 << 4,
+            FuseCapability.BIG_WRITES           : 1 << 5,
+            FuseCapability.DONT_MASK            : 1 << 6,
+            # TODO: Add and test support for this and then simply reuse READDIRPLUS instead of a Windows-custom capability.
+            # FuseCapability.READDIR_PLUS         : 1 << 21,
+            FuseCapability.READ_ONLY            : 1 << 22,
+            FuseCapability.STAT_EX              : 1 << 23,
+            FuseCapability.DELETE_ACCESS        : 1 << 24,
+            FuseCapability.ALLOCATE             : 1 << 27,
+            FuseCapability.EXCHANGE_DATA        : 1 << 28,
+            FuseCapability.CASE_INSENSITIVE     : 1 << 29,
+            FuseCapability.VOL_RENAME           : 1 << 30,
+            FuseCapability.XTIMES               : 1 << 31,
+        }
+        # fmt:on
+
+        if _system == 'Windows' or _system.startswith('CYGWIN'):
+            CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
+        elif _librefuse:
+            CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
         elif _system == 'Darwin':
-            _fuse_operations_fields += [
-                ('reserved00', c_void_p),
-                ('reserved01', c_void_p),
-                ('__todo__', c_void_p * 11),  # TODO: misc. addtl. functions
+            CAPABILITY_BITS = _MACFUSECAPABILITY_BITS
+        elif fuse_version_major >= 3:
+            CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
+        else:
+            CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
+
+
+        # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
+        class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
+            # The members are defined via '_fields_', which pylint cannot see.
+            # Only the methods below access them on an object whose type pylint knows.
+            # Everywhere else they are accessed via a pointer's '.contents', which pylint treats as Any.
+            # pylint: disable=no-member
+            _fields_ = _fuse_conn_info_fields
+            CAPABILITY_BITS: dict[FuseCapability, int]
+            _HAS_WANT_EXT: bool
+            _set_feature_flag: Any
+            _unset_feature_flag: Any
+            _get_feature_flag: Any
+
+            def _capable_bits(self) -> int:
+                return self.capable_ext if type(self)._HAS_WANT_EXT else self.capable
+
+            def is_capable(self, capability: FuseCapability) -> bool:
+                '''
+                Return whether the kernel announced the given capability as supported.
+
+                This mirrors fuse_get_feature_flag(), i.e., it only reflects 'capable', and returns False
+                for a capability that the loaded implementation does not define with this meaning.
+                '''
+                flag = type(self).CAPABILITY_BITS.get(capability)
+                if flag is None:
+                    return False
+
+                if type(self)._get_feature_flag is not None:
+                    return bool(type(self)._get_feature_flag(ctypes.pointer(self), flag))
+                return (self._capable_bits() & flag) == flag
+
+            def enable_capability(self, capability: FuseCapability) -> bool:
+                '''
+                Request the given capability to be enabled, mirroring fuse_set_feature_flag().
+
+                Returns False without changing anything if the loaded implementation does not define the
+                capability with this meaning or if the kernel is not capable of it. Requesting a feature
+                that the kernel does not support would make libfuse abort the mount with EPROTO.
+                '''
+                flag = type(self).CAPABILITY_BITS.get(capability)
+                if flag is None:
+                    return False
+
+                # Use libfuse's helper when this is the real struct from the init callback because it also
+                # keeps libfuse's internal state in sync. The helper locates the enclosing session via
+                # container_of() and would corrupt memory for a standalone struct, e.g., in a test, so write
+                # both members directly then, which is equivalent because libfuse only converts 'want' if
+                # exactly one of both was changed (see fuse_convert_to_conn_want_ext).
+                pointer = getattr(self, '_fuse_session_pointer', None)
+                if pointer is not None and type(self)._set_feature_flag is not None:
+                    return bool(type(self)._set_feature_flag(pointer, flag))
+                if (self._capable_bits() & flag) != flag:
+                    return False
+
+                self.want |= flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
+                if type(self)._HAS_WANT_EXT:
+                    self.want_ext |= flag
+                return True
+
+            def disable_capability(self, capability: FuseCapability) -> None:
+                '''Request the given capability to be disabled, mirroring fuse_unset_feature_flag().'''
+                flag = type(self).CAPABILITY_BITS.get(capability)
+                if flag is None:
+                    return
+
+                pointer = getattr(self, '_fuse_session_pointer', None)
+                if pointer is not None and type(self)._unset_feature_flag is not None:
+                    type(self)._unset_feature_flag(pointer, flag)
+                    return
+
+                # See enable_capability() for why the members are written directly in the fallback.
+                self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
+                if type(self)._HAS_WANT_EXT:
+                    self.want_ext &= ~flag
+
+
+        if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+            assert ctypes.sizeof(fuse_conn_info) == 128
+
+        fuse_conn_info.CAPABILITY_BITS = CAPABILITY_BITS
+        fuse_conn_info._HAS_WANT_EXT = _HAS_WANT_EXT
+        fuse_conn_info._set_feature_flag = _fuse_set_feature_flag
+        fuse_conn_info._unset_feature_flag = _fuse_unset_feature_flag
+        fuse_conn_info._get_feature_flag = _fuse_get_feature_flag
+        # FUSE 3-only struct for second init argument defined in fuse.h.
+        # If a FUSE 2 method is loaded but 'init_with_config' overridden,
+        # then this argument will only be zero-initialized and should be ignored.
+        # 3.0.0 -> 3.10.5: no change
+        # 3.10.5 -> 3.11.0: no_rofd_flush was added in the middle causing an ABI break
+        # 3.11.0 -> 3.13.1: no change
+        # 3.13.1 -> 3.14.1: parallel_direct_writes was added in the middle causing an ABI break
+        # 3.14.1 -> 3.16.2: no change
+        # 3.16.2 -> 3.17.0: Changed all types to uint32_t, added reserved bytes, reverted order to 3.10.
+        # https://github.com/libfuse/libfuse/pull/1081
+        _fuse_config_fields_: list[FieldsEntry] = [
+            ('set_gid', _fuse_int32),
+            ('gid', _fuse_uint32),
+            ('set_uid', _fuse_int32),
+            ('uid', _fuse_uint32),
+            ('set_mode', _fuse_int32),
+            ('umask', _fuse_uint32),
+            ('entry_timeout', ctypes.c_double),
+            ('negative_timeout', ctypes.c_double),
+            ('attr_timeout', ctypes.c_double),
+            ('intr', _fuse_int32),
+            ('intr_signal', _fuse_int32),
+            ('remember', _fuse_int32),
+            ('hard_remove', _fuse_int32),
+            ('use_ino', _fuse_int32),
+            ('readdir_ino', _fuse_int32),
+            ('direct_io', _fuse_int32),
+            ('kernel_cache', _fuse_int32),
+            ('auto_cache', _fuse_int32),
+        ]
+        if fuse_version_major == 3:
+            # Adding this member in the middle of the struct was an ABI-incompatible change!
+            # librefuse has one fuse_config layout for all API versions, i.e. none of the version-dependent members below.
+            if fuse_version_minor >= 11 and fuse_version_minor < 17 and not _librefuse:
+                _fuse_config_fields_ += [('no_rofd_flush', ctypes.c_int)]
+
+            _fuse_config_fields_ += [
+                ('ac_attr_timeout_set', _fuse_int32),
+                ('ac_attr_timeout', ctypes.c_double),
+                # If this option is given the file-system handlers for the
+                # following operations will not receive path information:
+                # read, write, flush, release, fallocate, fsync, readdir,
+                # releasedir, fsyncdir, lock, ioctl and poll.
+                #
+                # For the truncate, getattr, chmod, chown and utimens
+                # operations the path will be provided only if the struct
+                # fuse_file_info argument is NULL.
+                ('nullpath_ok', _fuse_int32),
             ]
-elif fuse_version_major == 3:
-    fuse_fill_dir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is USE_FILL_DIR_PLUS = (1 << 1).
-    fuse_fill_dir_t = CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t, fuse_fill_dir_flags)
 
-    fuse_readdir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is FUSE_READDIR_PLUS = (1 << 0).
+            # Another ABI break as discussed here: https://lists.debian.org/debian-devel/2024/03/msg00278.html
+            # The break was in 3.14.1, not 3.14.0. The hotfix version from fuse_pkgversion() distinguishes them.
+            if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1) and not _librefuse:
+                _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
 
-    # Generated bindings with:
-    # gcc -fpreprocessed -dD -E -P -Wno-all -x c <( git show fuse-3.16.2:include/fuse.h ) 2>/dev/null |
-    #   sed -nr '/struct fuse_operations/,$p' | sed -nr '0,/};/p' | sed -z 's|,\n *|, |g' |
-    #   sed -r '
-    #       s|const char [*]( ?[a-z_]+)?|ctypes.c_char_p|g;
-    #       s|char [*]( ?[a-z_]+)?|c_byte_p|g;
-    #       s|([( ])([a-z]+)_t( ?[a-z_]+)?|\1c_\2_t|g;
-    #       s|([( ])unsigned int( ?[a-z_]+)?|\1ctypes.c_uint|g;
-    #       s|([( ])int( ?[a-z_]+)?|\1ctypes.c_int|g;
-    #       s|struct (fuse_[a-z_]+) [*][*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.POINTER(\1))|g;
-    #       s|struct (fuse_[a-z_]+) [*]( ?[a-z_]+)?|ctypes.POINTER(\1)|g;
-    #       s|struct (stat(vfs)?) [*]( ?[a-z_]+)?|ctypes.POINTER(c_\1)|g;
-    #       s|struct (flock) [*]( ?[a-z_]+)?|ctypes.POINTER(c_\1)|g;
-    #       s|(u?int64)_t [*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.c_\1)|g;
-    #       s|void [*]( ?[a-z_]+)?|ctypes.c_void_p|g;
-    #       s|const struct timespec tv[[]2[]]|c_utimbuf_p|g;
-    #       s|enum ([a-z_]+)|\1|g;
-    #       s|^ *||;
-    #   ' |
-    #   sed -r "s|(^[a-z_.]+) [(][*]([a-z_]+)[)] [(](.*);|('\2', ctypes.CFUNCTYPE(\1, \3),|; s|ctypes[.]||g;"
-    # Then fix the remaining problems by using pylint and by comparing with the FUSE 2 version.
-    #
-    # Removed members: getdir, utime, ftruncate, fgetattr, flag_nullpath_ok, flag_nopath, flag_utime_omit_ok
-    #  - The methods were not used by fusepy anyway.
-    #  - The flags were not exposed to fusepy callers because the fuse_operations struct is created,
-    #    given to fuse_main_real, and then forgotten about in FUSE.__init__.
-    # Methods with changed arguments:
-    #  - getattr, rename, chmod, chown, truncate, readdir, init, utimens, ioctl
-    # fmt: off
-    _fuse_operations_fields = [
-        ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),                              # Added file info
-        ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),                              # Same as v2.9
-        *_fuse_operations_fields_mknod_to_symlink,
-        ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
-        ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
-        ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                                # Added file info
-        ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, fuse_fi_p)),                        # Added file info
-        ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),                              # Added file info
-        *_fuse_operations_fields_open_to_removexattr,
-        ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                        # Same as v2.9
-        ('readdir', CFUNCTYPE(
-            c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, fuse_fi_p, fuse_readdir_flags)),  # Added flags
-        ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                     # Same as v2.9
-        ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                                # Same as v2.9
-        ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),              # Added config
-        ('destroy', CFUNCTYPE(c_void_p, c_void_p)),                                                # Same as v2.9
-        ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
-        ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
-        ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
-        ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p, fuse_fi_p)),                           # Added file info
-        ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                                # Same as v2.9
-        ('ioctl', CFUNCTYPE(                                                                       # Argument type
-            c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
-            fuse_fi_p, c_uint, c_void_p)),
-        *_fuse_operations_fields_2_9,
-        (
-            'copy_file_range',                                                                     # New
-            CFUNCTYPE(
-                c_ssize_t, c_char_p, fuse_fi_p, c_off_t, c_char_p,
-                fuse_fi_p, c_off_t, c_size_t, c_int,
-            ),
-        ),
-        ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                        # New
-    ]
-    if fuse_version_minor >= 18:
-        _fuse_operations_fields += [
-            ('statx', c_void_p),  # Not supported, struct statx is not defined here.
+            if not _librefuse:
+                _fuse_config_fields_ += [
+                    ('show_help', _fuse_int32),
+                    ('modules', ctypes.c_char_p),
+                    ('debug', _fuse_int32),
+                ]
+
+            if fuse_version_minor >= 17 and not _librefuse:
+                _fuse_config_fields_ += [
+                    ('fmask', ctypes.c_uint32),
+                    ('dmask', ctypes.c_uint32),
+                    ('no_rofd_flush', ctypes.c_int32),
+                    ('parallel_direct_writes', ctypes.c_int32),
+                    ('flags', ctypes.c_int32),
+                    ('reserved', ctypes.c_uint64 * 48),
+                ]
+
+
+        class fuse_config(ctypes.Structure):
+            _fields_ = _fuse_config_fields_
+
+
+        if TYPE_CHECKING:
+            FuseConfigPointer = ctypes._Pointer[fuse_config]
+            FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
+        else:
+            FuseConfigPointer = ctypes.POINTER(fuse_config)
+            FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
+
+
+        fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
+
+
+        _fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
+            ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
+            ('getdir', c_void_p),  # Deprecated, use readdir
         ]
-    if _FUSE_VERSION >= (3, 19, 0) and not _librefuse:
-        _fuse_operations_fields += [
-            ('syncfs', CFUNCTYPE(c_int, c_char_p)),
+        if _system == 'Windows' or _system.startswith('CYGWIN'):
+            # WinFsp and cygfuse have getdir before readlink (libfuse 2 has readlink before getdir), see struct
+            # fuse_operations in https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
+            # With the wrong order, WinFsp does not find readlink and shows all symlinks as regular files.
+            _fuse_operations_fields_readlink_getdir.reverse()
+
+        # These are unchanged in FUSE 3 and therefore nice to have separate to reduce duplication.
+        _fuse_operations_fields_mknod_to_symlink = [
+            ('mknod', CFUNCTYPE(c_int, c_char_p, c_mode_t, c_dev_t)),
+            ('mkdir', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
+            ('unlink', CFUNCTYPE(c_int, c_char_p)),
+            ('rmdir', CFUNCTYPE(c_int, c_char_p)),
+            ('symlink', CFUNCTYPE(c_int, c_char_p, c_char_p)),
         ]
-    # fmt: on
+        _fuse_operations_fields_open_to_removexattr = [
+            ('open', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+            ('read', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
+            ('write', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t, c_off_t, fuse_fi_p)),
+            ('statfs', CFUNCTYPE(c_int, c_char_p, c_statvfs_p)),
+            ('flush', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+            ('release', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+            ('fsync', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
+            ('setxattr', setxattr_t),
+            ('getxattr', getxattr_t),
+            ('listxattr', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
+            ('removexattr', CFUNCTYPE(c_int, c_char_p, c_char_p)),
+        ]
+        _fuse_operations_fields_2_9 = [
+            ('poll', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, fuse_pollhandle_p, POINTER(c_uint))),
+            ('write_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_p, c_off_t, fuse_fi_p)),
+            ('read_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_pp, c_size_t, c_off_t, fuse_fi_p)),
+            ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
+            ('fallocate', CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, fuse_fi_p)),
+        ]
+
+        if fuse_version_major == 2:
+            _fuse_operations_fields: list[FieldsEntry] = [
+                ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p)),
+                *_fuse_operations_fields_readlink_getdir,
+                *_fuse_operations_fields_mknod_to_symlink,
+                ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p)),
+                ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),
+                ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t)),
+                ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t)),
+                ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t)),
+                ('utime', c_void_p),  # Deprecated, use utimens
+                *_fuse_operations_fields_open_to_removexattr,
+            ]
+            if fuse_version_minor >= 3:
+                _fuse_operations_fields += [
+                    ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+                    (
+                        'readdir',
+                        CFUNCTYPE(
+                            c_int,
+                            c_char_p,
+                            c_void_p,
+                            CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t),
+                            c_off_t,
+                            fuse_fi_p,
+                        ),
+                    ),
+                    ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
+                    ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
+                    ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info))),
+                    ('destroy', CFUNCTYPE(c_void_p, c_void_p)),
+                ]
+            if fuse_version_minor >= 5:
+                _fuse_operations_fields += [
+                    ('access', CFUNCTYPE(c_int, c_char_p, c_int)),
+                    ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),
+                    ('ftruncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),
+                    ('fgetattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),
+                ]
+            if fuse_version_minor >= 6:
+                _fuse_operations_fields += [
+                    ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),
+                    ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p)),
+                    ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),
+                ]
+            if fuse_version_minor >= 8:
+                _fuse_operations_fields += [
+                    ('flag_nullpath_ok', c_uint, 1),
+                    ('flag_nopath', c_uint, 1),
+                    ('flag_utime_omit_ok', c_uint, 1),
+                    ('flag_reserved', c_uint, 29),
+                    ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
+                ]
+            if fuse_version_minor >= 9 or _system.startswith('CYGWIN'):
+                _fuse_operations_fields += _fuse_operations_fields_2_9
+                if _system.startswith('CYGWIN'):
+                    _fuse_operations_fields += [
+                        ('reserved00', c_void_p),
+                        ('reserved01', c_void_p),
+                        ('reserved02', c_void_p),
+                        ('statfs_x', c_void_p),
+                        ('setvolname', c_void_p),
+                        ('exchange', c_void_p),
+                        ('getxtimes', c_void_p),
+                        ('setbkuptime', c_void_p),
+                        ('setchgtime', c_void_p),
+                        ('setcrtime', c_void_p),
+                        ('chflags', c_void_p),
+                        ('setattr_x', c_void_p),
+                        ('fsetattr_x', c_void_p),
+                    ]
+                elif _system == 'Darwin':
+                    _fuse_operations_fields += [
+                        ('reserved00', c_void_p),
+                        ('reserved01', c_void_p),
+                        ('__todo__', c_void_p * 11),  # TODO: misc. addtl. functions
+                    ]
+        elif fuse_version_major == 3:
+            fuse_fill_dir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is USE_FILL_DIR_PLUS = (1 << 1).
+            fuse_fill_dir_t = CFUNCTYPE(c_int, c_void_p, c_char_p, c_stat_p, c_off_t, fuse_fill_dir_flags)
+
+            fuse_readdir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is FUSE_READDIR_PLUS = (1 << 0).
+
+            # Generated bindings with:
+            # gcc -fpreprocessed -dD -E -P -Wno-all -x c <( git show fuse-3.16.2:include/fuse.h ) 2>/dev/null |
+            #   sed -nr '/struct fuse_operations/,$p' | sed -nr '0,/};/p' | sed -z 's|,\n *|, |g' |
+            #   sed -r '
+            #       s|const char [*]( ?[a-z_]+)?|ctypes.c_char_p|g;
+            #       s|char [*]( ?[a-z_]+)?|c_byte_p|g;
+            #       s|([( ])([a-z]+)_t( ?[a-z_]+)?|\1c_\2_t|g;
+            #       s|([( ])unsigned int( ?[a-z_]+)?|\1ctypes.c_uint|g;
+            #       s|([( ])int( ?[a-z_]+)?|\1ctypes.c_int|g;
+            #       s|struct (fuse_[a-z_]+) [*][*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.POINTER(\1))|g;
+            #       s|struct (fuse_[a-z_]+) [*]( ?[a-z_]+)?|ctypes.POINTER(\1)|g;
+            #       s|struct (stat(vfs)?) [*]( ?[a-z_]+)?|ctypes.POINTER(c_\1)|g;
+            #       s|struct (flock) [*]( ?[a-z_]+)?|ctypes.POINTER(c_\1)|g;
+            #       s|(u?int64)_t [*]( ?[a-z_]+)?|ctypes.POINTER(ctypes.c_\1)|g;
+            #       s|void [*]( ?[a-z_]+)?|ctypes.c_void_p|g;
+            #       s|const struct timespec tv[[]2[]]|c_utimbuf_p|g;
+            #       s|enum ([a-z_]+)|\1|g;
+            #       s|^ *||;
+            #   ' |
+            #   sed -r "s|(^[a-z_.]+) [(][*]([a-z_]+)[)] [(](.*);|('\2', ctypes.CFUNCTYPE(\1, \3),|; s|ctypes[.]||g;"
+            # Then fix the remaining problems by using pylint and by comparing with the FUSE 2 version.
+            #
+            # Removed members: getdir, utime, ftruncate, fgetattr, flag_nullpath_ok, flag_nopath, flag_utime_omit_ok
+            #  - The methods were not used by fusepy anyway.
+            #  - The flags were not exposed to fusepy callers because the fuse_operations struct is created,
+            #    given to fuse_main_real, and then forgotten about in FUSE.__init__.
+            # Methods with changed arguments:
+            #  - getattr, rename, chmod, chown, truncate, readdir, init, utimens, ioctl
+            # fmt: off
+            _fuse_operations_fields = [
+                ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),                              # Added file info
+                ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),                              # Same as v2.9
+                *_fuse_operations_fields_mknod_to_symlink,
+                ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
+                ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
+                ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                                # Added file info
+                ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, fuse_fi_p)),                        # Added file info
+                ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),                              # Added file info
+                *_fuse_operations_fields_open_to_removexattr,
+                ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                        # Same as v2.9
+                ('readdir', CFUNCTYPE(
+                    c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, fuse_fi_p, fuse_readdir_flags)),  # Added flags
+                ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                     # Same as v2.9
+                ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                                # Same as v2.9
+                ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),              # Added config
+                ('destroy', CFUNCTYPE(c_void_p, c_void_p)),                                                # Same as v2.9
+                ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
+                ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
+                ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
+                ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p, fuse_fi_p)),                           # Added file info
+                ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                                # Same as v2.9
+                ('ioctl', CFUNCTYPE(                                                                       # Argument type
+                    c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
+                    fuse_fi_p, c_uint, c_void_p)),
+                *_fuse_operations_fields_2_9,
+                (
+                    'copy_file_range',                                                                     # New
+                    CFUNCTYPE(
+                        c_ssize_t, c_char_p, fuse_fi_p, c_off_t, c_char_p,
+                        fuse_fi_p, c_off_t, c_size_t, c_int,
+                    ),
+                ),
+                ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                        # New
+            ]
+            if fuse_version_minor >= 18:
+                _fuse_operations_fields += [
+                    ('statx', c_void_p),  # Not supported, struct statx is not defined here.
+                ]
+            if _FUSE_VERSION >= (3, 19, 0) and not _librefuse:
+                _fuse_operations_fields += [
+                    ('syncfs', CFUNCTYPE(c_int, c_char_p)),
+                ]
+            # fmt: on
 
 
-class fuse_operations(ctypes.Structure):
-    _fields_ = _fuse_operations_fields
+        class fuse_operations(ctypes.Structure):
+            _fields_ = _fuse_operations_fields
+
+        self.ENOTSUP = ENOTSUP
+        self.c_dev_t = c_dev_t
+        self.c_fsblkcnt_t = c_fsblkcnt_t
+        self.c_fsfilcnt_t = c_fsfilcnt_t
+        self.c_gid_t = c_gid_t
+        self.c_mode_t = c_mode_t
+        self.c_off_t = c_off_t
+        self.c_pid_t = c_pid_t
+        self.c_uid_t = c_uid_t
+        self.setxattr_t = setxattr_t
+        self.getxattr_t = getxattr_t
+        self.c_timespec = c_timespec
+        self.c_utimbuf = c_utimbuf
+        self.c_stat = c_stat
+        self.c_statvfs = c_statvfs
+        self.c_flock_t = c_flock_t
+        self.fuse_file_info = fuse_file_info
+        self.fuse_context = fuse_context
+        self.fuse_buf_flags = fuse_buf_flags
+        self.fuse_buf = fuse_buf
+        self.fuse_bufvec = fuse_bufvec
+        self.fuse_fi_p = fuse_fi_p
+        self.c_stat_p = c_stat_p
+        self.c_statvfs_p = c_statvfs_p
+        self.c_utimbuf_p = c_utimbuf_p
+        self.fuse_bufvec_p = fuse_bufvec_p
+        self.fuse_bufvec_pp = fuse_bufvec_pp
+        self.fuse_conn_info = fuse_conn_info
+        self.CAPABILITY_BITS = CAPABILITY_BITS
+        self._HAS_WANT_EXT = _HAS_WANT_EXT
+        self._LIBFUSECAPABILITY_BITS = _LIBFUSECAPABILITY_BITS
+        self._LIBFUSE2CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
+        self._LIBFUSE3CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
+        self._LIBREFUSECAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
+        self._MACFUSECAPABILITY_BITS = _MACFUSECAPABILITY_BITS
+        self._WINFSPCAPABILITY_BITS = _WINFSPCAPABILITY_BITS
+        self.fuse_config = fuse_config
+        self.FuseConfigPointer = FuseConfigPointer
+        self.FuseConnInfoPointer = FuseConnInfoPointer
+        self.fuse_pollhandle_p = fuse_pollhandle_p
+        self.fuse_operations = fuse_operations
+        self._set_feature_flag = _fuse_set_feature_flag
+        self._unset_feature_flag = _fuse_unset_feature_flag
+        self._get_feature_flag = _fuse_get_feature_flag
+        if _system == 'Windows' or _system.startswith('CYGWIN'):
+            self.c_win_long = c_win_long
+            self.c_win_ulong = c_win_ulong
+        if fuse_version_major == 3:
+            self.fuse_fill_dir_flags = fuse_fill_dir_flags
+            self.fuse_fill_dir_t = fuse_fill_dir_t
+            self.fuse_readdir_flags = fuse_readdir_flags
 
 
-# libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
-# bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
-# the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
-# 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
-# in a session, e.g., in a test.
-# Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
-# This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
-# I encountered some weird error on macos-14 without this!
-# > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
-_fuse_set_feature_flag = None
-_fuse_unset_feature_flag = None
-_fuse_get_feature_flag = None
-if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
-    _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
-    _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
-    _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
+_context = _FuseContext.from_runtime()
+_types = _FuseTypes(_context)
+
+_libfuse = cast("ctypes.CDLL", _context.libfuse)
+_libfuse_path = _libfuse._name
+_system = _context.system
+_machine = _context.machine
+fuse_version_major, fuse_version_minor, _fuse_version_hotfix = _context.fuse_version
+_FUSE_VERSION = _context.fuse_version
+_librefuse = _context.librefuse
+
+ENOTSUP = _types.ENOTSUP
+c_dev_t = _types.c_dev_t
+c_fsblkcnt_t = _types.c_fsblkcnt_t
+c_fsfilcnt_t = _types.c_fsfilcnt_t
+c_gid_t = _types.c_gid_t
+c_mode_t = _types.c_mode_t
+c_off_t = _types.c_off_t
+c_pid_t = _types.c_pid_t
+c_uid_t = _types.c_uid_t
+setxattr_t = _types.setxattr_t
+getxattr_t = _types.getxattr_t
+c_timespec = _types.c_timespec
+c_utimbuf = _types.c_utimbuf
+c_stat = _types.c_stat
+c_statvfs = _types.c_statvfs
+c_flock_t = _types.c_flock_t
+if TYPE_CHECKING:
+    fuse_file_info = Any
+    fuse_context = Any
+else:
+    fuse_file_info = _types.fuse_file_info
+    fuse_context = _types.fuse_context
+fuse_buf_flags = _types.fuse_buf_flags
+fuse_buf = _types.fuse_buf
+fuse_bufvec = _types.fuse_bufvec
+if TYPE_CHECKING:
+    fuse_fi_p = Any
+    c_stat_p = Any
+    c_statvfs_p = Any
+    c_utimbuf_p = Any
+    fuse_bufvec_p = Any
+    fuse_bufvec_pp = Any
+else:
+    fuse_fi_p = _types.fuse_fi_p
+    c_stat_p = _types.c_stat_p
+    c_statvfs_p = _types.c_statvfs_p
+    c_utimbuf_p = _types.c_utimbuf_p
+    fuse_bufvec_p = _types.fuse_bufvec_p
+    fuse_bufvec_pp = _types.fuse_bufvec_pp
+if TYPE_CHECKING:
+    fuse_conn_info = Any
+    fuse_config = Any
+else:
+    fuse_conn_info = _types.fuse_conn_info
+    fuse_config = _types.fuse_config
+if TYPE_CHECKING:
+    FuseConfigPointer = Any
+    FuseConnInfoPointer = Any
+else:
+    FuseConfigPointer = _types.FuseConfigPointer
+    FuseConnInfoPointer = _types.FuseConnInfoPointer
+fuse_pollhandle_p = _types.fuse_pollhandle_p
+fuse_operations = _types.fuse_operations
+CAPABILITY_BITS = _types.CAPABILITY_BITS
+_HAS_WANT_EXT = _types._HAS_WANT_EXT
+_LIBFUSECAPABILITY_BITS = _types._LIBFUSECAPABILITY_BITS
+_LIBFUSE2CAPABILITY_BITS = _types._LIBFUSE2CAPABILITY_BITS
+_LIBFUSE3CAPABILITY_BITS = _types._LIBFUSE3CAPABILITY_BITS
+_LIBREFUSECAPABILITY_BITS = _types._LIBREFUSECAPABILITY_BITS
+_MACFUSECAPABILITY_BITS = _types._MACFUSECAPABILITY_BITS
+_WINFSPCAPABILITY_BITS = _types._WINFSPCAPABILITY_BITS
+_fuse_set_feature_flag = _types._set_feature_flag
+_fuse_unset_feature_flag = _types._unset_feature_flag
+_fuse_get_feature_flag = _types._get_feature_flag
 if _fuse_set_feature_flag is not None:
     _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
     _fuse_set_feature_flag.restype = ctypes.c_bool
@@ -1709,6 +1888,15 @@ if _fuse_unset_feature_flag is not None:
 if _fuse_get_feature_flag is not None:
     _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
     _fuse_get_feature_flag.restype = ctypes.c_bool
+if _system == 'Windows' or _system.startswith('CYGWIN'):
+    c_win_long = _types.c_win_long
+    c_win_ulong = _types.c_win_ulong
+if fuse_version_major == 3:
+    fuse_fill_dir_flags = _types.fuse_fill_dir_flags
+    fuse_fill_dir_t = _types.fuse_fill_dir_t
+    fuse_readdir_flags = _types.fuse_readdir_flags
+
+_libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
 
 
 # Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
