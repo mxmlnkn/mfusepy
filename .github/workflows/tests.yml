@@ -232,7 +232,7 @@ jobs:
           fusermount -u mounted-tar
 
       - name: Test Compatibility (ninfs)
-        if: ${{ startsWith( matrix.os, 'ubuntu' ) && matrix.python-version != '3.7' }}
+        if: startsWith( matrix.os, 'ubuntu' )
         run: |
           # https://github.com/ihaveamac/ninfs/commit/9554caa5ecb325a9893bce829fb17efc73d3622c
           # ^ Increases requirement from 3.8 to 3.12 seemingly for no reason at all. There is no commit after it...
