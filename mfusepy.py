@@ -263,11 +263,31 @@ def posix_acl_to_xattr(entries: Iterable[PosixACLEntry]) -> bytes:
     # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
     # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
     ordered = sorted(entries, key=lambda entry: entry.tag.value)
-    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(
-        # In case qualifier is -1, which the kernel allows in its interface, bit mask to 32-bit to avoid struct.error.
-        _POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, entry.permissions, entry.qualifier & 0xFFFF_FFFF)
-        for entry in ordered
-    )
+
+    packed = []
+    for entry in ordered:
+        permissions = int(entry.permissions)
+        # https://github.com/torvalds/linux/blob/8d3ae59288f1e7d58d76558a6ee96d533bc5019f/fs/posix_acl.c#L250
+        # As usual, limited to three permission bits: ACL_READ|ACL_WRITE|ACL_EXECUTE
+        if not 0 <= permissions <= 7:
+            raise ValueError(f"POSIX ACL entry for {entry.tag.name} has invalid permission bits: {permissions:#x}!")
+
+        if entry.tag in (ACLTag.USER, ACLTag.GROUP):
+            if not 0 <= entry.qualifier < ACL_UNDEFINED_ID:
+                raise ValueError(
+                    f"POSIX ACL entry for {entry.tag.name} requires a defined uid/gid, got {entry.qualifier}!"
+                )
+            qualifier = entry.qualifier
+        else:
+            # According to man acl:
+            # > Entries with tag types other than ACL_USER or ACL_GROUP have no defined qualifiers.
+            if entry.qualifier not in (-1, ACL_UNDEFINED_ID):
+                raise ValueError(f"POSIX ACL entry for {entry.tag.name} must not have qualifier {entry.qualifier}!")
+            qualifier = ACL_UNDEFINED_ID
+
+        packed.append(_POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, permissions, qualifier))
+
+    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(packed)
 
 
 def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
@@ -285,12 +305,22 @@ def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
     if version != POSIX_ACL_XATTR_VERSION:
         raise ValueError(f"Expected POSIX ACL version {POSIX_ACL_XATTR_VERSION} but got: {version}!")
 
-    return [
-        PosixACLEntry(ACLTag(tag), ACLPermission(permissions), qualifier)
-        for tag, permissions, qualifier in (
-            _POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset) for offset in range(header_size, len(value), entry_size)
-        )
-    ]
+    entries = []
+    for raw_tag, permissions, qualifier in (
+        _POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset) for offset in range(header_size, len(value), entry_size)
+    ):
+        if not 0 <= permissions <= 7:
+            raise ValueError(f"POSIX ACL entry with tag {raw_tag:#x} has invalid permission bits: {permissions:#x}!")
+
+        try:
+            tag = ACLTag(raw_tag)
+        except ValueError as exception:
+            raise ValueError(f"Unknown POSIX ACL tag: {raw_tag:#x}!") from exception
+        if tag in (ACLTag.USER, ACLTag.GROUP) and qualifier == ACL_UNDEFINED_ID:
+            raise ValueError(f"POSIX ACL entry for {tag.name} requires a defined uid/gid but got ACL_UNDEFINED_ID!")
+
+        entries.append(PosixACLEntry(tag, ACLPermission(permissions), qualifier))
+    return entries
 
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git

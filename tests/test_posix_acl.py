@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import mfusepy  # noqa: E402
 from mfusepy import (  # noqa: E402
+    ACL_UNDEFINED_ID,
     XATTR_NAME_POSIX_ACL_ACCESS,
     ACLPermission,
     ACLTag,
@@ -103,6 +104,62 @@ def test_posix_acl_from_xattr_errors():
         posix_acl_from_xattr(b'\x02\0\0')
     with pytest.raises(ValueError, match='truncated'):
         posix_acl_from_xattr(posix_acl_to_xattr([]) + b'\0')
+
+
+def _pack_raw_entries(*entries: tuple[int, int, int]) -> bytes:
+    'Pack raw (tag, permissions, qualifier) triples without validation.'
+    return struct.pack('<I', mfusepy.POSIX_ACL_XATTR_VERSION) + b''.join(
+        struct.pack('<HHI', tag, permissions, qualifier) for tag, permissions, qualifier in entries
+    )
+
+
+@linux_only
+@pytest.mark.parametrize('tag', [ACLTag.USER, ACLTag.GROUP])
+@pytest.mark.parametrize('qualifier', [-1, ACL_UNDEFINED_ID, 2**32, -2])
+def test_posix_acl_to_xattr_rejects_undefined_named_qualifiers(tag, qualifier):
+    with pytest.raises(ValueError, match='defined uid/gid'):
+        posix_acl_to_xattr([PosixACLEntry(tag, ACLPermission.READ, qualifier)])
+
+
+@linux_only
+@pytest.mark.parametrize('tag', [ACLTag.USER_OBJ, ACLTag.GROUP_OBJ, ACLTag.MASK, ACLTag.OTHER])
+def test_posix_acl_to_xattr_rejects_qualifiers_for_other_tags(tag):
+    with pytest.raises(ValueError, match='must not have qualifier'):
+        posix_acl_to_xattr([PosixACLEntry(tag, ACLPermission.READ, 0)])
+
+
+@linux_only
+def test_posix_acl_to_xattr_normalizes_minus_one_qualifier():
+    assert posix_acl_to_xattr([PosixACLEntry(ACLTag.OTHER, ACLPermission.READ, -1)]) == posix_acl_to_xattr(
+        [PosixACLEntry(ACLTag.OTHER, ACLPermission.READ)]
+    )
+
+
+@linux_only
+@pytest.mark.parametrize('permissions', [0x8, 0x10, 0xFF])
+def test_posix_acl_to_xattr_rejects_invalid_permissions(permissions):
+    with pytest.raises(ValueError, match='invalid permission bits'):
+        posix_acl_to_xattr([PosixACLEntry(ACLTag.OTHER, permissions)])
+
+
+@linux_only
+@pytest.mark.parametrize('permissions', [0x8, 0x10, 0xFFFF])
+def test_posix_acl_from_xattr_rejects_invalid_permissions(permissions):
+    with pytest.raises(ValueError, match='invalid permission bits'):
+        posix_acl_from_xattr(_pack_raw_entries((ACLTag.OTHER.value, permissions, ACL_UNDEFINED_ID)))
+
+
+@linux_only
+@pytest.mark.parametrize('tag', [ACLTag.USER, ACLTag.GROUP])
+def test_posix_acl_from_xattr_rejects_undefined_named_ids(tag):
+    with pytest.raises(ValueError, match='defined uid/gid'):
+        posix_acl_from_xattr(_pack_raw_entries((tag.value, ACLPermission.READ, ACL_UNDEFINED_ID)))
+
+
+@linux_only
+def test_posix_acl_from_xattr_rejects_unknown_tags():
+    with pytest.raises(ValueError, match='Unknown POSIX ACL tag: 0x3'):
+        posix_acl_from_xattr(_pack_raw_entries((0x3, ACLPermission.READ, ACL_UNDEFINED_ID)))
 
 
 @linux_only
