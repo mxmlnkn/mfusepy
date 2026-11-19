@@ -180,7 +180,24 @@ def get_fuse_version(libfuse):
     raise AttributeError(f"Version {version} of found library {_libfuse._name} cannot be parsed!")
 
 
+def _get_fuse_version_hotfix(libfuse):
+    'Parse the hotfix version from fuse_pkgversion(), which was added in libfuse 3.17.'
+    package_version = getattr(libfuse, 'fuse_pkgversion', None)
+    if package_version is None:
+        return 0
+    package_version.restype = ctypes.c_char_p
+    version = package_version()
+    if not version:
+        return 0
+    parts = version.split(b'.')
+    if len(parts) < 3 or not all(part.isdigit() for part in parts[:3]):
+        return 0
+    return int(parts[2])
+
+
 fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
+_fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
+_FUSE_VERSION = (fuse_version_major, fuse_version_minor, _fuse_version_hotfix)
 if fuse_version_major == 2 and fuse_version_minor < 6:
     raise AttributeError(
         f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
@@ -1164,7 +1181,7 @@ if fuse_version_major == 2 and not _librefuse:
     _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (32 - len(_fuse_conn_info_fields)))]
 elif fuse_version_major == 3 or _librefuse:
     _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
-    if fuse_version_minor < 17 or _librefuse:
+    if _FUSE_VERSION < (3, 17, 1) or _librefuse:
         _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 22)]
     else:
         _fuse_conn_info_fields += [
@@ -1436,7 +1453,7 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
             self.want_ext &= ~flag
 
 
-if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
+if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
     assert ctypes.sizeof(fuse_conn_info) == 128
 
 # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
@@ -1451,7 +1468,7 @@ if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
 _fuse_set_feature_flag = None
 _fuse_unset_feature_flag = None
 _fuse_get_feature_flag = None
-if (fuse_version_major, fuse_version_minor) >= (3, 17) and not _librefuse:
+if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
     _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
     _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
     _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
