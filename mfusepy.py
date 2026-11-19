@@ -1826,6 +1826,10 @@ elif fuse_version_major == 3:
         _fuse_operations_fields += [
             ('statx', c_void_p),  # Not supported, struct statx is not defined here.
         ]
+    if _FUSE_VERSION >= (3, 19, 0) and not _librefuse:
+        _fuse_operations_fields += [
+            ('syncfs', CFUNCTYPE(c_int, c_char_p)),
+        ]
     # fmt: on
 
 
@@ -2287,6 +2291,9 @@ class FUSE:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.fsync(None if path is None else path.decode(self.encoding, self.errors), datasync, fh)
 
+    def syncfs(self, path: bytes) -> int:
+        return self.operations.syncfs(path.decode(self.encoding, self.errors))
+
     def setxattr(self, path: bytes, name: bytes, value: c_byte_p, size: int, options: int, *args) -> int:
         return self.operations.setxattr(
             path.decode(self.encoding, self.errors),
@@ -2680,6 +2687,10 @@ class Operations:
 
     @_nullable_dummy_function
     def fsyncdir(self, path: str, datasync: int, fh: int) -> int:
+        return 0
+
+    @_nullable_dummy_function
+    def syncfs(self, path: str) -> int:
         return 0
 
     # Either fgetattr or getattr must be non-null or else libfuse 2.6 will segfault
