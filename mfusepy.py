@@ -1251,9 +1251,14 @@ elif fuse_version_major == 3 or _librefuse:
             ('padding', ctypes.c_uint32, 31),
             ('capable_ext', ctypes.c_uint64),
             ('want_ext', ctypes.c_uint64),
-            ('request_timeout', ctypes.c_uint16),
-            ('reserved', ctypes.c_uint16 * 31),
         ]
+        if _FUSE_VERSION >= (3, 18, 0):
+            _fuse_conn_info_fields += [
+                ('request_timeout', ctypes.c_uint16),
+                ('reserved', ctypes.c_uint16 * 31),
+            ]
+        else:
+            _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
 
 
 class FuseCapability(enum.Enum):
