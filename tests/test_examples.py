@@ -53,6 +53,7 @@ except ImportError:
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
 
+import mfusepy  # noqa: E402
 from loopback import cli as cli_loopback  # noqa: E402
 from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
@@ -133,7 +134,7 @@ class RunCLI:
         self.timeout = 4
         self.mount_point = str(mount_point)
         self.args = [*arguments, self.mount_point]
-        self.thread = threading.Thread(target=cli, args=(self.args,))
+        self.thread = threading.Thread(target=cli, args=(self.args,), daemon=sys.platform == 'darwin')
 
         self._stdout = None
         self._stderr = None
@@ -145,7 +146,19 @@ class RunCLI:
         sys.stderr = io.StringIO()
 
         self.thread.start()
-        self.wait_for_mount_point()
+        try:
+            self.wait_for_mount_point()
+        except RuntimeError as exception:
+            sys.stdout = self._stdout
+            sys.stderr = self._stderr
+            self.thread.join(self.timeout)
+            if sys.platform == 'darwin':
+                library = getattr(mfusepy._libfuse, '_name', '<unknown>')
+                pytest.skip(
+                    f"FUSE mount is not available (library {library}, "
+                    f"FUSE {mfusepy.fuse_version_major}.{mfusepy.fuse_version_minor}): {exception}"
+                )
+            raise
 
         return self
 
