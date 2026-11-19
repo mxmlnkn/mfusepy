@@ -62,6 +62,7 @@ def struct_specs() -> list[StructSpec]:
 CHECKS = build_checks(mfusepy, struct_specs())
 PY_INFOS = python_layout(CHECKS)
 C_CHECKER = c_probe(('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'fuse.h'), CHECKS)
+print(C_CHECKER)
 
 
 def build_cflags() -> list[str]:
@@ -112,13 +113,14 @@ def c_output():
 
     print(f"FUSE version: {mfusepy.fuse_version_major}.{mfusepy.fuse_version_minor}")
     try:
-        return compile_and_run(C_CHECKER, compiler=compiler, cflags=build_cflags(), verbose=False)
+        return compile_and_run(C_CHECKER, compiler=compiler, cflags=build_cflags(), verbose=True)
     except subprocess.CalledProcessError as error:
         raise AssertionError(f"Could not compile C program to verify sizes:\n{error.stderr}") from error
 
 
 def test_struct_layout(c_output):
     c_infos = parse_c_output(c_output)
+    pprint.pprint(c_infos)
 
     fail = False
     for key, python_value in PY_INFOS.items():

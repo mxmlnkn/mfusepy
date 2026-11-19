@@ -101,16 +101,17 @@ See some examples of how you can use mfusepy:
 
 mfusepy requires FUSE 2.6 (or later) and runs on:
 
-- Linux (i386, x86_64, PPC, arm64, MIPS)
+- Linux (i386, x86_64, PPC, arm64, MIPS, riscv64)
 - macOS (Apple Silicon, Intel)
 - FreeBSD (i386, amd64)
 - NetBSD (amd64)
 - OpenBSD (amd64)
+- OmniOS (amd64)
 
 While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7.org/linux/man-pages/man4/fuse.4.html), several user space libraries exist for easy access.
 `libfuse` acts as the reference implementation.
 
- - [libfuse](https://github.com/libfuse/libfuse) (Linux, FreeBSD) (fuse.h [2](https://github.com/libfuse/libfuse/blob/fuse-2_9_bugfix/include/fuse.h) [3](https://github.com/libfuse/libfuse/blob/master/include/fuse.h))
+ - [libfuse](https://github.com/libfuse/libfuse) (Linux, FreeBSD, OmniOS) (fuse.h [2](https://github.com/libfuse/libfuse/blob/fuse-2_9_bugfix/include/fuse.h) [3](https://github.com/libfuse/libfuse/blob/master/include/fuse.h))
  - [libfuse](https://github.com/openbsd/src/tree/master/lib/libfuse) (OpenBSD) (fuse.h [2](https://github.com/openbsd/src/blob/master/lib/libfuse/fuse.h))
  - [librefuse](https://github.com/NetBSD/src/tree/netbsd-11/lib/librefuse) (NetBSD) through [PUFFS](https://en.wikipedia.org/wiki/PUFFS_(NetBSD)) (fuse.h [3](https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h))
  - [macFUSE](https://github.com/macfuse/macfuse) (macOS), previously called [osxfuse](https://osxfuse.github.io/), (fuse.h [2](https://github.com/osxfuse/fuse/blob/master/include/fuse.h) [3](https://github.com/macfuse/library/blob/6a8b90a0ab2685af918d5788cfdb5186f07351ce/include/fuse.h))
