@@ -4,12 +4,15 @@ import platform
 import pprint
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-import mfusepy
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import mfusepy  # noqa: E402
 
 pytestmark = pytest.mark.order(0)
 
@@ -157,6 +160,38 @@ for struct_name, member_names in STRUCT_NAMES.items():
         c_name = name.replace('timespec', 'time') if name.endswith('timespec') else name
         C_CHECKER += f'    printf("{struct_name}.{name} offset:%zu\\n", offsetof(struct {struct_name}, {c_name}));\n'
 
+
+def first_set_bit(struct_type, field_name):
+    value = struct_type()
+    setattr(value, field_name, 1)
+    raw = ctypes.string_at(ctypes.byref(value), ctypes.sizeof(value))
+    for byte_index, byte in enumerate(raw):
+        if byte:
+            return byte_index * 8 + (byte & -byte).bit_length() - 1
+    raise AssertionError(f"{struct_type.__name__}.{field_name} did not set any bit")
+
+
+BITFIELD_NAMES = [
+    field[0]
+    for field in mfusepy.fuse_file_info._fields_
+    if len(field) == 3 and not field[0].startswith(('padding', '__padd'))
+]
+PY_BITFIELD_INFOS = {}
+for field_name in BITFIELD_NAMES:
+    PY_BITFIELD_INFOS[field_name] = first_set_bit(mfusepy.fuse_file_info, field_name)
+    C_CHECKER += f'''
+    {{
+        struct fuse_file_info value = {{0}};
+        value.{field_name} = 1;
+        const unsigned char * bytes = (const unsigned char *) &value;
+        size_t byte_index = 0;
+        while (bytes[byte_index] == 0) ++byte_index;
+        unsigned int bit_index = 0;
+        while ((bytes[byte_index] & (1u << bit_index)) == 0) ++bit_index;
+        printf("fuse_file_info.{field_name} bit:%zu\\n", byte_index * 8 + bit_index);
+    }}
+'''
+
 C_CHECKER += """
     return 0;
 }
@@ -248,10 +283,15 @@ def c_run(name: str, source: str) -> str:
         return output
 
 
-@pytest.mark.skipif(os.name == 'nt', reason="C compiler check not implemented for Windows")
-def test_struct_layout():
-    output = c_run("verify_structs", C_CHECKER)
-    c_infos = {line.split(':', 1)[0]: int(line.split(':', 1)[1]) for line in output.strip().split('\n')}
+@pytest.fixture(scope='module')
+def c_output():
+    if os.name == 'nt':
+        pytest.skip("C compiler check not implemented for Windows")
+    return c_run("verify_structs", C_CHECKER)
+
+
+def test_struct_layout(c_output):
+    c_infos = {line.split(':', 1)[0]: int(line.split(':', 1)[1]) for line in c_output.strip().split('\n')}
     pprint.pprint(c_infos)
 
     fail = False
@@ -272,3 +312,17 @@ def test_struct_layout():
                 fail = True
 
     assert not fail, "Struct layout mismatch, see stdout output for details!"
+
+
+@pytest.mark.skipif(sys.byteorder != 'little', reason="Bit numbering in the C test assumes little endian.")
+def test_file_info_bitfields(c_output):
+    c_infos = {line.split(':', 1)[0]: int(line.split(':', 1)[1]) for line in c_output.strip().split('\n')}
+    fail = False
+    for field_name, python_bit in PY_BITFIELD_INFOS.items():
+        key = f"fuse_file_info.{field_name} bit"
+        if c_infos[key] == python_bit:
+            print(f"OK: {key} = {c_infos[key]}")
+        else:
+            print(f"Mismatch for {key}: C={c_infos[key]}, Python={python_bit}")
+            fail = True
+    assert not fail, "Bitfield layout mismatch, see stdout output for details!"
