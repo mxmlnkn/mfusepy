@@ -82,7 +82,7 @@ jobs:
           ! 'egrep' ': E[0-9]{4}: ' pylint.log
 
       - name: Lint With Pytype
-        run: pytype -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
+        run: pytype -j auto -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Mypy
         run: mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
