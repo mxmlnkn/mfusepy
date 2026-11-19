@@ -66,7 +66,7 @@ class PosixACL(fuse.Operations):
         # The only thing needed to make the kernel enforce POSIX ACLs: request the capability.
         # 'want' is the field for libfuse 2 and libfuse 3 converts it into 'want_ext'.
         if conn_info.is_capable(fuse.FuseCapability.POSIX_ACL):
-            conn_info.enable(fuse.FuseCapability.POSIX_ACL)
+            conn_info.enable_capability(fuse.FuseCapability.POSIX_ACL)
 
     @fuse.overrides(fuse.Operations)
     def getattr(self, path, fh=None):

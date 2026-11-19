@@ -1162,7 +1162,7 @@ elif fuse_version_major == 3 or _librefuse:
 
 class FuseCapability(enum.Enum):
     '''
-    A FUSE feature that a file system can request via 'fuse_conn_info.enable' inside 'init_with_config'.
+    A FUSE feature that a file system can request via 'fuse_conn_info.enable_capability' inside 'init_with_config'.
 
     This is a cross-platform enumeration over the capabilities of the supported FUSE implementations.
     '''
@@ -1373,7 +1373,7 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
             return bool(_fuse_get_feature_flag(ctypes.pointer(self), flag))
         return (self._capable_bits() & flag) == flag
 
-    def enable(self, capability: FuseCapability) -> bool:
+    def enable_capability(self, capability: FuseCapability) -> bool:
         '''
         Request the given capability to be enabled, mirroring fuse_set_feature_flag().
 
@@ -1401,7 +1401,7 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
             self.want_ext |= flag
         return True
 
-    def disable(self, capability: FuseCapability) -> None:
+    def disable_capability(self, capability: FuseCapability) -> None:
         '''Request the given capability to be disabled, mirroring fuse_unset_feature_flag().'''
         flag = CAPABILITY_BITS.get(capability)
         if flag is None:
@@ -1412,7 +1412,7 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
             _fuse_unset_feature_flag(pointer, flag)
             return
 
-        # See enable() for why the members are written directly in the fallback.
+        # See enable_capability() for why the members are written directly in the fallback.
         self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
         if _HAS_WANT_EXT:
             self.want_ext &= ~flag
@@ -2387,7 +2387,7 @@ class FUSE:
             conn_info = None
             if conn is not None:
                 conn_info = conn.contents
-                # Mark the real, session-embedded struct so that fuse_conn_info.enable can call
+                # Mark the real, session-embedded struct so that fuse_conn_info.enable_capability can call
                 # libfuse's fuse_set_feature_flag, which needs the enclosing session.
                 conn_info._fuse_session_pointer = conn
             self.operations.init_with_config(conn_info, None if config is None else config.contents)
@@ -2605,7 +2605,7 @@ class Operations:
         Argument config_3 should be ignored when a FUSE 2 library is loaded.
 
         Request optional kernel features that this file system makes use of with
-        'conn_info.enable(FuseCapability.WRITEBACK_CACHE)'. It returns False if the loaded
+        'conn_info.enable_capability(FuseCapability.WRITEBACK_CACHE)'. It returns False if the loaded
         implementation does not define the capability or the kernel does not support it.
         '''
 

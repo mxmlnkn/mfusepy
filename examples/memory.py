@@ -86,8 +86,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     def init_with_config(self, conn_info, config_3) -> None:
         # Request and then release asynchronous reads, mirroring the libfuse hello example, to
         # demonstrate 'enable'/'disable'. ASYNC_READ is enabled by default, so nothing changes.
-        conn_info.enable(fuse.FuseCapability.ASYNC_READ)
-        conn_info.disable(fuse.FuseCapability.ASYNC_READ)
+        conn_info.enable_capability(fuse.FuseCapability.ASYNC_READ)
+        conn_info.disable_capability(fuse.FuseCapability.ASYNC_READ)
 
     @fuse.overrides(fuse.Operations)
     def listxattr(self, path: str) -> Iterable[str]:

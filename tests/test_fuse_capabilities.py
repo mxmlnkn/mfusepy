@@ -14,6 +14,10 @@ import mfusepy  # noqa: E402
 from mfusepy import CAPABILITY_BITS, FuseCapability, fuse_conn_info  # noqa: E402
 
 
+def test_enable_is_callable():
+    assert callable(fuse_conn_info().enable_capability)
+
+
 def get_declared_capabilities() -> list[tuple[FuseCapability, int]]:
     return sorted(CAPABILITY_BITS.items(), key=lambda item: item[1])
 
@@ -48,9 +52,9 @@ def test_enable_undeclared_capability():
 
     assert not connection.is_capable(undeclared)
     assert not is_wanted(connection, undeclared)
-    assert not connection.enable(undeclared)
+    assert not connection.enable_capability(undeclared)
     assert connection.want == 0
-    connection.disable(undeclared)
+    connection.disable_capability(undeclared)
     assert connection.want == 0
 
 
@@ -60,7 +64,7 @@ def test_enable_requires_capable():
 
     # Nothing is capable by default and enabling must not change 'want' then.
     assert not connection.is_capable(capability)
-    assert not connection.enable(capability)
+    assert not connection.enable_capability(capability)
     assert connection.want == 0
 
     # Advertising one capability must not make the others capable.
@@ -68,16 +72,16 @@ def test_enable_requires_capable():
     assert connection.is_capable(capability)
     other, _ = next((c, f) for c, f in get_declared_capabilities() if f != flag)
     assert not connection.is_capable(other)
-    assert not connection.enable(other)
+    assert not connection.enable_capability(other)
     assert not is_wanted(connection, other)
 
-    assert connection.enable(capability)
+    assert connection.enable_capability(capability)
     assert is_wanted(connection, capability)
     assert connection.want & (flag & 0xFFFF_FFFF)
     if mfusepy._HAS_WANT_EXT:
         assert connection.want_ext & flag
 
-    connection.disable(capability)
+    connection.disable_capability(capability)
     assert not is_wanted(connection, capability)
     if mfusepy._HAS_WANT_EXT:
         assert not connection.want_ext & flag
@@ -92,10 +96,10 @@ def test_enable_high_bit_capability():
     connection = fuse_conn_info()
     _set_capable(connection, flag)
 
-    assert connection.enable(capability)
+    assert connection.enable_capability(capability)
     # Flags beyond bit 31 must only be set in 'want_ext' instead of being wrapped into 'want'.
     assert connection.want == 0
     assert connection.want_ext == flag
 
-    connection.disable(capability)
+    connection.disable_capability(capability)
     assert connection.want_ext == 0
