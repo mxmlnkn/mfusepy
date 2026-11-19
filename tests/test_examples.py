@@ -417,6 +417,61 @@ def test_readdir_with_offset(cli, tmp_path):
         assert len(set(filter_platform_files(os.listdir(mount_point)))) == 1000
 
 
+class LockOperations(mfusepy.Operations):
+    def __init__(self):
+        self.locks = []
+        self.posix_locks_enabled = False
+
+    def init_with_config(self, conn_info, config_3):
+        if conn_info:
+            self.posix_locks_enabled = conn_info.enable_capability(mfusepy.FuseCapability.POSIX_LOCKS)
+
+    def getattr(self, path, fh=None):
+        if path == '/':
+            return {'st_mode': stat.S_IFDIR | 0o755}
+        if path == '/file':
+            return {'st_mode': stat.S_IFREG | 0o644, 'st_size': 0}
+        raise mfusepy.FuseOSError(errno.ENOENT)
+
+    def readdir(self, path, fh):
+        return ['.', '..', 'file']
+
+    def open(self, path, flags):
+        return 0
+
+    def lock(self, path, fh, cmd, lock):
+        self.locks.append(
+            (path, fh, cmd, lock.contents.l_type, lock.contents.l_whence, lock.contents.l_start, lock.contents.l_len)
+        )
+        return 0
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason="lockf semantics differ on the BSDs and macOS")
+def test_lock_callback_receives_flock(tmp_path):
+    operations = []
+
+    def cli(arguments):
+        instance = LockOperations()
+        operations.append(instance)
+        mfusepy.FUSE(instance, arguments[0], foreground=True)
+
+    with RunCLI(cli, tmp_path, []), open(tmp_path / 'file', 'r+b') as file:
+        fcntl.lockf(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.lockf(file, fcntl.LOCK_UN)
+
+    assert operations
+    assert operations[0].posix_locks_enabled
+    assert operations[0].locks
+
+    path, _fh, cmd, l_type, l_whence, l_start, l_len = operations[0].locks[0]
+    assert path == '/file'
+    assert cmd in (fcntl.F_SETLK, fcntl.F_SETLKW)
+    assert l_type == fcntl.F_WRLCK
+    assert l_whence == os.SEEK_SET
+    assert l_start == 0
+    assert l_len == 0
+
+
 if __name__ == '__main__':
     with tempfile.TemporaryDirectory() as directory:
         # Directory argument must not be something in the current directory,

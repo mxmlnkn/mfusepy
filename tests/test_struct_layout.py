@@ -93,6 +93,25 @@ if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) >= (2, 9) and not mf
         STRUCT_NAMES['fuse_buf'] += ['mem_size']
     STRUCT_NAMES['fuse_bufvec'] = ['count', 'idx', 'off', 'buf']
 
+if mfusepy._FUSE_VERSION >= (3, 19, 0) and not mfusepy._librefuse:
+    STRUCT_NAMES['fuse_operations'] += ['syncfs']
+
+_system = platform.system()
+if _system == 'Linux':
+    if mfusepy._machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4:
+        STRUCT_NAMES['flock'] = ['l_type', 'l_whence', 'l_start', 'l_len', 'l_sysid', 'l_pid', 'l_pad']
+    else:
+        STRUCT_NAMES['flock'] = ['l_type', 'l_whence', 'l_start', 'l_len', 'l_pid']
+elif _system == 'FreeBSD':
+    STRUCT_NAMES['flock'] = ['l_start', 'l_len', 'l_pid', 'l_type', 'l_whence', 'l_sysid']
+elif _system in ('NetBSD', 'OpenBSD', 'Darwin'):
+    STRUCT_NAMES['flock'] = ['l_start', 'l_len', 'l_pid', 'l_type', 'l_whence']
+elif _system == 'SunOS':
+    STRUCT_NAMES['flock'] = ['l_type', 'l_whence', 'l_start', 'l_len', 'l_sysid', 'l_pid', 'l_pad']
+else:
+    # WinFsp exposes struct fuse_flock with the generic Linux field order, and Cygwin uses the Linux/BSD layout.
+    STRUCT_NAMES['flock'] = ['l_type', 'l_whence', 'l_start', 'l_len', 'l_pid']
+
 if platform.system() == 'SunOS':
     STRUCT_NAMES['statvfs'] += ['f_basetype', 'f_fstr']
 
@@ -154,7 +173,11 @@ int main()
 
 PY_INFOS = {}
 for struct_name, member_names in STRUCT_NAMES.items():
-    fusepy_struct = getattr(mfusepy, struct_name, getattr(mfusepy, 'c_' + struct_name, None))
+    fusepy_struct = getattr(
+        mfusepy,
+        struct_name,
+        getattr(mfusepy, 'c_' + struct_name, getattr(mfusepy, 'c_' + struct_name + '_t', None)),
+    )
     assert fusepy_struct is not None
 
     PY_INFOS[struct_name + " size"] = ctypes.sizeof(fusepy_struct)
@@ -318,6 +341,17 @@ def test_struct_layout(c_output):
                 fail = True
 
     assert not fail, "Struct layout mismatch, see stdout output for details!"
+
+
+def test_flock_is_a_structure():
+    assert issubclass(mfusepy.c_flock_t, ctypes.Structure)
+    assert mfusepy.c_flock_t._fields_
+    assert ctypes.sizeof(mfusepy.c_flock_t) > ctypes.sizeof(ctypes.c_void_p)
+
+
+def test_lock_callback_uses_flock_pointer():
+    lock_field = next(field for field in mfusepy.fuse_operations._fields_ if field[0] == 'lock')
+    assert lock_field[1]._argtypes_[-1] == ctypes.POINTER(mfusepy.c_flock_t)
 
 
 @pytest.mark.skipif(sys.byteorder != 'little', reason="Bit numbering in the C test assumes little endian.")

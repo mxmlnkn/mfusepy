@@ -917,8 +917,11 @@ class c_statvfs(ctypes.Structure):
             ]
 
 
-if _system == 'Linux':
+if (
+    _system == 'Linux' and not (_machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4)
+) or _system.startswith('CYGWIN'):
     # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/include/uapi/asm-generic/fcntl.h#L195
+    # Cygwin's struct flock uses the generic Linux/BSD layout.
     class c_flock_t(ctypes.Structure):  # type: ignore
         _fields_ = [
             ('l_type', ctypes.c_short),
@@ -926,22 +929,74 @@ if _system == 'Linux':
             ('l_start', c_off_t),
             ('l_len', c_off_t),
             ('l_pid', c_pid_t),
-            ('l_sysid', ctypes.c_long),  # not always present
         ]
 
-elif _system == 'OpenBSD':
-    # https://github.com/openbsd/src/blob/a465f6177bcfdb2ffa9f98c7ca0780392688fc0d/sys/sys/fcntl.h#L180
+elif _system == 'Linux':
+    # 32-bit MIPS has l_sysid and a four-long pad, see __ARCH_FLOCK_EXTRA_SYSID and __ARCH_FLOCK_PAD in
+    # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/arch/mips/include/uapi/asm/fcntl.h#L53
     class c_flock_t(ctypes.Structure):  # type: ignore
         _fields_ = [
-            ('l_start', c_off_t),  # starting offset
-            ('l_len', c_off_t),  # len = 0 means until end of file
-            ('l_pid', c_pid_t),  # lock owner
-            ('l_type', ctypes.c_short),  # lock type: read/write, etc.
-            ('l_whence', ctypes.c_short),  # type of l_start
+            ('l_type', ctypes.c_short),
+            ('l_whence', ctypes.c_short),
+            ('l_start', c_off_t),
+            ('l_len', c_off_t),
+            ('l_sysid', ctypes.c_long),
+            ('l_pid', c_pid_t),
+            ('l_pad', ctypes.c_long * 4),
+        ]
+
+elif _system == 'FreeBSD':
+    # https://github.com/freebsd/freebsd-src/blob/releng/14.3/sys/sys/fcntl.h#L305
+    class c_flock_t(ctypes.Structure):  # type: ignore
+        _fields_ = [
+            ('l_start', c_off_t),
+            ('l_len', c_off_t),
+            ('l_pid', c_pid_t),
+            ('l_type', ctypes.c_short),
+            ('l_whence', ctypes.c_short),
+            ('l_sysid', ctypes.c_int),  # Additional over OpenBSD-variants
+        ]
+
+elif _system in ('NetBSD', 'OpenBSD', 'Darwin'):
+    # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/fcntl.h#L262
+    # https://github.com/openbsd/src/blob/a465f6177bcfdb2ffa9f98c7ca0780392688fc0d/sys/sys/fcntl.h#L180
+    # https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.1.10/bsd/sys/fcntl.h#L504
+    class c_flock_t(ctypes.Structure):  # type: ignore
+        _fields_ = [
+            ('l_start', c_off_t),
+            ('l_len', c_off_t),
+            ('l_pid', c_pid_t),
+            ('l_type', ctypes.c_short),
+            ('l_whence', ctypes.c_short),
+        ]
+
+elif _system == 'SunOS':
+    # https://github.com/illumos/illumos-gate/blob/master/usr/src/uts/common/sys/fcntl.h#L247
+    class c_flock_t(ctypes.Structure):  # type: ignore
+        _fields_ = [
+            ('l_type', ctypes.c_short),
+            ('l_whence', ctypes.c_short),
+            ('l_start', c_off_t),
+            ('l_len', c_off_t),
+            ('l_sysid', ctypes.c_int),
+            ('l_pid', c_pid_t),
+            ('l_pad', ctypes.c_long * 4),
+        ]
+
+elif _system == 'Windows':
+    # WinFsp uses struct fuse_flock with this layout instead of the system struct flock, see
+    # https://github.com/winfsp/winfsp/blob/master/inc/fuse/winfsp_fuse.h#L195
+    class c_flock_t(ctypes.Structure):  # type: ignore
+        _fields_ = [
+            ('l_type', ctypes.c_int16),
+            ('l_whence', ctypes.c_int16),
+            ('l_start', c_off_t),
+            ('l_len', c_off_t),
+            ('l_pid', c_pid_t),
         ]
 
 else:
-    c_flock_t = ctypes.c_void_p  # type: ignore
+    raise NotImplementedError(f"struct flock layout for {_system} is not known!")
 
 
 # fuse_file_info as defined in fuse_common.h. Changes in FUSE 3:
