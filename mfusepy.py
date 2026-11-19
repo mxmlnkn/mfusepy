@@ -1027,9 +1027,9 @@ elif fuse_version_major == 3:
         ('direct_io', _fuse_uint32, 1),
         ('keep_cache', _fuse_uint32, 1),
     ]
-    # Introduced in 3.15.0 and its placement is an API-incompatible change / bug!
+    # Introduced in 3.14.1, not 3.14.0, and its placement is an API-incompatible change / bug!
     # https://github.com/libfuse/libfuse/issues/1029
-    if fuse_version_minor >= 15 and fuse_version_minor < 17:
+    if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1):
         _fuse_file_info_fields_bitfield += [
             ('parallel_direct_writes', _fuse_uint32, 1),
         ]
@@ -1532,10 +1532,8 @@ if fuse_version_major == 3:
     ]
 
     # Another ABI break as discussed here: https://lists.debian.org/debian-devel/2024/03/msg00278.html
-    # The break was in 3.14.1 NOT in 3.14.0, but I cannot query the bugfix version.
-    # I'd hope that all 3.14.0 installations have been replaced by updates to 3.14.1.
-    # ... they have not. My own system, Ubuntu 24.04 uses fuse 3.14.0. Check for >= 3.15.
-    if fuse_version_minor >= 15 and fuse_version_minor < 17 and not _librefuse:
+    # The break was in 3.14.1, not 3.14.0. The hotfix version from fuse_pkgversion() distinguishes them.
+    if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1) and not _librefuse:
         _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
 
     if not _librefuse:
