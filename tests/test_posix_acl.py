@@ -62,6 +62,24 @@ def _pack_in_given_order(entries) -> bytes:
 
 
 @linux_only
+def test_posix_acl_to_xattr_sorts_named_entries_by_qualifier():
+    canonical = [
+        PosixACLEntry(ACLTag.USER_OBJ, ACLPermission.READ | ACLPermission.WRITE),
+        PosixACLEntry(ACLTag.USER, ACLPermission.READ, 1000),
+        PosixACLEntry(ACLTag.USER, ACLPermission.READ | ACLPermission.WRITE, 2000),
+        PosixACLEntry(ACLTag.GROUP_OBJ, ACLPermission(0)),
+        PosixACLEntry(ACLTag.GROUP, ACLPermission.READ, 3000),
+        PosixACLEntry(ACLTag.GROUP, ACLPermission.EXECUTE, 4000),
+        PosixACLEntry(ACLTag.MASK, ACLPermission.READ | ACLPermission.WRITE),
+        PosixACLEntry(ACLTag.OTHER, ACLPermission(0)),
+    ]
+    # Reversing swaps the qualifier order of both named runs and the order of the tags.
+    shuffled = list(reversed(canonical))
+    assert posix_acl_to_xattr(shuffled) == posix_acl_to_xattr(canonical)
+    assert posix_acl_from_xattr(posix_acl_to_xattr(shuffled)) == canonical
+
+
+@linux_only
 def test_posix_acl_to_xattr_sorts_into_canonical_order(tmp_path):
     canonical = [
         PosixACLEntry(ACLTag.USER_OBJ, ACLPermission.READ | ACLPermission.WRITE),

@@ -261,8 +261,9 @@ def posix_acl_to_xattr(entries: Iterable[PosixACLEntry]) -> bytes:
     # The entries are sorted into the canonical order required by the kernel's posix_acl_valid() in
     # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L243 via a state machine.
     # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
+    # Multiple named entries with the same tag are additionally sorted by their qualifier.
     # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
-    ordered = sorted(entries, key=lambda entry: entry.tag.value)
+    ordered = sorted(entries, key=lambda entry: (entry.tag.value, entry.qualifier))
 
     packed = []
     for entry in ordered:
