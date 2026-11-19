@@ -980,9 +980,22 @@ elif fuse_version_major == 2:
         ('direct_io', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
         ('keep_cache', ctypes.c_uint, 1),  # Introduced in libfuse 2.4
         ('flush', ctypes.c_uint, 1),  # Introduced in libfuse 2.6
-        ('nonseekable', ctypes.c_uint, 1),  # Introduced in libfuse 2.8
-        ('flock_release', ctypes.c_uint, 1),  # Introduced in libfuse 2.9
-        ('padding', ctypes.c_uint, 27),
+    ]
+    if _system == 'OpenBSD':
+        # OpenBSD announces FUSE 2.6 but has nonseekable and flock_release after 27 padding bits.
+        _fuse_file_info_fields_ += [
+            ('nonseekable', ctypes.c_uint, 1),
+            ('__padd', ctypes.c_uint, 27),
+            ('flock_release', ctypes.c_uint, 1),
+        ]
+    else:
+        if fuse_version_minor >= 8:
+            _fuse_file_info_fields_ += [('nonseekable', ctypes.c_uint, 1)]  # Introduced in libfuse 2.8
+        if fuse_version_minor >= 9:
+            _fuse_file_info_fields_ += [('flock_release', ctypes.c_uint, 1)]  # Introduced in libfuse 2.9
+        flag_bits = sum(field[2] for field in _fuse_file_info_fields_ if len(field) == 3)
+        _fuse_file_info_fields_ += [('padding', ctypes.c_uint, 32 - flag_bits)]
+    _fuse_file_info_fields_ += [
         ('fh', ctypes.c_uint64),
         ('lock_owner', ctypes.c_uint64),
     ]
@@ -1139,11 +1152,16 @@ if _system == 'Darwin':
 _fuse_conn_info_fields += [
     ('capable', _fuse_uint32),  # Added in 2.8
     ('want', _fuse_uint32),  # Added in 2.8
-    ('max_background', _fuse_uint32),  # Added in 2.9
-    ('congestion_threshold', _fuse_uint32),  # Added in 2.9
 ]
+# OpenBSD advertises FUSE 2.6 but has the full layout of a newer libfuse.
+_conn_info_minor = 9 if _system == 'OpenBSD' else fuse_version_minor
+if _librefuse or fuse_version_major == 3 or (fuse_version_major == 2 and _conn_info_minor >= 9):
+    _fuse_conn_info_fields += [
+        ('max_background', _fuse_uint32),  # Added in 2.9
+        ('congestion_threshold', _fuse_uint32),  # Added in 2.9
+    ]
 if fuse_version_major == 2 and not _librefuse:
-    _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (22 if _system == 'Darwin' else 23))]
+    _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (32 - len(_fuse_conn_info_fields)))]
 elif fuse_version_major == 3 or _librefuse:
     _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
     if fuse_version_minor < 17 or _librefuse:
@@ -1335,7 +1353,7 @@ _WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
 }
 # fmt:on
 
-if _system == 'Windows':
+if _system == 'Windows' or _system.startswith('CYGWIN'):
     CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
 elif _librefuse:
     CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
@@ -1540,11 +1558,10 @@ _fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
     ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
     ('getdir', c_void_p),  # Deprecated, use readdir
 ]
-if _system == 'Windows':
-    # WinFsp has getdir before readlink (libfuse 2 has readlink before getdir), see struct fuse_operations in
-    # https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
+if _system == 'Windows' or _system.startswith('CYGWIN'):
+    # WinFsp and cygfuse have getdir before readlink (libfuse 2 has readlink before getdir), see struct
+    # fuse_operations in https://github.com/winfsp/winfsp/blob/master/inc/fuse/fuse.h
     # With the wrong order, WinFsp does not find readlink and shows all symlinks as regular files.
-    # Cygwin loads a regular libfuse, so the swap must not apply there.
     _fuse_operations_fields_readlink_getdir.reverse()
 
 # These are unchanged in FUSE 3 and therefore nice to have separate to reduce duplication.
@@ -1629,9 +1646,25 @@ if fuse_version_major == 2:
             ('flag_reserved', c_uint, 29),
             ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
         ]
-    if fuse_version_minor >= 9:
+    if fuse_version_minor >= 9 or _system.startswith('CYGWIN'):
         _fuse_operations_fields += _fuse_operations_fields_2_9
-        if _system == 'Darwin':
+        if _system.startswith('CYGWIN'):
+            _fuse_operations_fields += [
+                ('reserved00', c_void_p),
+                ('reserved01', c_void_p),
+                ('reserved02', c_void_p),
+                ('statfs_x', c_void_p),
+                ('setvolname', c_void_p),
+                ('exchange', c_void_p),
+                ('getxtimes', c_void_p),
+                ('setbkuptime', c_void_p),
+                ('setchgtime', c_void_p),
+                ('setcrtime', c_void_p),
+                ('chflags', c_void_p),
+                ('setattr_x', c_void_p),
+                ('fsetattr_x', c_void_p),
+            ]
+        elif _system == 'Darwin':
             _fuse_operations_fields += [
                 ('reserved00', c_void_p),
                 ('reserved01', c_void_p),

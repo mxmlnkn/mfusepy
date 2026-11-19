@@ -89,10 +89,15 @@ if platform.system() == 'SunOS':
 
 # libfuse < 2.8 (e.g., the illumos libfuse 2.7 used on OmniOS) has neither fuse_context.umask nor
 # the fuse_conn_info members capable, want, max_background, and congestion_threshold.
+# libfuse 2.8 has capable and want but not max_background and congestion_threshold.
 # OpenBSD announces 2.6, but still has these struct members.
-if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) < (2, 8) and platform.system() != 'OpenBSD':
-    STRUCT_NAMES['fuse_context'].remove('umask')
-    STRUCT_NAMES['fuse_conn_info'] = ['proto_major', 'proto_minor', 'max_write', 'max_readahead']
+if mfusepy.fuse_version_major == 2 and platform.system() != 'OpenBSD':
+    if mfusepy.fuse_version_minor < 8:
+        STRUCT_NAMES['fuse_context'].remove('umask')
+        STRUCT_NAMES['fuse_conn_info'] = ['proto_major', 'proto_minor', 'max_write', 'max_readahead']
+    elif mfusepy.fuse_version_minor == 8:
+        STRUCT_NAMES['fuse_conn_info'].remove('max_background')
+        STRUCT_NAMES['fuse_conn_info'].remove('congestion_threshold')
 
 if mfusepy.fuse_version_major == 3:
     STRUCT_NAMES['fuse_config'] = [
