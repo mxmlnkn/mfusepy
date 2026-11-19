@@ -122,6 +122,7 @@ C_CHECKER = r'''
 #include <stddef.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <fcntl.h>
 #include <fuse.h>
 
 #define PRINT_STAT_MEMBER_OFFSET(NAME) \
