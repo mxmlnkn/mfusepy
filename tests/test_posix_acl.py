@@ -97,8 +97,9 @@ def test_posix_acl_to_xattr_sorts_into_canonical_order(tmp_path):
     try:
         os.setxattr(path, XATTR_NAME_POSIX_ACL_ACCESS, posix_acl_to_xattr(canonical))
     except OSError as exception:
-        if exception.errno in [errno.EOPNOTSUPP, errno.ENOTSUP, errno.EPERM]:
-            pytest.skip(f"The file system for {tmp_path} does not support POSIX ACLs.")
+        # The kernel returns EINVAL for a valid ACL instead of storing it if a user namespace does not map uid 1000.
+        if exception.errno in [errno.EOPNOTSUPP, errno.ENOTSUP, errno.EPERM, errno.EINVAL]:
+            pytest.skip(f"The file system for {tmp_path} does not support POSIX ACLs or the uid/gid is unmapped.")
         raise
 
     # Red: the kernel rejects the wrong tag order, i.e., posix_acl_valid() is what requires it.
@@ -195,10 +196,11 @@ def test_posix_acl_is_understood_by_the_kernel(tmp_path):
         PosixACLEntry(ACLTag.OTHER, ACLPermission(0)),
     ]
     try:
+        # UID getuid()+1 might not exist on the test system, in which case the kernel returns EINVAL.
         os.setxattr(path, XATTR_NAME_POSIX_ACL_ACCESS, posix_acl_to_xattr(entries))
     except OSError as exception:
-        if exception.errno in [errno.EOPNOTSUPP, errno.ENOTSUP, errno.EPERM]:
-            pytest.skip(f"The file system for {tmp_path} does not support POSIX ACLs.")
+        if exception.errno in [errno.EOPNOTSUPP, errno.ENOTSUP, errno.EPERM, errno.EINVAL]:
+            pytest.skip(f"The file system for {tmp_path} does not support POSIX ACLs or the uid/gid is unmapped.")
         raise
 
     assert posix_acl_from_xattr(os.getxattr(path, XATTR_NAME_POSIX_ACL_ACCESS)) == entries
