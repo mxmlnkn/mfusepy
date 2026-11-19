@@ -249,7 +249,8 @@ jobs:
 
   Windows-Tests:
     # Experimental: WinFsp installs unattended in practice, but the runtime DLL loading has not been
-    # proven reliable on GitHub-hosted runners, so do not block.
+    # proven reliable on GitHub-hosted runners, so do not block. The separate Cygwin-Tests job covers
+    # the Cygwin-specific struct and statvfs branches.
     continue-on-error: true
     runs-on: windows-latest
     timeout-minutes: 15
@@ -300,6 +301,75 @@ jobs:
 
       - name: Runtime Tests (WinFsp)
         run: python -m pytest -q tests
+
+  Cygwin-Tests:
+    # Experimental: Cygwin's cygfuse package provides the FUSE interface on top of a Windows FUSE
+    # provider. The struct layout test is expected to expose the still-unverified Cygwin stat/statvfs
+    # branches, so do not block the release on this job yet.
+    continue-on-error: true
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Use LF line endings
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v7
+
+      - name: Compute Cygwin cache key
+        id: cygwin-cache-key
+        shell: bash
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Cygwin
+        id: cygwin-cache
+        uses: actions/cache@v6
+        with:
+          # Refresh monthly. The restore key falls back to the previous month so the first run of a
+          # month still gets a warm cache and can update packages from there. The v7 component is the
+          # cygwin/cygwin-install-action version, not actions/cache.
+          key: cygwin-x86_64-${{ runner.os }}-install-v7-packages-v1-${{ steps.cygwin-cache-key.outputs.month }}
+          restore-keys: cygwin-x86_64-${{ runner.os }}-install-v7-packages-v1-
+          path: D:\cygwin
+
+      - name: Install WinFsp
+        run: |
+          curl -L -o winfsp.msi https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi
+          powershell -NoProfile -Command "Start-Process msiexec.exe -Wait -ArgumentList @('/i','winfsp.msi','/qn','/norestart')"
+          sleep 5
+          WINFSP_DIR=$( cat /proc/registry32/HKEY_LOCAL_MACHINE/SOFTWARE/WinFsp/InstallDir | tr -d '\0' )
+          echo "${WINFSP_DIR}/bin" >> "$GITHUB_PATH"
+
+      - uses: cygwin/cygwin-install-action@v7
+        if: steps.cygwin-cache.outputs.cache-hit != 'true'
+        with:
+          packages: |
+            python3
+            python3-pip
+            gcc-core
+            make
+            pkg-config
+            cygfuse
+
+      - name: Add cached Cygwin to PATH
+        if: steps.cygwin-cache.outputs.cache-hit == 'true'
+        run: echo 'D:\cygwin\bin' >> "$GITHUB_PATH"
+
+      - name: Install and Test
+        # -o igncr avoids the CRLF line endings that GitHub writes into the generated script on Windows.
+        shell: D:\cygwin\bin\bash.EXE --noprofile --norc -e -o pipefail -o igncr {0}
+        run: |
+          # The Cygwin action starts in the Cygwin home, not the checkout.
+          workspace="${GITHUB_WORKSPACE//$'\r'/}"
+          cd "$(cygpath -u "$workspace" | tr -d '\r')"
+          python3 -m pip install --upgrade pip
+          python3 -m pip install . pytest
+          python3 -c 'import mfusepy; print(mfusepy._system, mfusepy.fuse_version_major, mfusepy.fuse_version_minor)'
+          python3 -m pytest -q tests/test_struct_layout.py tests/test_fuse_capabilities.py tests/test_init_exception.py
 
   VM-Tests:
     # Run tests inside a VM using cross-platform-actions
