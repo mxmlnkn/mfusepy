@@ -1046,6 +1046,10 @@ elif fuse_version_major == 3:
         _fuse_file_info_fields_bitfield += [
             ('parallel_direct_writes', _fuse_uint32, 1),
         ]
+    if _FUSE_VERSION >= (3, 18, 3) and not _librefuse:
+        _fuse_file_info_fields_bitfield += [
+            ('kill_suidgid', _fuse_uint32, 1),
+        ]
 
     _fuse_file_info_flag_count = sum(x[2] for x in _fuse_file_info_fields_bitfield)
     assert _fuse_file_info_flag_count < ctypes.sizeof(_fuse_uint32) * 8
