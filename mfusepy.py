@@ -972,7 +972,7 @@ if _librefuse:
         ('poll_events', ctypes.c_uint32),
     ]
 elif fuse_version_major == 2:
-    _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' else ctypes.c_ulong
+    _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' or _system.startswith('CYGWIN') else ctypes.c_ulong
     _fuse_file_info_fields_ = [
         ('flags', ctypes.c_int),
         ('fh_old', _fh_old_type),
