@@ -1018,7 +1018,8 @@ else:
 #  - 3.14.1 -> 3.16.2: no change
 #  - 3.16.2 -> 3.17.1: padding3 was made explicit, backing_id, compat_flags and reserved[2] were added
 #                      at the end, which increases the size from 40 B to 64 B.
-#  - 3.17.1 -> 3.18.2: no change
+#  - 3.17.1 -> 3.18.0: statx was added to fuse_operations
+#  - 3.18.3: kill_suidgid was added to the bitfield
 _fuse_int32 = ctypes.c_int32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_int
 _fuse_uint32 = ctypes.c_uint32 if (fuse_version_major, fuse_version_minor) >= (3, 17) else ctypes.c_uint
 _fuse_file_info_fields_: list[FieldsEntry] = []
@@ -1133,7 +1134,7 @@ elif fuse_version_major == 3:
             ('reserved', ctypes.c_uint64 * 2),
         ]
     else:
-        _fuse_file_info_fields_ += [('poll_events', ctypes.c_uint64)]
+        _fuse_file_info_fields_ += [('poll_events', _fuse_uint32)]
 
 
 class fuse_file_info(ctypes.Structure):

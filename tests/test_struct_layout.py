@@ -86,6 +86,10 @@ STRUCT_NAMES = {
 }
 
 STRUCT_NAMES['fuse_file_info'] = ['flags', 'fh', 'lock_owner']
+if mfusepy.fuse_version_major == 3 or mfusepy._librefuse:
+    STRUCT_NAMES['fuse_file_info'] += ['poll_events']
+if mfusepy._FUSE_VERSION >= (3, 17, 1) and not mfusepy._librefuse:
+    STRUCT_NAMES['fuse_file_info'] += ['backing_id', 'compat_flags', 'reserved']
 
 if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) >= (2, 9) and not mfusepy._librefuse:
     STRUCT_NAMES['fuse_buf'] = ['size', 'flags', 'mem', 'fd', 'pos']
@@ -119,7 +123,8 @@ if platform.system() == 'SunOS':
 # the fuse_conn_info members capable, want, max_background, and congestion_threshold.
 # libfuse 2.8 has capable and want but not max_background and congestion_threshold.
 # OpenBSD announces 2.6, but still has these struct members.
-if mfusepy.fuse_version_major == 2 and platform.system() != 'OpenBSD':
+# WinFsp (Windows) and Cygwin also report FUSE 2.8 without the 2.9 members, so the 2.8 removal applies to them.
+if mfusepy.fuse_version_major == 2 and _system != 'OpenBSD':
     if mfusepy.fuse_version_minor < 8:
         STRUCT_NAMES['fuse_context'].remove('umask')
         STRUCT_NAMES['fuse_conn_info'] = ['proto_major', 'proto_minor', 'max_write', 'max_readahead']
@@ -171,6 +176,16 @@ int main()
 {
 '''
 
+MEMBER_SIZE_STRUCTS = {
+    'fuse_file_info',
+    'fuse_conn_info',
+    'fuse_buf',
+    'fuse_bufvec',
+    'fuse_config',
+    'fuse_context',
+    'fuse_operations',
+}
+
 PY_INFOS = {}
 for struct_name, member_names in STRUCT_NAMES.items():
     fusepy_struct = getattr(
@@ -188,6 +203,11 @@ for struct_name, member_names in STRUCT_NAMES.items():
         # This naming discrepancy is not good but would be an API change, I think.
         c_name = name.replace('timespec', 'time') if name.endswith('timespec') else name
         C_CHECKER += f'    printf("{struct_name}.{name} offset:%zu\\n", offsetof(struct {struct_name}, {c_name}));\n'
+        if struct_name in MEMBER_SIZE_STRUCTS:
+            PY_INFOS[f'{struct_name}.{name} size'] = getattr(fusepy_struct, name).size
+            C_CHECKER += (
+                f'    printf("{struct_name}.{name} size:%zu\\n", ' f'sizeof(((struct {struct_name} *) 0)->{c_name}));\n'
+            )
 
 
 def first_set_bit(struct_type, field_name):
@@ -274,8 +294,10 @@ def c_run(name: str, source: str) -> str:
         if not mfusepy._librefuse:
             cflags += [f'-I{path}' for path in include_paths if os.path.exists(path)]
 
-        # Add possible pkg-config flags if available
-        for fuse_lib in () if mfusepy._librefuse else ("fuse", "fuse3"):
+        # Add possible pkg-config flags if available. Prefer the pkg-config package matching the loaded library
+        # because this system may have both libfuse 2 and libfuse 3 development headers installed.
+        fuse_libraries = ("fuse3", "fuse") if mfusepy.fuse_version_major == 3 else ("fuse", "fuse3")
+        for fuse_lib in () if mfusepy._librefuse else fuse_libraries:
             try:
                 pkg_config_flags = subprocess.check_output(['pkg-config', '--cflags', fuse_lib], text=True).split()
                 cflags.extend(pkg_config_flags)
@@ -339,6 +361,14 @@ def test_struct_layout(c_output):
             else:
                 print(f"Mismatch for {key}: C={c_infos[key]}, Python={PY_INFOS[key]}")
                 fail = True
+
+            if struct_name in MEMBER_SIZE_STRUCTS:
+                key = f"{struct_name}.{name} size"
+                if c_infos[key] == PY_INFOS[key]:
+                    print(f"OK: {key} = {c_infos[key]}")
+                else:
+                    print(f"Mismatch for {key}: C={c_infos[key]}, Python={PY_INFOS[key]}")
+                    fail = True
 
     assert not fail, "Struct layout mismatch, see stdout output for details!"
 
