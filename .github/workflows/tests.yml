@@ -247,6 +247,60 @@ jobs:
           [[ "$( md5sum mounted-3dsx/icon.smdh )" =~ "a3d784b6f20182ebdf964589cbf427c2" ]]
           fusermount -u mounted-3dsx
 
+  Windows-Tests:
+    # Experimental: WinFsp installs unattended in practice, but the runtime DLL loading has not been
+    # proven reliable on GitHub-hosted runners, so do not block.
+    continue-on-error: true
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        # GitHub windows runners default to powershell, but all steps here use bash.
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Configure uv package age policy
+        run: |
+          echo "UV_EXCLUDE_NEWER=7 days" >> "$GITHUB_ENV"
+          echo "UV_SYSTEM_PYTHON=1" >> "$GITHUB_ENV"
+
+      - name: Install WinFsp
+        run: |
+          # Same MSI version as used by ratarmount's CI. Use PowerShell so msiexec waits and Git Bash
+          # does not rewrite the slash-prefixed arguments as paths.
+          curl -L -o winfsp.msi https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi
+          powershell -NoProfile -Command "Start-Process msiexec.exe -Wait -ArgumentList @('/i','winfsp.msi','/qn','/norestart')"
+          sleep 5
+          WINFSP_DIR=$( cat /proc/registry32/HKEY_LOCAL_MACHINE/SOFTWARE/WinFsp/InstallDir | tr -d '\0' )
+          echo "${WINFSP_DIR}/bin" >> "$GITHUB_PATH"
+
+      - name: Install Dependencies
+        run: uv pip install --system --group test --group build
+
+      - name: Test Installation From Source
+        run: uv pip install --system .
+
+      - name: Test Import
+        run: python -c "import mfusepy"
+
+      - name: Runtime Tests (WinFsp)
+        run: python -m pytest -q tests
+
   VM-Tests:
     # Run tests inside a VM using cross-platform-actions
     runs-on: ubuntu-latest

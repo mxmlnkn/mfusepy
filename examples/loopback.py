@@ -56,7 +56,16 @@ class Loopback(fuse.Operations):
             os.chmod(path, mode)
         return 0
 
-    chown = static_with_root_path(os.lchown)
+    @with_root_path
+    @fuse.overrides(fuse.Operations)
+    def chown(self, path: str, uid: int, gid: int) -> int:
+        if hasattr(os, 'lchown'):
+            os.lchown(path, uid, gid)
+        elif hasattr(os, 'chown'):
+            os.chown(path, uid, gid)
+        else:
+            raise fuse.FuseOSError(errno.ENOSYS)
+        return 0
 
     @with_root_path
     @fuse.overrides(fuse.Operations)

@@ -12,6 +12,9 @@ import time
 
 import pytest
 
+if sys.platform != 'linux':
+    pytest.skip("POSIX ACL enforcement is only supported by the Linux FUSE driver.", allow_module_level=True)
+
 # FUSE_CAP_POSIX_ACL is only implemented by libfuse 3, which mfusepy only picks on Linux when
 # libfuse 2 is not installed. Prefer fuse3 there unless the environment already picks a libfuse, and
 # only if fuse3 exists, so that this cannot make 'import mfusepy' fail on the BSDs, which have no

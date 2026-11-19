@@ -3,7 +3,6 @@
 
 import ctypes
 import errno
-import fcntl
 import io
 import os
 import stat
@@ -19,6 +18,12 @@ from types import ModuleType
 from typing import Optional
 
 import pytest
+
+fcntl: Optional[ModuleType]
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 # Only needed for the ioctl test, which only runs on Linux.
 ioctl_opt: Optional[ModuleType]
@@ -53,6 +58,11 @@ from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
 from readdir_returning_offsets import cli as cli_readdir_returning_offsets  # noqa: E402
 from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == 'win32',
+    reason="The example harness uses Unix mount points and fusermount/umount.",
+)
 
 # Some Python interpreters, e.g. the macOS Python may lack os.*xattr APIs.
 os_has_xattr_funcs = all(hasattr(os, f) for f in ("listxattr", "setxattr", "getxattr", "removexattr"))
