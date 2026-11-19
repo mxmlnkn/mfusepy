@@ -118,6 +118,29 @@ jobs:
             python-version: '3.14'
           - os: ubuntu-26.04
             python-version: '3.15'
+          # Custom libfuse releases, built from source on top of the system FUSE 2 packages.
+          # Cover the documented ABI boundaries instead of every release to keep the matrix manageable.
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.10.5'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.11.0'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.14.1'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.16.2'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.17.2'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.18.2'
+          - os: ubuntu-24.04
+            python-version: '3.12'
+            libfuse-version: '3.18.3'
           - os: macos-15-intel
             python-version: '3.11'
           - os: macos-15-intel
@@ -166,9 +189,42 @@ jobs:
           echo "UV_SYSTEM_PYTHON=1" >> "$GITHUB_ENV"
 
       - name: Install Dependencies (Linux)
-        if: startsWith( matrix.os, 'ubuntu' )
+        if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |
           sudo apt-get -y install libfuse2 libfuse-dev libfuse3-dev fuse3 wget
+
+      - name: Install Dependencies (Linux, custom libfuse)
+        if: startsWith( matrix.os, 'ubuntu' ) && matrix.libfuse-version
+        run: |
+          # Keep the system FUSE installation for the mount helper and for tools with their own FUSE binding.
+          sudo apt-get -y install meson ninja-build pkg-config wget fuse3 libfuse2 libfuse-dev
+          PREFIX="$RUNNER_TEMP/libfuse-${{ matrix.libfuse-version }}"
+          NAME=fuse-${{ matrix.libfuse-version }}
+          # Older releases do not provide a GitHub release tarball, but all tags are available as archives.
+          wget "https://github.com/libfuse/libfuse/archive/refs/tags/${NAME}.tar.gz" -O "${NAME}.tar.gz"
+          mkdir -p source
+          tar -xf "${NAME}.tar.gz" -C source --strip-components=1
+          pushd source
+          mkdir -p build
+          pushd build
+          # Do not install the utilities into /usr/local. The system fusermount3 is used for mounting, and
+          # keeping the custom library in a prefix avoids changing unrelated tools in the same job.
+          meson .. --prefix="${PREFIX}" -Dutils=false -Dexamples=false
+          ninja
+          ninja install
+          popd
+          popd
+          rm -rf source "${NAME}.tar.gz"
+          # Make mfusepy load exactly the built library instead of relying on the loader's search order.
+          # Only files are matched because libfuse3.so.3 may be a symlink to the real shared object.
+          FUSE_LIBRARY_PATH=$( find "${PREFIX}/lib" -name 'libfuse3.so.3*' -type f | head -1 )
+          if [ -z "${FUSE_LIBRARY_PATH}" ]; then
+              echo "::error::Could not find the built libfuse3 shared object under ${PREFIX}/lib."
+              exit 1
+          fi
+          echo "FUSE_LIBRARY_PATH=${FUSE_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "FUSE_INCLUDE_DIR=${PREFIX}/include/fuse3" >> "$GITHUB_ENV"
+          echo "Using FUSE_LIBRARY_PATH=${FUSE_LIBRARY_PATH} and system $( command -v fusermount )"
 
       - name: Install Dependencies (MacOS)
         if: startsWith( matrix.os, 'macos' )
@@ -212,7 +268,7 @@ jobs:
           python3 -m pytest -s -v -rs tests
 
       - name: Unit Tests (FUSE 2)
-        if: startsWith( matrix.os, 'ubuntu' )
+        if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |
           python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
           python3 -m pytest -v -rs tests
@@ -220,8 +276,11 @@ jobs:
       - name: Unit Tests (FUSE 3)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
+          # Keep the library selected by a custom-libfuse build. Otherwise, use the system libfuse3.
           # The package name depends on the soname: libfuse3-3 up to Ubuntu 24.04, libfuse3-4 since Ubuntu 26.04.
-          export FUSE_LIBRARY_PATH=$( ldconfig -p | awk '/libfuse3[.]so[.][0-9]+ /{ print $NF; exit }' )
+          if [ -z "${FUSE_LIBRARY_PATH}" ]; then
+              export FUSE_LIBRARY_PATH=$( ldconfig -p | awk '/libfuse3[.]so[.][0-9]+ /{ print $NF; exit }' )
+          fi
           python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 3'
           python3 -m pytest -v -rs tests
 
@@ -238,6 +297,9 @@ jobs:
       - name: Test Compatibility (ninfs)
         if: startsWith( matrix.os, 'ubuntu' )
         run: |
+          # ninfs brings its own FUSE binding. Run it against the system library so the custom prefix
+          # cannot change its behavior; mfusepy is still reinstalled from this checkout below.
+          unset FUSE_LIBRARY_PATH
           # https://github.com/ihaveamac/ninfs/commit/9554caa5ecb325a9893bce829fb17efc73d3622c
           # ^ Increases requirement from 3.8 to 3.12 seemingly for no reason at all. There is no commit after it...
           uv pip install git+https://github.com/ihaveamac/ninfs.git@v2.0
