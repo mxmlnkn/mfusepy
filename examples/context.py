@@ -33,6 +33,10 @@ class Context(fuse.Operations):
         return st
 
     @fuse.overrides(fuse.Operations)
+    def open(self, path: str, flags: int) -> int:
+        return 0
+
+    @fuse.overrides(fuse.Operations)
     def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
         uid, gid, pid = fuse.fuse_get_context()
 

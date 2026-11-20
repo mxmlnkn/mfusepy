@@ -450,6 +450,7 @@ class LockOperations(mfusepy.Operations):
 def test_context_read_respects_size_and_offset(monkeypatch):
     monkeypatch.setattr(mfusepy, 'fuse_get_context', lambda: (12345, 23456, 42))
     context = ContextOperations()
+    assert context.open('/uid', os.O_RDONLY) == 0
     assert context.read('/uid', 1, 0, 0) == b'1'
     assert context.read('/uid', 10, 1, 0) == b'2345\n'
     assert context.read('/uid', 10, 100, 0) == b''
