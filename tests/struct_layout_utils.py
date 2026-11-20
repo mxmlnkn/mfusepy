@@ -227,6 +227,7 @@ def format_layout_diff(python_layout: dict[str, int], c_layout: dict[str, int]) 
     lines = [f"  {key}: C={c_value}, Python={python_value}" for key, c_value, python_value in mismatches]
     if any(key.endswith('.size') for key, _, _ in mismatches):
         lines.append(
-            "  A struct size mismatch with matching offsets usually means a trailing field is missing from the Python model."
+            "  A struct size mismatch with matching offsets usually means a trailing field is missing "
+            "from the Python model."
         )
     return '\n'.join(lines)

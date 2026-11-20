@@ -16,7 +16,8 @@
 
 # Note that for ABI forward compatibility and other issues, most C-types should be initialized
 # to 0 and the ctypes module does that for us out of the box!
-# https://github.com/python/cpython/blob/f8a736b8e14ab839e1193cb1d3955b61c316d048/Lib/test/test_ctypes/test_numbers.py#L95
+# https://github.com/python/cpython/blob/f8a736b8e14ab839e1193cb1d3955b61c/Lib/test/test_ctypes/test_numbers.py#L95
+# pylint: disable=redefined-outer-name
 
 import contextlib
 import ctypes
@@ -189,8 +190,9 @@ class _FuseContext:
                 )
             elif _system == 'NetBSD':
                 # On NetBSD 10+ librefuse implements FUSE 3, targeting 3.10 compatibility.
-                # On NetBSD, find_library only works if a C compiler or ld is in PATH (and e.g. not within pkgsrc builds,
-                # where the compiler wrappers drop -lrefuse), so fall back to the soname of the base system library.
+                # On NetBSD, find_library only works if a C compiler or ld is in PATH (and e.g. not within pkgsrc
+                # builds, where the compiler wrappers drop -lrefuse), so fall back to the soname of the base system
+                # library.
                 _libfuse_path = find_library('refuse') or 'librefuse.so.2'
             elif _system == 'Windows':
                 # pytype: disable=module-attr
@@ -343,11 +345,11 @@ class _FuseTypes:
         _FUSE_VERSION = context.fuse_version
         _librefuse = context.librefuse
 
-        # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
-        # bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
-        # the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
-        # 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
-        # in a session, e.g., in a test.
+        # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's
+        # internal bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only
+        # be called with the real, session-embedded struct. FUSE._init marks that struct before handing it to
+        # 'init_with_config'. 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a
+        # fuse_conn_info that is not embedded in a session, e.g., in a test.
         # Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
         # This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
         # I encountered some weird error on macos-14 without this!
@@ -829,7 +831,7 @@ class _FuseTypes:
 
         class c_statvfs(ctypes.Structure):
             if _system == 'FreeBSD':
-                # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e56632e13711/sys/sys/statvfs.h#L57-L68
+                # https://github.com/freebsd/freebsd-src/blob/b1c3a4d75f4ff74218434a11cdd4e/sys/sys/statvfs.h#L57-L68
                 _fields_ = [
                     ('f_bavail', c_fsblkcnt_t),
                     ('f_bfree', c_fsblkcnt_t),
@@ -904,7 +906,8 @@ class _FuseTypes:
                     ('f_fstr', ctypes.c_char * 32),
                 ]
             else:
-                # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
+                # https://sourceware.org/git?p=glibc.git;a=blob;f=bits/
+                #   statvfs.h;h=ea89d9004d834c81874de00b5e3f5617d3096ccc;hb=HEAD#l33
                 _fields_ = [
                     ('f_bsize', ctypes.c_ulong),
                     ('f_frsize', ctypes.c_ulong),
@@ -927,7 +930,7 @@ class _FuseTypes:
         if (
             _system == 'Linux' and not (_machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4)
         ) or _system.startswith('CYGWIN'):
-            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/include/uapi/asm-generic/fcntl.h#L195
+            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc767049710/include/uapi/asm-generic/fcntl.h#L195
             # Cygwin's struct flock uses the generic Linux/BSD layout.
             class c_flock_t(ctypes.Structure):  # type: ignore
                 _fields_ = [
@@ -940,7 +943,7 @@ class _FuseTypes:
 
         elif _system == 'Linux':
             # 32-bit MIPS has l_sysid and a four-long pad, see __ARCH_FLOCK_EXTRA_SYSID and __ARCH_FLOCK_PAD in
-            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc7670497105af8f33eb08/arch/mips/include/uapi/asm/fcntl.h#L53
+            # https://github.com/torvalds/linux/blob/20371ba120635d9ab7fc76704971/arch/mips/include/uapi/asm/fcntl.h#L53
             class c_flock_t(ctypes.Structure):  # type: ignore
                 _fields_ = [
                     ('l_type', ctypes.c_short),
@@ -1268,8 +1271,8 @@ class _FuseTypes:
 
         _HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
 
-        # Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which differ for some flags,
-        # e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
+        # Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which
+        # differ for some flags, e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
         # https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/fuse.h#L452-L497
         # libfuse translates between the two.
         # https://github.com/libfuse/libfuse/blob/fuse-3.18.3/include/fuse_common.h#L185-L521
@@ -1320,7 +1323,7 @@ class _FuseTypes:
         # libfuse 3 removed FUSE_CAP_BIG_WRITES because it is always enabled.
         # We don't have to replicate any libfuse minor version capability differences. Libfuse can check that itself.
         # Flags beyond bit 31 exist only since libfuse 3.17, which added the 64-bit 'capable_ext'/'want_ext' members,
-        # and cannot be represented without them, so do not declare them when _HAS_WANT_EXT is false, i.e., before 3.17.
+        # and cannot be represented without them, so do not declare them when has_want_ext is false, i.e., before 3.17.
         _LIBFUSE3CAPABILITY_BITS: dict[FuseCapability, int] = {
             capability: flag
             for capability, flag in _LIBFUSECAPABILITY_BITS.items()
@@ -1358,7 +1361,7 @@ class _FuseTypes:
             FuseCapability.EXPORT_SUPPORT       : 1 << 4,
             FuseCapability.BIG_WRITES           : 1 << 5,
             FuseCapability.DONT_MASK            : 1 << 6,
-            # TODO: Add and test support for this and then simply reuse READDIRPLUS instead of a Windows-custom capability.
+            # TODO: Add and test support for this and then reuse READDIRPLUS instead of a Windows-custom capability.
             # FuseCapability.READDIR_PLUS         : 1 << 21,
             FuseCapability.READ_ONLY            : 1 << 22,
             FuseCapability.STAT_EX              : 1 << 23,
@@ -1499,8 +1502,8 @@ class _FuseTypes:
             ('auto_cache', _fuse_int32),
         ]
         if fuse_version_major == 3:
-            # Adding this member in the middle of the struct was an ABI-incompatible change!
-            # librefuse has one fuse_config layout for all API versions, i.e. none of the version-dependent members below.
+            # Adding this member in the middle of the struct was an ABI-incompatible change! librefuse has
+            # one fuse_config layout for all API versions, i.e. none of the version-dependent members below.
             if fuse_version_minor >= 11 and fuse_version_minor < 17 and not _librefuse:
                 _fuse_config_fields_ += [('no_rofd_flush', ctypes.c_int)]
 
@@ -1742,28 +1745,28 @@ class _FuseTypes:
             #  - getattr, rename, chmod, chown, truncate, readdir, init, utimens, ioctl
             # fmt: off
             _fuse_operations_fields = [
-                ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),                              # Added file info
-                ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),                              # Same as v2.9
+                ('getattr', CFUNCTYPE(c_int, c_char_p, c_stat_p, fuse_fi_p)),                   # Added file info
+                ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),                   # Same as v2.9
                 *_fuse_operations_fields_mknod_to_symlink,
-                ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                                  # Added flags
-                ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                            # Same as v2.9
-                ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                                # Added file info
-                ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, fuse_fi_p)),                        # Added file info
-                ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),                              # Added file info
+                ('rename', CFUNCTYPE(c_int, c_char_p, c_char_p, c_uint)),                       # Added flags
+                ('link', CFUNCTYPE(c_int, c_char_p, c_char_p)),                                 # Same as v2.9
+                ('chmod', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                     # Added file info
+                ('chown', CFUNCTYPE(c_int, c_char_p, c_uid_t, c_gid_t, fuse_fi_p)),             # Added file info
+                ('truncate', CFUNCTYPE(c_int, c_char_p, c_off_t, fuse_fi_p)),                   # Added file info
                 *_fuse_operations_fields_open_to_removexattr,
-                ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                        # Same as v2.9
+                ('opendir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                             # Same as v2.9
                 ('readdir', CFUNCTYPE(
                     c_int, c_char_p, c_void_p, fuse_fill_dir_t, c_off_t, fuse_fi_p, fuse_readdir_flags)),  # Added flags
-                ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                     # Same as v2.9
-                ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                                # Same as v2.9
-                ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),              # Added config
-                ('destroy', CFUNCTYPE(None, c_void_p)),                                                    # Same as v2.9
-                ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
-                ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
-                ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
-                ('utimens', CFUNCTYPE(c_int, c_char_p, c_timespec_p, fuse_fi_p)),                          # Added file info
-                ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                                # Same as v2.9
-                ('ioctl', CFUNCTYPE(                                                                       # Argument type
+                ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                          # Same as v2.9
+                ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                     # Same as v2.9
+                ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),   # Added config
+                ('destroy', CFUNCTYPE(None, c_void_p)),                                         # Same as v2.9
+                ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                  # Same as v2.9
+                ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                    # Same as v2.9
+                ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),     # Same as v2.9
+                ('utimens', CFUNCTYPE(c_int, c_char_p, c_timespec_p, fuse_fi_p)),               # Added file info
+                ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                     # Same as v2.9
+                ('ioctl', CFUNCTYPE(                                                            # Argument type
                     c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
                     fuse_fi_p, c_uint, c_void_p)),
                 *_fuse_operations_fields_2_8,
@@ -2647,8 +2650,7 @@ class FUSE:
     #         would suffice.
     #
     # The important thing to know here is that fuse_dirent, the struct defined by the Linux Kernel FUSE API:
-    #     https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
-    #         fuse.h#L1005-L1010
+    #     https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a7/include/uapi/linux/fuse.h#L1005-L1010
     #     https://man7.org/linux/man-pages/man4/fuse.4.html
     # Only has members for ino, off, nameln, type, and name. Everything else is cruft added by the libfuse
     # abstraction layer.
@@ -2664,8 +2666,7 @@ class FUSE:
     # fuse_add_direntry.
     # fuse_add_direntry_plus converts the stat struct in the fuse_attr attr member of the
     # fuse_entry_out entry_out in the fuse_direntplus struct. fuse_attr has 16 members.
-    # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
-    #     fuse.h#L263C1-L280C3
+    # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a7/include/uapi/linux/fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip: fuse_fi_p) -> int:
         # Ignore raw_fi
         st = c_stat()
@@ -2708,8 +2709,7 @@ class FUSE:
                 elif isinstance(attrs, dict):
                     # Only the mode and ino (if use_ino is True) are used! The caller may skip everything else.
                     # See the members in the fuse_dirent Linux kernel struct. Only those can be used, I think.
-                    # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a74c1cbfa2c1d/include/uapi/linux/
-                    #     fuse.h#L1005-L1010
+                    # https://github.com/torvalds/linux/blob/1934261d897467a924e2a/include/uapi/linux/fuse.h#L1005-L1010
                     for key in ['st_mode', 'st_ino']:
                         if key in attrs:
                             setattr(st, key, attrs[key])
