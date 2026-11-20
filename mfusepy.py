@@ -1641,11 +1641,16 @@ class _FuseTypes:
                     ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),
                 ]
             if fuse_version_minor >= 8:
+                _fuse_operations_fields += [('flag_nullpath_ok', c_uint, 1)]
+                if fuse_version_minor >= 9 or _system == 'Windows' or _system.startswith('CYGWIN'):
+                    _fuse_operations_fields += [
+                        ('flag_nopath', c_uint, 1),
+                        ('flag_utime_omit_ok', c_uint, 1),
+                        ('flag_reserved', c_uint, 29),
+                    ]
+                else:
+                    _fuse_operations_fields += [('flag_reserved', c_uint, 31)]
                 _fuse_operations_fields += [
-                    ('flag_nullpath_ok', c_uint, 1),
-                    ('flag_nopath', c_uint, 1),
-                    ('flag_utime_omit_ok', c_uint, 1),
-                    ('flag_reserved', c_uint, 29),
                     ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
                     *_fuse_operations_fields_2_8,
                 ]
