@@ -7,7 +7,6 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import mfusepy  # noqa: E402
 from struct_layout_utils import (  # noqa: E402
     KERNEL_MEMBER_SIZE_SKIPS,
     KERNEL_STRUCTS,
@@ -20,6 +19,8 @@ from struct_layout_utils import (  # noqa: E402
     parse_c_output,
     python_layout,
 )
+
+import mfusepy  # noqa: E402
 
 pytestmark = pytest.mark.order(0)
 

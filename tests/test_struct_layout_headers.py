@@ -9,10 +9,10 @@ Compile the downloaded public headers and compare them with FuseTypes. E.g. run 
 """
 
 import ctypes
+import dataclasses
 import platform
 import subprocess
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -93,8 +93,7 @@ def c_type_name(ctype, fuse_prefix: bool = False) -> str:
     name = getattr(ctype, '__name__', '')
     if name.startswith('c_'):
         c_name = name[2:]
-        if c_name.endswith('_t'):
-            c_name = c_name[:-2]
+        c_name = c_name.removesuffix('_t')
         return f'struct {"fuse_" if fuse_prefix else ""}{c_name}'
     if name.startswith('fuse_'):
         return f'struct {name}'
@@ -124,15 +123,15 @@ def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
     return lines
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class HeaderCase:
     name: str
     context: 'FuseContext'
     include_dir: Path
     header: str = ''
-    includes: tuple[str, ...] = field(default_factory=tuple)
-    cflags: tuple[str, ...] = field(default_factory=tuple)
-    structs: tuple[str, ...] = field(default_factory=lambda: tuple(STRUCTS))
+    includes: tuple[str, ...] = dataclasses.field(default_factory=tuple)
+    cflags: tuple[str, ...] = dataclasses.field(default_factory=tuple)
+    structs: tuple[str, ...] = dataclasses.field(default_factory=lambda: tuple(STRUCTS))
     kernel_structs: bool = False
     member_sizes: bool = True
     skip_reason: str = ''

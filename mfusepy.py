@@ -384,9 +384,7 @@ class _FuseTypes:
                 _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
 
         c_time_t: type
-        if _system == 'Windows' or _system.startswith('CYGWIN'):
-            c_time_t = ctypes.c_int64
-        elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
+        if _system in ('OpenBSD', 'FreeBSD', 'NetBSD', 'Windows') or _system.startswith('CYGWIN'):
             c_time_t = ctypes.c_int64
         else:
             c_time_t = ctypes.c_long
@@ -2769,15 +2767,15 @@ class FUSE:
         if config:
             if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
                 config.contents.nullpath_ok = True
-            for key, value in self._libfuse2_options_moved_into_libfuse3_config.items():
-                option = key
-                if key == 'nopath':
+            for option, value in self._libfuse2_options_moved_into_libfuse3_config.items():
+                config_option = option
+                if option == 'nopath':
                     if not value:
                         continue
-                    key = 'nullpath_ok'
-                if not hasattr(config.contents, key):
+                    config_option = 'nullpath_ok'
+                if not hasattr(config.contents, config_option):
                     raise RuntimeError(f"FUSE 3 cannot set the libfuse 2 option {option!r}")
-                setattr(config.contents, key, value)
+                setattr(config.contents, config_option, value)
         self._init(conn, config)
 
     def destroy(self, private_data: c_void_p) -> None:

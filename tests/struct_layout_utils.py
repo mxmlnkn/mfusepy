@@ -147,8 +147,10 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
                         f'{name}.{member} size',
                         getattr(struct_type, member).size,
                         (
-                            f'    printf("{name}.{member} size:%zu\\n", '
-                            f'sizeof(((struct {spec.c_name} *) 0)->{c_member}));',
+                            (
+                                f'    printf("{name}.{member} size:%zu\\n", '
+                                f'sizeof(((struct {spec.c_name} *) 0)->{c_member}));'
+                            ),
                         ),
                     )
                 )
@@ -199,7 +201,7 @@ def compile_and_run(
         command = [compiler, *cflags, str(source_path), '-o', str(executable)]
         if verbose:
             print(f"Compiling with: {' '.join(command)}")
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         result.check_returncode()
 
         if verbose:
@@ -207,6 +209,7 @@ def compile_and_run(
                 [compiler, '-E', *cflags, str(source_path)],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             preprocessed.check_returncode()
             for line in preprocessed.stdout.splitlines():
