@@ -223,7 +223,7 @@ def test_posix_acl_throws_on_other_platforms():
 def test_posix_acl_empty_round_trip():
     packed = posix_acl_to_xattr([])
     assert packed == struct.pack('<I', mfusepy.POSIX_ACL_XATTR_VERSION)
-    assert posix_acl_from_xattr(packed) == []
+    assert not posix_acl_from_xattr(packed)
 
 
 @linux_only

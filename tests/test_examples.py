@@ -53,7 +53,6 @@ except ImportError:
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
 
-import mfusepy  # noqa: E402
 from context import Context as ContextOperations  # noqa: E402
 from context import cli as cli_context  # noqa: E402
 from loopback import Loopback  # noqa: E402
@@ -62,6 +61,8 @@ from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
 from readdir_returning_offsets import cli as cli_readdir_returning_offsets  # noqa: E402
 from readdir_with_offset import cli as cli_readdir_with_offset  # noqa: E402
+
+import mfusepy  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     sys.platform == 'win32',
@@ -389,8 +390,15 @@ def test_context_example(tmp_path):
         assert (tmp_path / 'uid').read_text().strip() == str(os.getuid())
         assert (tmp_path / 'gid').read_text().strip() == str(os.getgid())
         assert int((tmp_path / 'pid').read_text()) > 0
-        with pytest.raises(OSError):
+        with pytest.raises(OSError) as exception:  # noqa: PT011 - The errno is platform-dependent.
             (tmp_path / 'uid').write_text('x')
+        assert exception.value.errno in (
+            errno.EPERM,
+            errno.EACCES,
+            errno.EROFS,
+            errno.ENOSYS,
+            errno.EOPNOTSUPP,
+        )
 
 
 @pytest.mark.parametrize('cli', [cli_memory_nullpath])
@@ -502,7 +510,7 @@ def test_flock_callback(cli, tmp_path):
 
         with open(path, 'r+b') as first, open(path, 'r+b') as second:
             fcntl.flock(first, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with pytest.raises(OSError) as exception:
+            with pytest.raises(BlockingIOError) as exception:
                 fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
             assert exception.value.errno in (errno.EAGAIN, errno.EWOULDBLOCK)
 
