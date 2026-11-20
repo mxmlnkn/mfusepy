@@ -1038,7 +1038,9 @@ class _FuseTypes:
                 ('poll_events', ctypes.c_uint32),
             ]
         elif fuse_version_major == 2:
-            _fh_old_type = ctypes.c_uint if _system == 'OpenBSD' or _system.startswith('CYGWIN') else ctypes.c_ulong
+            _fh_old_type = (
+                ctypes.c_uint if _system in ('OpenBSD', 'Windows') or _system.startswith('CYGWIN') else ctypes.c_ulong
+            )
             _fuse_file_info_fields_ = [
                 ('flags', ctypes.c_int),
                 ('fh_old', _fh_old_type),
@@ -1618,9 +1620,25 @@ class _FuseTypes:
                     ('flag_reserved', c_uint, 29),
                     ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
                 ]
-            if fuse_version_minor >= 9 or _system.startswith('CYGWIN'):
+            if fuse_version_minor >= 9 or _system == 'Windows' or _system.startswith('CYGWIN'):
                 _fuse_operations_fields += _fuse_operations_fields_2_9
-                if _system.startswith('CYGWIN'):
+                if _system == 'Windows':
+                    _fuse_operations_fields += [
+                        ('getpath', c_void_p),
+                        ('reserved01', c_void_p),
+                        ('reserved02', c_void_p),
+                        ('statfs_x', c_void_p),
+                        ('setvolname', c_void_p),
+                        ('exchange', c_void_p),
+                        ('getxtimes', c_void_p),
+                        ('setbkuptime', c_void_p),
+                        ('setchgtime', c_void_p),
+                        ('setcrtime', c_void_p),
+                        ('chflags', c_void_p),
+                        ('setattr_x', c_void_p),
+                        ('fsetattr_x', c_void_p),
+                    ]
+                elif _system.startswith('CYGWIN'):
                     _fuse_operations_fields += [
                         ('reserved00', c_void_p),
                         ('reserved01', c_void_p),
@@ -1640,7 +1658,17 @@ class _FuseTypes:
                     _fuse_operations_fields += [
                         ('reserved00', c_void_p),
                         ('reserved01', c_void_p),
-                        ('__todo__', c_void_p * 11),  # TODO: misc. addtl. functions
+                        ('renamex', c_void_p),
+                        ('statfs_x', c_void_p),
+                        ('setvolname', c_void_p),
+                        ('exchange', c_void_p),
+                        ('getxtimes', c_void_p),
+                        ('setbkuptime', c_void_p),
+                        ('setchgtime', c_void_p),
+                        ('setcrtime', c_void_p),
+                        ('chflags', c_void_p),
+                        ('setattr_x', c_void_p),
+                        ('fsetattr_x', c_void_p),
                     ]
         elif fuse_version_major == 3:
             fuse_fill_dir_flags = ctypes.c_int  # The only flag in libfuse 3.16 is USE_FILL_DIR_PLUS = (1 << 1).
