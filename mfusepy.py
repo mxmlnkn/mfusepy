@@ -1556,13 +1556,6 @@ class _FuseTypes:
         class fuse_config(ctypes.Structure):
             _fields_ = _fuse_config_fields_
 
-        if TYPE_CHECKING:
-            FuseConfigPointer = ctypes._Pointer[fuse_config]
-            FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
-        else:
-            FuseConfigPointer = ctypes.POINTER(fuse_config)
-            FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
-
         fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
 
         _fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
@@ -1851,8 +1844,6 @@ class _FuseTypes:
         self._MACFUSECAPABILITY_BITS = _MACFUSECAPABILITY_BITS
         self._WINFSPCAPABILITY_BITS = _WINFSPCAPABILITY_BITS
         self.fuse_config = fuse_config
-        self.FuseConfigPointer = FuseConfigPointer
-        self.FuseConnInfoPointer = FuseConnInfoPointer
         self.fuse_pollhandle_p = fuse_pollhandle_p
         self.fuse_operations = fuse_operations
         if _system == 'Windows' or _system.startswith('CYGWIN'):
@@ -1900,6 +1891,7 @@ else:
 fuse_buf_flags = _types.fuse_buf_flags
 fuse_buf = _types.fuse_buf
 fuse_bufvec = _types.fuse_bufvec
+
 if TYPE_CHECKING:
     fuse_fi_p = Any
     c_stat_p = Any
@@ -1916,18 +1908,21 @@ else:
     c_timespec_p = _types.c_timespec_p
     fuse_bufvec_p = _types.fuse_bufvec_p
     fuse_bufvec_pp = _types.fuse_bufvec_pp
+
 if TYPE_CHECKING:
     fuse_conn_info = Any
     fuse_config = Any
 else:
     fuse_conn_info = _types.fuse_conn_info
     fuse_config = _types.fuse_config
+
 if TYPE_CHECKING:
-    FuseConfigPointer = Any
-    FuseConnInfoPointer = Any
+    FuseConfigPointer = ctypes._Pointer[fuse_config]
+    FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
 else:
-    FuseConfigPointer = _types.FuseConfigPointer
-    FuseConnInfoPointer = _types.FuseConnInfoPointer
+    FuseConfigPointer = ctypes.POINTER(fuse_config)
+    FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
+
 fuse_pollhandle_p = _types.fuse_pollhandle_p
 fuse_operations = _types.fuse_operations
 CAPABILITY_BITS = _types.CAPABILITY_BITS
