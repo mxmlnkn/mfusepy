@@ -238,6 +238,10 @@ def header_cases() -> list[HeaderCase]:
     for version in sorted((HEADER_ROOT / 'winfsp').glob('*')):
         include_dir = version / 'include'
         if (include_dir / 'fuse' / 'fuse.h').exists():
+            try:
+                winfsp_version = tuple(int(part) for part in version.name.split('.')[:2])
+            except ValueError:
+                winfsp_version = (0, 0)
             cases.append(
                 HeaderCase(
                     name=f"winfsp-{version.name}",
@@ -250,34 +254,62 @@ def header_cases() -> list[HeaderCase]:
                     header='fuse/fuse.h',
                     cflags=('-D_WIN64', '-DFSP_FUSE_API=', '-D__declspec(x)='),
                     structs=tuple(s for s in STRUCTS if s not in ('fuse_config', 'fuse_buf', 'fuse_bufvec')),
-                )
-            )
-
-    for version in sorted((HEADER_ROOT / 'macfuse').glob('*')):
-        include_dir = version / 'include'
-        if (include_dir / 'fuse' / 'fuse.h').exists():
-            cases.append(
-                HeaderCase(
-                    name=f"macfuse-{version.name}",
-                    context=FuseContext(
-                        system='Darwin',
-                        machine='x86_64',
-                        fuse_version=(2, 9, 0),
-                    ),
-                    include_dir=include_dir,
-                    header='fuse/fuse.h',
-                    cflags=('-D__APPLE__', '-DFUSE_USE_VERSION=29'),
-                    structs=tuple(s for s in STRUCTS if s != 'fuse_config'),
-                    # The probe is compiled with the host's mode_t, so member sizes are not comparable.
-                    member_sizes=False,
                     skip_reason=(
-                        "macFUSE master has a different, unreleased fuse_operations layout. "
-                        "The matrix checks the 5.5.0 support/libfuse-2.9 branch."
-                        if version.name != 'support-libfuse-2.9'
+                        "WinFsp before 1.11 lacks the getpath extension; the model targets 1.11+."
+                        if winfsp_version < (1, 11)
                         else ''
                     ),
                 )
             )
+
+    macfuse_versions = {
+        'support-libfuse-2.9': (2, 9, 0, '29', ''),
+        'support-libfuse-3.17': (
+            3,
+            17,
+            2,
+            '317',
+            "macFUSE libfuse 3.x needs generated config headers and matching fuse_conn_info support.",
+        ),
+        'support-libfuse-3.18': (
+            3,
+            18,
+            3,
+            '318',
+            "macFUSE libfuse 3.x needs generated config headers and matching fuse_conn_info support.",
+        ),
+    }
+    for version in sorted((HEADER_ROOT / 'macfuse').glob('*')):
+        include_dir = version / 'include'
+        if not (include_dir / 'fuse' / 'fuse.h').exists():
+            continue
+        if version.name in macfuse_versions:
+            major, minor, hotfix, use_version, skip_reason = macfuse_versions[version.name]
+            structs = tuple(STRUCTS) if major == 3 else tuple(s for s in STRUCTS if s != 'fuse_config')
+        else:
+            major, minor, hotfix, use_version = (2, 9, 0, '29')
+            structs = tuple(s for s in STRUCTS if s != 'fuse_config')
+            skip_reason = (
+                f"macFUSE branch {version.name!r} is not part of the checked release set. "
+                "The matrix checks support/libfuse-2.9, 3.17, and 3.18."
+            )
+        cases.append(
+            HeaderCase(
+                name=f"macfuse-{version.name}",
+                context=FuseContext(
+                    system='Darwin',
+                    machine='x86_64',
+                    fuse_version=(major, minor, hotfix),
+                ),
+                include_dir=include_dir,
+                header='fuse/fuse.h',
+                cflags=('-D__APPLE__', f'-DFUSE_USE_VERSION={use_version}'),
+                structs=structs,
+                # The probe is compiled with the host's mode_t, so member sizes are not comparable.
+                member_sizes=False,
+                skip_reason=skip_reason,
+            )
+        )
 
     for project, system, fuse_version in (
         ('netbsd', 'NetBSD', (3, 10, 0)),
