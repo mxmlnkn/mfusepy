@@ -139,7 +139,7 @@ EOF
 fetch_winfsp() {
     local versions=("$@")
     if [[ ${#versions[@]} -eq 0 ]]; then
-        versions=(2.0 2.1 2.2)
+        versions=(1.11 1.12 2.0 2.1 2.2)
     fi
 
     local cache
@@ -172,9 +172,9 @@ fetch_winfsp() {
 fetch_macfuse() {
     local branches=("$@")
     if [[ ${#branches[@]} -eq 0 ]]; then
-        # macFUSE 5.5.0 pins Library-2 to this branch. It has only one reserved
-        # pointer before renamex, unlike the unreleased master branch.
-        branches=(support/libfuse-2.9)
+        # macFUSE 5.5.0 pins Library-2 to support/libfuse-2.9. The 3.17 and 3.18
+        # branches cover the newer libfuse 3.x layouts.
+        branches=(support/libfuse-2.9 support/libfuse-3.17 support/libfuse-3.18)
     fi
 
     local cache
@@ -271,34 +271,41 @@ fetch_freebsd() {
 }
 
 fetch_cygfuse() {
-    local version=${1:-3.2.0-3}
-    local destination="$ROOT/cygfuse/$version"
-    if [[ -f "$destination/include/fuse/fuse_common.h" && $FORCE -eq 0 ]]; then
-        echo "Skipping cygfuse $version, already present"
-        return
+    local versions=("$@")
+    if [[ ${#versions[@]} -eq 0 ]]; then
+        versions=(3.2.0-2 3.2.0-3)
     fi
 
-    rm -rf "$destination"
-    mkdir -p "$destination/include/fuse" "$destination/include/fuse3"
-    local temporary
-    temporary=$(mktemp -d)
-    local package="cygfuse-$version-src.tar.xz"
-    curl -fsSL "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cygfuse/$package" \
-        -o "$temporary/$package"
-    tar -xJf "$temporary/$package" -C "$temporary"
-    mkdir -p "$temporary/source"
-    tar -xJf "$temporary/cygfuse-$version.src/cygfuse-$version-src.tar.xz" -C "$temporary/source"
-    # Only the headers are needed. The GPLv3 notice is in each copied header.
-    cp "$temporary/source/cygfuse/fuse"/*.h "$destination/include/fuse/"
-    cp "$temporary/source/cygfuse/fuse3"/*.h "$destination/include/fuse3/"
+    local version
+    for version in "${versions[@]}"; do
+        local destination="$ROOT/cygfuse/$version"
+        if [[ -f "$destination/include/fuse/fuse_common.h" && $FORCE -eq 0 ]]; then
+            echo "Skipping cygfuse $version, already present"
+            continue
+        fi
 
-    local license
-    license=$( find "$temporary" -maxdepth 4 \( -iname 'COPYING*' -o -iname 'LICENSE*' \) -type f -print -quit )
-    if [[ -n "$license" ]]; then
-        cp "$license" "$destination/"
-    fi
-    rm -rf "$temporary"
-    echo "cygfuse $version -> $destination"
+        rm -rf "$destination"
+        mkdir -p "$destination/include/fuse" "$destination/include/fuse3"
+        local temporary
+        temporary=$(mktemp -d)
+        local package="cygfuse-$version-src.tar.xz"
+        curl -fsSL "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cygfuse/$package" \
+            -o "$temporary/$package"
+        tar -xJf "$temporary/$package" -C "$temporary"
+        mkdir -p "$temporary/source"
+        tar -xJf "$temporary/cygfuse-$version.src/cygfuse-$version-src.tar.xz" -C "$temporary/source"
+        # Only the headers are needed. The GPLv3 notice is in each copied header.
+        cp "$temporary/source/cygfuse/fuse"/*.h "$destination/include/fuse/"
+        cp "$temporary/source/cygfuse/fuse3"/*.h "$destination/include/fuse3/"
+
+        local license
+        license=$( find "$temporary" -maxdepth 4 \( -iname 'COPYING*' -o -iname 'LICENSE*' \) -type f -print -quit )
+        if [[ -n "$license" ]]; then
+            cp "$license" "$destination/"
+        fi
+        rm -rf "$temporary"
+        echo "cygfuse $version -> $destination"
+    done
 }
 
 case "$TARGET" in
