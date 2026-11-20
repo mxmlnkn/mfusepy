@@ -443,7 +443,9 @@ class LockOperations(mfusepy.Operations):
 
     def init_with_config(self, conn_info, config_3):
         if conn_info:
-            self.posix_locks_enabled = conn_info.enable_capability(mfusepy.FuseCapability.POSIX_LOCKS)
+            self.posix_locks_enabled = conn_info.enable_capability(
+                mfusepy.FuseCapability.POSIX_LOCKS  # pylint: disable=no-member
+            )
 
     def getattr(self, path, fh=None):
         if path == '/':
@@ -479,6 +481,28 @@ def test_loopback_getattr_reports_inode(tmp_path):
     path.write_bytes(b'x')
     operations = Loopback(str(tmp_path))
     assert operations.getattr('/file')['st_ino'] == os.stat(path).st_ino
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason="flock semantics differ on the BSDs and macOS")
+def test_flock_callback_uses_underlying_file(tmp_path):
+    mount_source = tmp_path / "folder"
+    mount_point = tmp_path / "mounted"
+    mount_source.mkdir()
+    mount_point.mkdir()
+
+    with RunCLI(cli_loopback, mount_point, [str(mount_source)]):
+        path = mount_point / "file"
+        path.write_bytes(b"x")
+
+        with open(path, 'r+b') as first, open(path, 'r+b') as second:
+            fcntl.flock(first, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with pytest.raises(OSError) as exception:
+                fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            assert exception.value.errno in (errno.EAGAIN, errno.EWOULDBLOCK)
+
+            fcntl.flock(first, fcntl.LOCK_UN)
+            fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(second, fcntl.LOCK_UN)
 
 
 @pytest.mark.skipif(sys.platform != 'linux', reason="lockf semantics differ on the BSDs and macOS")
