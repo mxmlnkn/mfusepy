@@ -1837,12 +1837,6 @@ class _FuseTypes:
         self.fuse_conn_info = fuse_conn_info
         self.CAPABILITY_BITS = capability_bits
         self._HAS_WANT_EXT = has_want_ext
-        self._LIBFUSECAPABILITY_BITS = _LIBFUSECAPABILITY_BITS
-        self._LIBFUSE2CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
-        self._LIBFUSE3CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
-        self._LIBREFUSECAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
-        self._MACFUSECAPABILITY_BITS = _MACFUSECAPABILITY_BITS
-        self._WINFSPCAPABILITY_BITS = _WINFSPCAPABILITY_BITS
         self.fuse_config = fuse_config
         self.fuse_pollhandle_p = fuse_pollhandle_p
         self.fuse_operations = fuse_operations
@@ -1927,12 +1921,6 @@ fuse_pollhandle_p = _types.fuse_pollhandle_p
 fuse_operations = _types.fuse_operations
 CAPABILITY_BITS = _types.CAPABILITY_BITS
 _HAS_WANT_EXT = _types._HAS_WANT_EXT
-_LIBFUSECAPABILITY_BITS = _types._LIBFUSECAPABILITY_BITS
-_LIBFUSE2CAPABILITY_BITS = _types._LIBFUSE2CAPABILITY_BITS
-_LIBFUSE3CAPABILITY_BITS = _types._LIBFUSE3CAPABILITY_BITS
-_LIBREFUSECAPABILITY_BITS = _types._LIBREFUSECAPABILITY_BITS
-_MACFUSECAPABILITY_BITS = _types._MACFUSECAPABILITY_BITS
-_WINFSPCAPABILITY_BITS = _types._WINFSPCAPABILITY_BITS
 if _system == 'Windows' or _system.startswith('CYGWIN'):
     c_win_long = _types.c_win_long
     c_win_ulong = _types.c_win_ulong
