@@ -40,11 +40,11 @@ class Context(fuse.Operations):
             return (f'{x}\n').encode()
 
         if path == '/uid':
-            return encoded(uid)
+            return encoded(uid)[offset : offset + size]
         if path == '/gid':
-            return encoded(gid)
+            return encoded(gid)[offset : offset + size]
         if path == '/pid':
-            return encoded(pid)
+            return encoded(pid)[offset : offset + size]
 
         raise RuntimeError(f'unexpected path: {path!r}')
 
