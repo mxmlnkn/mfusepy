@@ -86,3 +86,23 @@ def test_syncfs_wrapper_translates_path():
     fuse, operations = make_fuse()
     assert mfusepy.FUSE.syncfs(fuse, b'/file') == 0  # type: ignore
     assert operations.calls == [('syncfs', '/file')]
+
+
+def test_write_buf_wrapper_accepts_missing_path():
+    fuse, operations = make_fuse()
+    buf = object()
+    assert mfusepy.FUSE.write_buf(fuse, None, buf, 7, make_fip()) == 0  # type: ignore
+    assert operations.calls == [('write_buf', None, buf, 7, 42)]
+
+
+def test_read_buf_wrapper_accepts_missing_path():
+    fuse, operations = make_fuse()
+    bufpp = object()
+    assert mfusepy.FUSE.read_buf(fuse, None, bufpp, 11, 7, make_fip()) == 0  # type: ignore
+    assert operations.calls == [('read_buf', None, bufpp, 11, 7, 42)]
+
+
+def test_flock_wrapper_accepts_missing_path():
+    fuse, operations = make_fuse()
+    assert mfusepy.FUSE.flock(fuse, None, make_fip(), 3) == 0  # type: ignore
+    assert operations.calls == [('flock', None, 42, 3)]
