@@ -59,6 +59,83 @@ markers = [
     "order: run tests in the given order; provided by pytest-order",
 ]
 
+[tool.black]
+line-length = 120
+skip-string-normalization = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "A", "B", "E", "F", "G", "I", "W", "N", "ASYNC", "C4", "COM", "FLY", "FURB", "ICN", "INT", "ISC", "LOG",
+    "PERF", "PIE", "PLW", "PT", "PYI", "RET", "RSE", "RUF", "SIM", "TID", "TC", "UP", "YTT"
+]
+ignore = [
+    # Preview. Complaining about spaces (aligned arguments) should be a formatter option, not a linter one!
+    # https://github.com/astral-sh/ruff/issues/2402
+    "E201", "E202", "E203", "E211", "E221", "E226", "E251", "E265", "E266",
+    "E501",     # A linter should lint, not check for line lengths!
+    "F401",     # Wants to from .version import __version__ as __version__ which clashes with pylint errors!
+    "B904",
+    "N801",     # Some class names are snake_case to match ctypes
+    "COM812",   # Do not force trailing commas where it makes no sense, e.g., function calls for which I'll
+                # never add more arguments.
+    "PLW0603",  # Cannot live without global statements, especially for subprocessing.
+    "PT017",
+    "RET504",   # https://github.com/astral-sh/ruff/issues/17292#issuecomment-3039232890
+    "RUF100",   # BUG: removes necessary noqa: E402 in tests!
+    "RUF012",   # Mutable class attributes should be annotated with `typing.ClassVar`, but _fields_ is not mutable.
+
+    "SIM102",   # Sometimes, nested if-statements are more readable.
+    "SIM105",
+
+    # Bug: SIM118 removes the keys() from row.keys(), which is an sqlite3.Row not a Dict!
+]
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+external = ["B036", "B042", "W212"]
+
+[tool.ruff.format]
+line-ending = "lf"
+quote-style = "preserve"
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.pylint.format]
+# Maximum number of characters on a single line.
+max-line-length = 120
+
+[tool.pylint.messages_control]
+# Disable the message, report, category or checker with the given id(s). You can either use message names or
+# IDs. Some checks are disabled because they are intended to be enabled globally and overridden per file.
+disable = [
+    "broad-except",
+    "invalid-name",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-locals",
+    "too-many-lines",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-statements",
+    "too-few-public-methods",
+    # I don't need the style checker to bother me with missing docstrings and todos.
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "fixme",
+    "unused-argument",
+    "comparison-with-callable",
+    "R0801",
+    "global-statement",
+    "chained-comparison",  # Only since Python 3.8
+]
+
 # Development-only dependencies. PEP 735 groups are metadata only: they are shipped in the sdist's
 # pyproject.toml but never in the wheel's METADATA, and they are not exposed as an extra. Unlike an extra, a
 # group can be installed without also installing the package itself.

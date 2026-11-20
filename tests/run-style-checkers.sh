@@ -12,13 +12,13 @@ while read -r file; do
     allPythonFiles+=( "$file" )
 done < <( git ls-tree -r --name-only HEAD | 'grep' '[.]py$' )
 
-ruff check --fix --config tests/.ruff.toml -- "${allPythonFiles[@]}"
-black -q --line-length 120 --skip-string-normalization "${allPythonFiles[@]}"
+ruff check --fix -- "${allPythonFiles[@]}"
+black -q "${allPythonFiles[@]}"
 flake8 --config tests/.flake8 "${allPythonFiles[@]}"
-pylint --rcfile tests/.pylintrc "${allPythonFiles[@]}" | tee pylint.log
+pylint "${allPythonFiles[@]}" | tee pylint.log
 ! 'egrep' ': E[0-9]{4}: ' pylint.log
 pytype -d import-error "${allPythonFiles[@]}"
-mypy --config-file tests/.mypy.ini "${allPythonFiles[@]}"
+mypy "${allPythonFiles[@]}"
 status=$?
 python3 tests/check-authors.py || status=1
 exit $status

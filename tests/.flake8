@@ -1,3 +1,4 @@
+# Flake8 does not support pyproject.toml, so this cannot be moved there.
 [flake8]
 # W503 "line break before binary operator" is directly in opposition to how black breaks lines!
 # B904 is ignored in .ruff.toml as well, "raise ... from" is not wanted for these examples.

@@ -56,11 +56,11 @@ jobs:
 
       - name: Style Check With Ruff
         continue-on-error: true
-        run: ruff check --config tests/.ruff.toml --output-format concise -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
+        run: ruff check --output-format concise -- $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Style Check With Black
         run: |
-          black -q --diff --line-length 120 --skip-string-normalization $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
+          black -q --diff $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) > black.diff
           if [ -s black.diff ]; then
               cat black.diff
               exit 123
@@ -93,14 +93,14 @@ jobs:
 
       - name: Lint With Pylint
         run: |
-          pylint --rcfile tests/.pylintrc $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
+          pylint $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' ) | tee pylint.log
           ! 'egrep' ': E[0-9]{4}: ' pylint.log
 
       - name: Lint With Pytype
         run: pytype -j auto -d import-error $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Lint With Mypy
-        run: mypy --config-file tests/.mypy.ini $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
+        run: mypy $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
   Tests:
     runs-on: ${{ matrix.os }}
