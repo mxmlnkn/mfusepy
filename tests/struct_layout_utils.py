@@ -189,3 +189,19 @@ def compile_and_run(
                     print(line)
 
         return subprocess.check_output([str(executable)], text=True)
+
+
+def format_layout_diff(python_layout: dict[str, int], c_layout: dict[str, int]) -> str:
+    mismatches = []
+    for key in sorted(set(python_layout) | set(c_layout)):
+        python_value = python_layout.get(key)
+        c_value = c_layout.get(key)
+        if python_value != c_value:
+            mismatches.append((key, c_value, python_value))
+
+    lines = [f"  {key}: C={c_value}, Python={python_value}" for key, c_value, python_value in mismatches]
+    if any(key.endswith('.size') for key, _, _ in mismatches):
+        lines.append(
+            "  A struct size mismatch with matching offsets usually means a trailing field is missing from the Python model."
+        )
+    return '\n'.join(lines)

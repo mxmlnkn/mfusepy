@@ -30,6 +30,7 @@ from struct_layout_utils import (  # noqa: E402
     c_probe,
     compile_and_run,
     find_compiler,
+    format_layout_diff,
     parse_c_output,
     python_layout,
 )
@@ -208,4 +209,11 @@ def header_cases() -> list[HeaderCase]:
 def test_downloaded_header_layout(case):
     types = mfusepy._FuseTypes(case.context)
     c_layout, py_layout = compiled_layout(case, types)
-    assert py_layout == c_layout
+    assert py_layout == c_layout, f"{case.name}: layout mismatch\n{format_layout_diff(py_layout, c_layout)}"
+
+
+def test_layout_diff_reports_size_hint():
+    diff = format_layout_diff({'fuse_operations.size': 352}, {'fuse_operations.size': 360})
+    assert 'C=360' in diff
+    assert 'Python=352' in diff
+    assert 'trailing field' in diff
