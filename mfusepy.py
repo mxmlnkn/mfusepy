@@ -2748,7 +2748,7 @@ class FUSE:
             None if path is None else path.decode(self.encoding, self.errors), datasync, fip.contents.fh
         )
 
-    def _init(self, conn: FuseConnInfoPointer, config: Optional[FuseConfigPointer]) -> None:
+    def _init(self, conn: Optional[FuseConnInfoPointer], config: Optional[FuseConfigPointer]) -> None:
         if hasattr(self.operations, "init_with_config") and not getattr(
             self.operations.init_with_config, "libfuse_ignore", False
         ):
@@ -2762,10 +2762,10 @@ class FUSE:
         elif hasattr(self.operations, "init") and not getattr(self.operations.init, "libfuse_ignore", False):
             self.operations.init("/")
 
-    def init_fuse_2(self, conn: FuseConnInfoPointer) -> None:
+    def init_fuse_2(self, conn: Optional[FuseConnInfoPointer]) -> None:
         self._init(conn, None)
 
-    def init_fuse_3(self, conn: FuseConnInfoPointer, config: FuseConfigPointer) -> None:
+    def init_fuse_3(self, conn: Optional[FuseConnInfoPointer], config: FuseConfigPointer) -> None:
         if config:
             if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
                 config.contents.nullpath_ok = True
