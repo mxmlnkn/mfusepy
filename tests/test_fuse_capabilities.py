@@ -13,6 +13,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import mfusepy  # noqa: E402
 from mfusepy import CAPABILITY_BITS, FuseCapability, fuse_conn_info  # noqa: E402
 
+_HAS_WANT = any(field[0] == 'want' for field in fuse_conn_info._fields_)
+requires_want = pytest.mark.skipif(
+    not _HAS_WANT,
+    reason="libfuse before 2.8 has no fuse_conn_info.want member.",
+)
+
 
 def test_enable_is_callable():
     assert callable(fuse_conn_info().enable_capability)
@@ -44,6 +50,7 @@ def test_capability_map_is_sane():
     assert len(set(CAPABILITY_BITS.values())) == len(CAPABILITY_BITS)
 
 
+@requires_want
 def test_enable_undeclared_capability():
     # Every implementation leaves out the capabilities of the others, e.g., macFUSE's or WinFsp's.
     undeclared = next(capability for capability in FuseCapability if capability not in CAPABILITY_BITS)
@@ -58,6 +65,7 @@ def test_enable_undeclared_capability():
     assert connection.want == 0
 
 
+@requires_want
 def test_enable_requires_capable():
     capability, flag = get_declared_capabilities()[0]
     connection = fuse_conn_info()
@@ -87,6 +95,7 @@ def test_enable_requires_capable():
         assert not connection.want_ext & flag
 
 
+@requires_want
 def test_enable_high_bit_capability():
     high = [(capability, flag) for capability, flag in get_declared_capabilities() if flag >= 1 << 32]
     if not high:
