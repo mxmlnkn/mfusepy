@@ -83,8 +83,10 @@ jobs:
         run: flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
       - name: Check AUTHORS
+        env:
+          LC_ALL: C.UTF-8
         run: |
-          if ! diff <( git log --all --use-mailmap --format='%aN <%aE>' | sort -u | grep -v 'no author' ) <( sed '/^#/d; /^$/d' AUTHORS ); then
+          if ! diff <( git log --all --use-mailmap --format='%aN <%aE>' | sort -fu | grep -v 'no author' ) <( sed '/^#/d; /^$/d' AUTHORS ); then
               echo "::warning title=AUTHORS::AUTHORS is out of date."
           fi
 
