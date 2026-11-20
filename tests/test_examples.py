@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../e
 
 import mfusepy  # noqa: E402
 from context import Context as ContextOperations  # noqa: E402
+from loopback import Loopback  # noqa: E402
 from loopback import cli as cli_loopback  # noqa: E402
 from memory import cli as cli_memory  # noqa: E402
 from memory_nullpath import cli as cli_memory_nullpath  # noqa: E402
@@ -454,6 +455,13 @@ def test_context_read_respects_size_and_offset(monkeypatch):
     assert context.read('/uid', 1, 0, 0) == b'1'
     assert context.read('/uid', 10, 1, 0) == b'2345\n'
     assert context.read('/uid', 10, 100, 0) == b''
+
+
+def test_loopback_getattr_reports_inode(tmp_path):
+    path = tmp_path / 'file'
+    path.write_bytes(b'x')
+    operations = Loopback(str(tmp_path))
+    assert operations.getattr('/file')['st_ino'] == os.stat(path).st_ino
 
 
 @pytest.mark.skipif(sys.platform != 'linux', reason="lockf semantics differ on the BSDs and macOS")

@@ -103,6 +103,7 @@ class Loopback(fuse.Operations):
                 'st_atime_ns',
                 'st_ctime_ns',
                 'st_gid',
+                'st_ino',
                 'st_mode',
                 'st_mtime_ns',
                 'st_nlink',
