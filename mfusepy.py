@@ -345,23 +345,6 @@ class _FuseTypes:
         _FUSE_VERSION = context.fuse_version
         _librefuse = context.librefuse
 
-        # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's
-        # internal bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only
-        # be called with the real, session-embedded struct. FUSE._init marks that struct before handing it to
-        # 'init_with_config'. 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a
-        # fuse_conn_info that is not embedded in a session, e.g., in a test.
-        # Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
-        # This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
-        # I encountered some weird error on macos-14 without this!
-        # > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
-        _fuse_set_feature_flag = None
-        _fuse_unset_feature_flag = None
-        _fuse_get_feature_flag = None
-        if (_libfuse := context.libfuse) is not None and context.has_feature_flags:
-            _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
-            _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
-            _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
-
         if _system == 'Windows' or _system.startswith('CYGWIN'):
             # NOTE:
             #
@@ -1466,9 +1449,38 @@ class _FuseTypes:
 
         fuse_conn_info.CAPABILITY_BITS = CAPABILITY_BITS
         fuse_conn_info._HAS_WANT_EXT = _HAS_WANT_EXT
+
+        # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's
+        # internal bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only
+        # be called with the real, session-embedded struct. FUSE._init marks that struct before handing it to
+        # 'init_with_config'. 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a
+        # fuse_conn_info that is not embedded in a session, e.g., in a test.
+        # Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
+        # This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
+        # I encountered some weird error on macos-14 without this!
+        # > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
+        _fuse_set_feature_flag = None
+        _fuse_unset_feature_flag = None
+        _fuse_get_feature_flag = None
+        if (_libfuse := context.libfuse) is not None and context.has_feature_flags:
+            _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
+            _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
+            _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
+
+        if _fuse_set_feature_flag is not None:
+            _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+            _fuse_set_feature_flag.restype = ctypes.c_bool
+        if _fuse_unset_feature_flag is not None:
+            _fuse_unset_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+            _fuse_unset_feature_flag.restype = None
+        if _fuse_get_feature_flag is not None:
+            _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+            _fuse_get_feature_flag.restype = ctypes.c_bool
+
         fuse_conn_info._set_feature_flag = _fuse_set_feature_flag
         fuse_conn_info._unset_feature_flag = _fuse_unset_feature_flag
         fuse_conn_info._get_feature_flag = _fuse_get_feature_flag
+
         # FUSE 3-only struct for second init argument defined in fuse.h.
         # If a FUSE 2 method is loaded but 'init_with_config' overridden,
         # then this argument will only be zero-initialized and should be ignored.
@@ -1843,9 +1855,6 @@ class _FuseTypes:
         self.FuseConnInfoPointer = FuseConnInfoPointer
         self.fuse_pollhandle_p = fuse_pollhandle_p
         self.fuse_operations = fuse_operations
-        self._set_feature_flag = _fuse_set_feature_flag
-        self._unset_feature_flag = _fuse_unset_feature_flag
-        self._get_feature_flag = _fuse_get_feature_flag
         if _system == 'Windows' or _system.startswith('CYGWIN'):
             self.c_win_long = c_win_long
             self.c_win_ulong = c_win_ulong
@@ -1929,17 +1938,6 @@ _LIBFUSE3CAPABILITY_BITS = _types._LIBFUSE3CAPABILITY_BITS
 _LIBREFUSECAPABILITY_BITS = _types._LIBREFUSECAPABILITY_BITS
 _MACFUSECAPABILITY_BITS = _types._MACFUSECAPABILITY_BITS
 _WINFSPCAPABILITY_BITS = _types._WINFSPCAPABILITY_BITS
-_fuse_set_feature_flag = _types._set_feature_flag
-_fuse_unset_feature_flag = _types._unset_feature_flag
-_fuse_get_feature_flag = _types._get_feature_flag
-if _fuse_set_feature_flag is not None:
-    _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-    _fuse_set_feature_flag.restype = ctypes.c_bool
-if _fuse_unset_feature_flag is not None:
-    _fuse_unset_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-if _fuse_get_feature_flag is not None:
-    _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-    _fuse_get_feature_flag.restype = ctypes.c_bool
 if _system == 'Windows' or _system.startswith('CYGWIN'):
     c_win_long = _types.c_win_long
     c_win_ulong = _types.c_win_ulong
