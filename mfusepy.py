@@ -1559,8 +1559,10 @@ class _FuseTypes:
             ('listxattr', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
             ('removexattr', CFUNCTYPE(c_int, c_char_p, c_char_p)),
         ]
-        _fuse_operations_fields_2_9 = [
+        _fuse_operations_fields_2_8 = [
             ('poll', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, fuse_pollhandle_p, POINTER(c_uint))),
+        ]
+        _fuse_operations_fields_2_9 = [
             ('write_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_p, c_off_t, fuse_fi_p)),
             ('read_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_pp, c_size_t, c_off_t, fuse_fi_p)),
             ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
@@ -1619,6 +1621,7 @@ class _FuseTypes:
                     ('flag_utime_omit_ok', c_uint, 1),
                     ('flag_reserved', c_uint, 29),
                     ('ioctl', CFUNCTYPE(c_int, c_char_p, c_uint, c_void_p, fuse_fi_p, c_uint, c_void_p)),
+                    *_fuse_operations_fields_2_8,
                 ]
             if fuse_version_minor >= 9 or _system == 'Windows' or _system.startswith('CYGWIN'):
                 _fuse_operations_fields += _fuse_operations_fields_2_9
@@ -1730,6 +1733,7 @@ class _FuseTypes:
                 ('ioctl', CFUNCTYPE(                                                                       # Argument type
                     c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
                     fuse_fi_p, c_uint, c_void_p)),
+                *_fuse_operations_fields_2_8,
                 *_fuse_operations_fields_2_9,
                 (
                     'copy_file_range',                                                                     # New
