@@ -10,6 +10,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+KERNEL_STRUCTS = [
+    ('c_stat', 'stat'),
+    ('c_statvfs', 'statvfs'),
+    ('c_flock_t', 'flock'),
+    ('c_timespec', 'timespec'),
+    ('c_utimbuf', 'utimbuf'),
+]
+# Fields that are padding, have an unstable C name, or are optional libc extensions.
+SKIP_MEMBERS = {
+    'stat': {'reserved', 'st_birthtimespec'},
+    # f_type is a glibc extension that Ubuntu 22.04 headers do not declare.
+    'statvfs': {'f_type'},
+}
+# The Linux C member is st_atim, while the ctypes model uses the BSD st_atimespec name. The offset
+# matches through the st_atime macro, but the size of the scalar macro is not the timespec size.
+KERNEL_MEMBER_SIZE_SKIPS = {
+    'stat': ('st_atimespec', 'st_mtimespec', 'st_ctimespec', 'st_birthtimespec'),
+}
+
 
 def find_compiler() -> Optional[str]:
     if compiler := os.environ.get('CC'):
@@ -48,8 +67,8 @@ class StructSpec:
     key: Optional[str] = None
     members: Optional[tuple[str, ...]] = None
     skip_members: tuple[str, ...] = ()
+    skip_member_sizes: tuple[str, ...] = ()
     member_sizes: bool = False
-    bitfields: bool = False
 
     @property
     def name(self) -> str:
@@ -104,15 +123,14 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
 
         for member in member_names:
             if member in bitfield_names:
-                if spec.bitfields:
-                    key = f'{name}.{member} bit'
-                    checks.append(
-                        LayoutCheck(
-                            key,
-                            first_set_bit(struct_type, member),
-                            _bitfield_lines(key, spec.c_name, member),
-                        )
+                key = f'{name}.{member} bit'
+                checks.append(
+                    LayoutCheck(
+                        key,
+                        first_set_bit(struct_type, member),
+                        _bitfield_lines(key, spec.c_name, member),
                     )
+                )
                 continue
 
             c_member = c_member_name(member)
@@ -123,7 +141,7 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
                     (f'    printf("{name}.{member} offset:%zu\\n", offsetof(struct {spec.c_name}, {c_member}));',),
                 )
             )
-            if spec.member_sizes:
+            if spec.member_sizes and member not in spec.skip_member_sizes:
                 checks.append(
                     LayoutCheck(
                         f'{name}.{member} size',

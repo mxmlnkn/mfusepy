@@ -25,6 +25,9 @@ except OSError:
     pytest.skip("No libfuse runtime library available for the module import.", allow_module_level=True)
 
 from struct_layout_utils import (  # noqa: E402
+    KERNEL_MEMBER_SIZE_SKIPS,
+    KERNEL_STRUCTS,
+    SKIP_MEMBERS,
     StructSpec,
     build_checks,
     c_probe,
@@ -52,11 +55,13 @@ class HeaderCase:
     name: str
     context: 'FuseContext'
     include_dir: Path
-    header: str
+    header: str = ''
+    includes: tuple[str, ...] = field(default_factory=tuple)
     cflags: tuple[str, ...] = field(default_factory=tuple)
     structs: tuple[str, ...] = field(default_factory=lambda: tuple(STRUCTS))
-    compile_skip: bool = False
+    kernel_structs: bool = False
     member_sizes: bool = True
+    skip_reason: str = ''
 
 
 def compiled_layout(case: HeaderCase, types) -> tuple[dict[str, int], dict[str, int]]:
@@ -67,23 +72,26 @@ def compiled_layout(case: HeaderCase, types) -> tuple[dict[str, int], dict[str, 
     if compiler is None:
         pytest.skip("No C compiler available for the header matrix.")
 
-    structs = tuple(
-        StructSpec(
-            python_name=name,
-            c_name=name,
-            member_sizes=case.member_sizes,
-            bitfields=name == 'fuse_file_info',
-        )
-        for name in case.structs
-    )
+    structs = [StructSpec(python_name=name, c_name=name, member_sizes=case.member_sizes) for name in case.structs]
+    if case.kernel_structs:
+        structs += [
+            StructSpec(
+                python_name=python_name,
+                c_name=c_name,
+                key=c_name,
+                skip_members=tuple(SKIP_MEMBERS.get(c_name, ())),
+                skip_member_sizes=KERNEL_MEMBER_SIZE_SKIPS.get(c_name, ()),
+                member_sizes=True,
+            )
+            for python_name, c_name in KERNEL_STRUCTS
+        ]
     checks = build_checks(types, structs)
-    source = c_probe((case.header,), checks)
+    includes = (*case.includes, case.header) if case.header else case.includes
+    source = c_probe(includes, checks)
     cflags = ['-D_FILE_OFFSET_BITS=64', *case.cflags, f'-I{case.include_dir}']
     try:
         output = compile_and_run(source, compiler=compiler, cflags=cflags)
     except subprocess.CalledProcessError as error:
-        if case.compile_skip:
-            pytest.skip(f"{case.name}: C compilation is not portable: {error.stderr.strip()}")
         raise AssertionError(f"{case.name}: C compilation failed:\n{error.stderr}") from error
 
     return parse_c_output(output), python_layout(checks)
@@ -116,8 +124,10 @@ def header_cases() -> list[HeaderCase]:
                     ),
                     include_dir=include_dir,
                     header='fuse.h',
+                    includes=('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h'),
                     cflags=(f'-DFUSE_USE_VERSION={major}{minor}',),
                     structs=structs,
+                    kernel_structs=True,
                 )
             )
             break
@@ -155,7 +165,6 @@ def header_cases() -> list[HeaderCase]:
                     header='fuse/fuse.h',
                     cflags=('-D_WIN64', '-DFSP_FUSE_API=', '-D__declspec(x)='),
                     structs=tuple(s for s in STRUCTS if s not in ('fuse_config', 'fuse_buf', 'fuse_bufvec')),
-                    compile_skip=True,
                 )
             )
 
@@ -174,9 +183,14 @@ def header_cases() -> list[HeaderCase]:
                     header='fuse/fuse.h',
                     cflags=('-D__APPLE__', '-DFUSE_USE_VERSION=29'),
                     structs=tuple(s for s in STRUCTS if s != 'fuse_config'),
-                    compile_skip=True,
                     # The probe is compiled with the host's mode_t, so member sizes are not comparable.
                     member_sizes=False,
+                    skip_reason=(
+                        "macFUSE master has a different, unreleased fuse_operations layout. "
+                        "The matrix checks the 5.5.0 support/libfuse-2.9 branch."
+                        if version.name != 'support-libfuse-2.9'
+                        else ''
+                    ),
                 )
             )
 
@@ -199,7 +213,7 @@ def header_cases() -> list[HeaderCase]:
                         include_dir=include_dir,
                         header='fuse.h',
                         structs=tuple(s for s in STRUCTS if s not in ('fuse_config', 'fuse_buf', 'fuse_bufvec')),
-                        compile_skip=system == 'NetBSD',
+                        skip_reason=("NetBSD librefuse headers need a target sysroot." if system == 'NetBSD' else ''),
                     )
                 )
     return cases
@@ -207,6 +221,8 @@ def header_cases() -> list[HeaderCase]:
 
 @pytest.mark.parametrize('case', header_cases(), ids=lambda case: case.name)
 def test_downloaded_header_layout(case):
+    if case.skip_reason:
+        pytest.skip(case.skip_reason)
     types = mfusepy._FuseTypes(case.context)
     c_layout, py_layout = compiled_layout(case, types)
     assert py_layout == c_layout, f"{case.name}: layout mismatch\n{format_layout_diff(py_layout, c_layout)}"

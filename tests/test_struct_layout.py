@@ -9,6 +9,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import mfusepy  # noqa: E402
 from struct_layout_utils import (  # noqa: E402
+    KERNEL_MEMBER_SIZE_SKIPS,
+    KERNEL_STRUCTS,
+    SKIP_MEMBERS,
     StructSpec,
     build_checks,
     c_probe,
@@ -21,19 +24,19 @@ from struct_layout_utils import (  # noqa: E402
 pytestmark = pytest.mark.order(0)
 
 
-KERNEL_STRUCTS = [('c_stat', 'stat'), ('c_statvfs', 'statvfs'), ('c_flock_t', 'flock')]
-# Fields that are padding, have an unstable C name, or are optional libc extensions.
-SKIP_MEMBERS = {
-    'stat': {'reserved', 'st_birthtimespec'},
-    # f_type is a glibc extension that Ubuntu 22.04 headers do not declare.
-    'statvfs': {'f_type'},
-}
-
-FUSE_STRUCTS = ['fuse_context', 'fuse_conn_info', 'fuse_file_info', 'fuse_operations']
-if (mfusepy.fuse_version_major, mfusepy.fuse_version_minor) >= (2, 9) and not mfusepy._librefuse:
-    FUSE_STRUCTS += ['fuse_buf', 'fuse_bufvec']
-if mfusepy.fuse_version_major == 3:
-    FUSE_STRUCTS += ['fuse_config']
+def fuse_struct_names() -> list[str]:
+    names = [
+        name
+        for name in dir(mfusepy)
+        if name.startswith('fuse_')
+        and isinstance(getattr(mfusepy, name), type)
+        and issubclass(getattr(mfusepy, name), ctypes.Structure)
+    ]
+    if mfusepy.fuse_version_major == 2:
+        names = [name for name in names if name != 'fuse_config']
+        if mfusepy.fuse_version_minor < 9 or mfusepy._librefuse:
+            names = [name for name in names if name not in ('fuse_buf', 'fuse_bufvec')]
+    return names
 
 
 def struct_specs() -> list[StructSpec]:
@@ -43,24 +46,18 @@ def struct_specs() -> list[StructSpec]:
             c_name=c_name,
             key=c_name,
             skip_members=tuple(SKIP_MEMBERS.get(c_name, ())),
+            skip_member_sizes=KERNEL_MEMBER_SIZE_SKIPS.get(c_name, ()),
+            member_sizes=True,
         )
         for python_name, c_name in KERNEL_STRUCTS
     ]
-    specs += [
-        StructSpec(
-            python_name=struct_name,
-            c_name=struct_name,
-            member_sizes=True,
-            bitfields=struct_name == 'fuse_file_info',
-        )
-        for struct_name in FUSE_STRUCTS
-    ]
+    specs += [StructSpec(python_name=name, c_name=name, member_sizes=True) for name in fuse_struct_names()]
     return specs
 
 
 CHECKS = build_checks(mfusepy, struct_specs())
 PY_INFOS = python_layout(CHECKS)
-C_CHECKER = c_probe(('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'fuse.h'), CHECKS)
+C_CHECKER = c_probe(('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h', 'fuse.h'), CHECKS)
 
 
 def build_cflags() -> list[str]:
