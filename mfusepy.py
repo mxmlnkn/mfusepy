@@ -48,36 +48,104 @@ else:
     c_uint64_p = ctypes.POINTER(ctypes.c_uint64)
 
 log = logging.getLogger("fuse")
+
+
+class FuseCapability(enum.Enum):
+    '''
+    A FUSE feature that a file system can request via 'fuse_conn_info.enable_capability' inside 'init_with_config'.
+
+    This is a cross-platform enumeration over the capabilities of the supported FUSE implementations.
+    '''
+
+    # libfuse: https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
+    # Enum values remove the 'FUSE_CAP_' prefix for readability.
+    # (E) Enabled by default (in libfuse 3.18+) when supported by the kernel.
+    # fmt: off
+    # libfuse 2.9.9 capabilities
+    ASYNC_READ           = enum.auto()  # (E)
+    POSIX_LOCKS          = enum.auto()  # (E)
+    ATOMIC_O_TRUNC       = enum.auto()  # (E)
+    EXPORT_SUPPORT       = enum.auto()
+    BIG_WRITES           = enum.auto()  # removed in libfuse 3
+    DONT_MASK            = enum.auto()
+    SPLICE_WRITE         = enum.auto()
+    SPLICE_MOVE          = enum.auto()
+    SPLICE_READ          = enum.auto()  # (E)
+    FLOCK_LOCKS          = enum.auto()  # (E)
+    IOCTL_DIR            = enum.auto()  # (E)
+    # libfuse 3.0+ capabilities
+    AUTO_INVAL_DATA      = enum.auto()  # (E)
+    READDIRPLUS          = enum.auto()  # (E)  enabled by default when readdirplus exists
+    READDIRPLUS_AUTO     = enum.auto()  # (E)  enabled by default when readdirplus and readdir exist
+    ASYNC_DIO            = enum.auto()  # (E)
+    WRITEBACK_CACHE      = enum.auto()
+    NO_OPEN_SUPPORT      = enum.auto()
+    PARALLEL_DIROPS      = enum.auto()
+    POSIX_ACL            = enum.auto()
+    HANDLE_KILLPRIV      = enum.auto()  # bit 20
+    # Bit 21 (HANDLE_KILLPRIV_V2) and 22 have weirdly been used only much later than bit 24 (NO_OPENDIR_SUPPORT).
+    HANDLE_KILLPRIV_V2   = enum.auto()  # libfuse 3.17+ bit 21
+    # bit 22 has never been assigned a meaning (writing this as of libfuse 3.18).
+    CACHE_SYMLINKS       = enum.auto()  # libfuse 3.10+ bit 23
+    NO_OPENDIR_SUPPORT   = enum.auto()  # libfuse 3.5+  bit 24
+    EXPLICIT_INVAL_DATA  = enum.auto()  # libfuse 3.9+
+    EXPIRE_ONLY          = enum.auto()  # libfuse 3.13+
+    SETXATTR_EXT         = enum.auto()  # libfuse 3.15+
+    DIRECT_IO_ALLOW_MMAP = enum.auto()  # libfuse 3.17+
+    PASSTHROUGH          = enum.auto()  # libfuse 3.17+
+    NO_EXPORT_SUPPORT    = enum.auto()  # libfuse 3.17+
+    OVER_IO_URING        = enum.auto()  # libfuse 3.18+
+    ALLOW_IDMAP          = enum.auto()  # libfuse 3.19+
+    SECURITY_CTX         = enum.auto()  # (E) libfuse 3.19+
+    IO_URING_BUFPOOL     = enum.auto()  # libfuse 3.19+
+
+    # macFUSE: https://github.com/macfuse/library/blob/master/include/fuse_common.h
+    ACCESS_EXTENDED      = enum.auto()  # 23
+    NODE_RWLOCK          = enum.auto()  # 24
+    RENAME_SWAP          = enum.auto()  # 25
+    RENAME_EXCL          = enum.auto()  # 26
+
+    # WinFsp: https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
+    # READDIR_PLUS        = enum.auto()  # bit 21, file system supports enhanced readdir -> conflate with READDIRPLUS?
+    READ_ONLY            = enum.auto()  # bit 22, file system is marked read-only
+    STAT_EX              = enum.auto()  # bit 23, file system supports fuse_stat_ex
+    DELETE_ACCESS        = enum.auto()  # bit 24, file system supports access with DELETE_OK
+
+    # Shared by macFUSE and WinFsp, originally from OSXFUSE.
+    ALLOCATE             = enum.auto()  # 27
+    EXCHANGE_DATA        = enum.auto()  # 28
+    CASE_INSENSITIVE     = enum.auto()  # 29
+    VOL_RENAME           = enum.auto()  # 30
+    XTIMES               = enum.auto()  # 31
+    # fmt: on
+
+
+def get_fuse_version(libfuse):
+    version = libfuse.fuse_version()
+    if version < 100:
+        return version // 10, version % 10
+    if version < 1000:
+        return version // 100, version % 100
+    raise AttributeError(f"Version {version} of found library {_libfuse._name} cannot be parsed!")
+
+
+def _get_fuse_version_hotfix(libfuse):
+    'Parse the hotfix version from fuse_pkgversion(), which was added in libfuse 3.17.'
+    package_version = getattr(libfuse, 'fuse_pkgversion', None)
+    if package_version is None:
+        return 0
+    package_version.restype = ctypes.c_char_p
+    version = package_version()
+    if not version:
+        return 0
+    parts = version.split(b'.')
+    if len(parts) < 3 or not all(part.isdigit() for part in parts[:3]):
+        return 0
+    return int(parts[2])
+
+
 _system = platform.system()
 _machine = platform.machine()
-
-if _system == 'Windows' or _system.startswith('CYGWIN'):
-    # NOTE:
-    #
-    # sizeof(long)==4 on Windows 32-bit and 64-bit
-    # sizeof(long)==4 on Cygwin 32-bit and ==8 on Cygwin 64-bit
-    #
-    # We have to fix up c_long and c_ulong so that it matches the
-    # Cygwin (and UNIX) sizes when run on Windows.
-    import sys
-
-    c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
-    c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
-
-
-class c_timespec(ctypes.Structure):
-    if _system == 'Windows' or _system.startswith('CYGWIN'):
-        _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
-    elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
-        # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/timespec.h#L47
-        # https://github.com/NetBSD/src/blob/netbsd-10/sys/arch/hpc/stand/include/machine/types.h#L40
-        _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
-    else:
-        _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
-
-
-class c_utimbuf(ctypes.Structure):
-    _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
 
 
 # Beware that FUSE_LIBRARY_PATH path was unchecked! If it is set to libfuse3.so.3.14.0,
@@ -171,30 +239,6 @@ if _system == 'NetBSD' and hasattr(_libfuse, 'fuse_pkgversion'):
     _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
 
 
-def get_fuse_version(libfuse):
-    version = libfuse.fuse_version()
-    if version < 100:
-        return version // 10, version % 10
-    if version < 1000:
-        return version // 100, version % 100
-    raise AttributeError(f"Version {version} of found library {_libfuse._name} cannot be parsed!")
-
-
-def _get_fuse_version_hotfix(libfuse):
-    'Parse the hotfix version from fuse_pkgversion(), which was added in libfuse 3.17.'
-    package_version = getattr(libfuse, 'fuse_pkgversion', None)
-    if package_version is None:
-        return 0
-    package_version.restype = ctypes.c_char_p
-    version = package_version()
-    if not version:
-        return 0
-    parts = version.split(b'.')
-    if len(parts) < 3 or not all(part.isdigit() for part in parts[:3]):
-        return 0
-    return int(parts[2])
-
-
 fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
 _fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
 _FUSE_VERSION = (fuse_version_major, fuse_version_minor, _fuse_version_hotfix)
@@ -208,137 +252,6 @@ if fuse_version_major != 2 and not (fuse_version_major == 3 and _system in ('Lin
         f"Found library {_libfuse_path} has wrong major version: {fuse_version_major}. "
         "Expected FUSE 2, or FUSE 3 on Linux and NetBSD!"
     )
-
-# Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
-# For missing xattrs, errno is set to the ENOATTR value (e.g. in getxattr and removexattr).
-# But, on some other platforms, ENOATTR is missing; use the same value as ENODATA there.
-# We have a test that makes sure this is not None for all platforms we test on.
-ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
-
-
-# POSIX ACLs are exchanged with the Linux kernel as extended attributes with these keys:
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/xattr.h#L91
-XATTR_NAME_POSIX_ACL_ACCESS = 'system.posix_acl_access'
-XATTR_NAME_POSIX_ACL_DEFAULT = 'system.posix_acl_default'
-
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl_xattr.h
-POSIX_ACL_XATTR_VERSION = 0x0002
-# Qualifier of PosixACLEntry for tags that do not have one, defined as -1 in the kernel but converted to uint32_t.
-ACL_UNDEFINED_ID = 0xFFFF_FFFF
-
-
-# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl.h
-class ACLTag(enum.Enum):
-    'What the permissions of an ACL entry applies to.'
-
-    # fmt: off
-    USER_OBJ  = 0x01   # The usual non-ACL owning user
-    USER      = 0x02
-    GROUP_OBJ = 0x04   # The usual non-ACL owning group
-    GROUP     = 0x08
-    MASK      = 0x10
-    OTHER     = 0x20
-    # fmt: on
-
-
-class ACLPermission(enum.IntFlag):
-    'Permissions of an ACL entry, a combination of READ, WRITE, and EXECUTE.'
-
-    # fmt: off
-    READ    = 0x04
-    WRITE   = 0x02
-    EXECUTE = 0x01
-    # fmt: on
-
-
-class PosixACLEntry(NamedTuple):
-    tag: ACLTag
-    permissions: ACLPermission
-    qualifier: int = ACL_UNDEFINED_ID  # uid for ACLTag.USER, gid for ACLTag.GROUP, else undefined
-
-
-# struct posix_acl_xattr_header { __le32 a_version; }
-_POSIX_ACL_XATTR_HEADER = struct.Struct('<I')
-# struct posix_acl_xattr_entry { __le16 e_tag; __le16 e_perm; __le32 e_id; }
-_POSIX_ACL_XATTR_ENTRY = struct.Struct('<HHI')
-
-
-def posix_acl_to_xattr(entries: Iterable[PosixACLEntry]) -> bytes:
-    'Pack (tag, permissions, qualifier) triples into the Linux-specific system.posix_acl_access binary format.'
-
-    # Only Linux implements POSIX ACLs as extended file attributes.
-    # FreeBSD's fusefs marks FUSE_POSIX_ACL as "not yet implemented":
-    #   https://github.com/freebsd/freebsd-src/blob/release/15.1.0/sys/fs/fuse/fuse_internal.c#L1104-L1119
-    # macOS uses NFSv4 ACLs and macFUSE does not define the capability at all:
-    #   https://github.com/macfuse/library/blob/master/include/fuse_common.h
-    if _system != 'Linux':
-        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
-
-    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L840-L876
-    # The entries are sorted into the canonical order required by the kernel's posix_acl_valid() in
-    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L243 via a state machine.
-    # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
-    # Multiple named entries with the same tag are additionally sorted by their qualifier.
-    # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
-    ordered = sorted(entries, key=lambda entry: (entry.tag.value, entry.qualifier))
-
-    packed = []
-    for entry in ordered:
-        permissions = int(entry.permissions)
-        # https://github.com/torvalds/linux/blob/8d3ae59288f1e7d58d76558a6ee96d533bc5019f/fs/posix_acl.c#L250
-        # As usual, limited to three permission bits: ACL_READ|ACL_WRITE|ACL_EXECUTE
-        if not 0 <= permissions <= 7:
-            raise ValueError(f"POSIX ACL entry for {entry.tag.name} has invalid permission bits: {permissions:#x}!")
-
-        if entry.tag in (ACLTag.USER, ACLTag.GROUP):
-            if not 0 <= entry.qualifier < ACL_UNDEFINED_ID:
-                raise ValueError(
-                    f"POSIX ACL entry for {entry.tag.name} requires a defined uid/gid, got {entry.qualifier}!"
-                )
-            qualifier = entry.qualifier
-        else:
-            # According to man acl:
-            # > Entries with tag types other than ACL_USER or ACL_GROUP have no defined qualifiers.
-            if entry.qualifier not in (-1, ACL_UNDEFINED_ID):
-                raise ValueError(f"POSIX ACL entry for {entry.tag.name} must not have qualifier {entry.qualifier}!")
-            qualifier = ACL_UNDEFINED_ID
-
-        packed.append(_POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, permissions, qualifier))
-
-    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(packed)
-
-
-def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
-    'Parses the Linux-specific xattr ACL binary format. The inverse of posix_acl_to_xattr.'
-
-    if _system != 'Linux':
-        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
-
-    header_size = _POSIX_ACL_XATTR_HEADER.size
-    entry_size = _POSIX_ACL_XATTR_ENTRY.size
-    if len(value) < header_size or (len(value) - header_size) % entry_size != 0:
-        raise ValueError(f"POSIX ACL of size {len(value)} is truncated or contains trailing bytes!")
-
-    version = _POSIX_ACL_XATTR_HEADER.unpack_from(value)[0]
-    if version != POSIX_ACL_XATTR_VERSION:
-        raise ValueError(f"Expected POSIX ACL version {POSIX_ACL_XATTR_VERSION} but got: {version}!")
-
-    entries = []
-    for raw_tag, permissions, qualifier in (
-        _POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset) for offset in range(header_size, len(value), entry_size)
-    ):
-        if not 0 <= permissions <= 7:
-            raise ValueError(f"POSIX ACL entry with tag {raw_tag:#x} has invalid permission bits: {permissions:#x}!")
-
-        try:
-            tag = ACLTag(raw_tag)
-        except ValueError as exception:
-            raise ValueError(f"Unknown POSIX ACL tag: {raw_tag:#x}!") from exception
-        if tag in (ACLTag.USER, ACLTag.GROUP) and qualifier == ACL_UNDEFINED_ID:
-            raise ValueError(f"POSIX ACL entry for {tag.name} requires a defined uid/gid but got ACL_UNDEFINED_ID!")
-
-        entries.append(PosixACLEntry(tag, ACLPermission(permissions), qualifier))
-    return entries
 
 
 # Check FUSE major version changes by cloning https://github.com/libfuse/libfuse.git
@@ -384,6 +297,36 @@ def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
 #  - Added macro definitions for constants FUSE_CAP_* to fuse_common.h.
 #  - Added fuse_apply_conn_info_opts to fuse_common.h, see the official changelog
 #    for reasoning.
+
+
+if _system == 'Windows' or _system.startswith('CYGWIN'):
+    # NOTE:
+    #
+    # sizeof(long)==4 on Windows 32-bit and 64-bit
+    # sizeof(long)==4 on Cygwin 32-bit and ==8 on Cygwin 64-bit
+    #
+    # We have to fix up c_long and c_ulong so that it matches the
+    # Cygwin (and UNIX) sizes when run on Windows.
+    import sys
+
+    c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
+    c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
+
+
+class c_timespec(ctypes.Structure):
+    if _system == 'Windows' or _system.startswith('CYGWIN'):
+        _fields_ = [('tv_sec', c_win_long), ('tv_nsec', c_win_long)]
+    elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
+        # https://github.com/NetBSD/src/blob/netbsd-10/sys/sys/timespec.h#L47
+        # https://github.com/NetBSD/src/blob/netbsd-10/sys/arch/hpc/stand/include/machine/types.h#L40
+        _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_long)]
+    else:
+        _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
+
+
+class c_utimbuf(ctypes.Structure):
+    _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
+
 
 # Set non-FUSE-specific kernel type definitions.
 if _system in ('Darwin', 'FreeBSD'):
@@ -1262,76 +1205,6 @@ elif fuse_version_major == 3 or _librefuse:
             _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
 
 
-class FuseCapability(enum.Enum):
-    '''
-    A FUSE feature that a file system can request via 'fuse_conn_info.enable_capability' inside 'init_with_config'.
-
-    This is a cross-platform enumeration over the capabilities of the supported FUSE implementations.
-    '''
-
-    # libfuse: https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
-    # Enum values remove the 'FUSE_CAP_' prefix for readability.
-    # (E) Enabled by default (in libfuse 3.18+) when supported by the kernel.
-    # fmt: off
-    # libfuse 2.9.9 capabilities
-    ASYNC_READ           = enum.auto()  # (E)
-    POSIX_LOCKS          = enum.auto()  # (E)
-    ATOMIC_O_TRUNC       = enum.auto()  # (E)
-    EXPORT_SUPPORT       = enum.auto()
-    BIG_WRITES           = enum.auto()  # removed in libfuse 3
-    DONT_MASK            = enum.auto()
-    SPLICE_WRITE         = enum.auto()
-    SPLICE_MOVE          = enum.auto()
-    SPLICE_READ          = enum.auto()  # (E)
-    FLOCK_LOCKS          = enum.auto()  # (E)
-    IOCTL_DIR            = enum.auto()  # (E)
-    # libfuse 3.0+ capabilities
-    AUTO_INVAL_DATA      = enum.auto()  # (E)
-    READDIRPLUS          = enum.auto()  # (E)  enabled by default when readdirplus exists
-    READDIRPLUS_AUTO     = enum.auto()  # (E)  enabled by default when readdirplus and readdir exist
-    ASYNC_DIO            = enum.auto()  # (E)
-    WRITEBACK_CACHE      = enum.auto()
-    NO_OPEN_SUPPORT      = enum.auto()
-    PARALLEL_DIROPS      = enum.auto()
-    POSIX_ACL            = enum.auto()
-    HANDLE_KILLPRIV      = enum.auto()  # bit 20
-    # Bit 21 (HANDLE_KILLPRIV_V2) and 22 have weirdly been used only much later than bit 24 (NO_OPENDIR_SUPPORT).
-    HANDLE_KILLPRIV_V2   = enum.auto()  # libfuse 3.17+ bit 21
-    # bit 22 has never been assigned a meaning (writing this as of libfuse 3.18).
-    CACHE_SYMLINKS       = enum.auto()  # libfuse 3.10+ bit 23
-    NO_OPENDIR_SUPPORT   = enum.auto()  # libfuse 3.5+  bit 24
-    EXPLICIT_INVAL_DATA  = enum.auto()  # libfuse 3.9+
-    EXPIRE_ONLY          = enum.auto()  # libfuse 3.13+
-    SETXATTR_EXT         = enum.auto()  # libfuse 3.15+
-    DIRECT_IO_ALLOW_MMAP = enum.auto()  # libfuse 3.17+
-    PASSTHROUGH          = enum.auto()  # libfuse 3.17+
-    NO_EXPORT_SUPPORT    = enum.auto()  # libfuse 3.17+
-    OVER_IO_URING        = enum.auto()  # libfuse 3.18+
-    ALLOW_IDMAP          = enum.auto()  # libfuse 3.19+
-    SECURITY_CTX         = enum.auto()  # (E) libfuse 3.19+
-    IO_URING_BUFPOOL     = enum.auto()  # libfuse 3.19+
-
-    # macFUSE: https://github.com/macfuse/library/blob/master/include/fuse_common.h
-    ACCESS_EXTENDED      = enum.auto()  # 23
-    NODE_RWLOCK          = enum.auto()  # 24
-    RENAME_SWAP          = enum.auto()  # 25
-    RENAME_EXCL          = enum.auto()  # 26
-
-    # WinFsp: https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
-    # READDIR_PLUS        = enum.auto()  # bit 21, file system supports enhanced readdir -> conflate with READDIRPLUS?
-    READ_ONLY            = enum.auto()  # bit 22, file system is marked read-only
-    STAT_EX              = enum.auto()  # bit 23, file system supports fuse_stat_ex
-    DELETE_ACCESS        = enum.auto()  # bit 24, file system supports access with DELETE_OK
-
-    # Shared by macFUSE and WinFsp, originally from OSXFUSE.
-    ALLOCATE             = enum.auto()  # 27
-    EXCHANGE_DATA        = enum.auto()  # 28
-    CASE_INSENSITIVE     = enum.auto()  # 29
-    VOL_RENAME           = enum.auto()  # 30
-    XTIMES               = enum.auto()  # 31
-    # fmt: on
-
-
 _HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
 
 # Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which differ for some flags,
@@ -1522,31 +1395,6 @@ class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" fro
 
 if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
     assert ctypes.sizeof(fuse_conn_info) == 128
-
-# libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
-# bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
-# the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
-# 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
-# in a session, e.g., in a test.
-# Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
-# This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
-# I encountered some weird error on macos-14 without this!
-# > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
-_fuse_set_feature_flag = None
-_fuse_unset_feature_flag = None
-_fuse_get_feature_flag = None
-if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
-    _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
-    _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
-    _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
-if _fuse_set_feature_flag is not None:
-    _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-    _fuse_set_feature_flag.restype = ctypes.c_bool
-if _fuse_unset_feature_flag is not None:
-    _fuse_unset_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-if _fuse_get_feature_flag is not None:
-    _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
-    _fuse_get_feature_flag.restype = ctypes.c_bool
 
 # FUSE 3-only struct for second init argument defined in fuse.h.
 # If a FUSE 2 method is loaded but 'init_with_config' overridden,
@@ -1835,6 +1683,164 @@ elif fuse_version_major == 3:
 
 class fuse_operations(ctypes.Structure):
     _fields_ = _fuse_operations_fields
+
+
+# libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's internal
+# bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only be called with
+# the real, session-embedded struct. FUSE._init marks that struct before handing it to 'init_with_config';
+# 'enable'/'disable' fall back to writing 'want' and 'want_ext' directly for a fuse_conn_info that is not embedded
+# in a session, e.g., in a test.
+# Only look them up for libfuse 3.17+, where 'want_ext' and hence these helpers exist.
+# This also avoids resolving definitely undefined symbols on libfuse 2 / macFUSE and on libfuse 3 < 3.17.
+# I encountered some weird error on macos-14 without this!
+# > dyld[3593]: Assertion failed: (_usedCount < _allocCount), function push_back, file Array.h, line 64.
+_fuse_set_feature_flag = None
+_fuse_unset_feature_flag = None
+_fuse_get_feature_flag = None
+if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+    _fuse_set_feature_flag = getattr(_libfuse, 'fuse_set_feature_flag', None)
+    _fuse_unset_feature_flag = getattr(_libfuse, 'fuse_unset_feature_flag', None)
+    _fuse_get_feature_flag = getattr(_libfuse, 'fuse_get_feature_flag', None)
+if _fuse_set_feature_flag is not None:
+    _fuse_set_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+    _fuse_set_feature_flag.restype = ctypes.c_bool
+if _fuse_unset_feature_flag is not None:
+    _fuse_unset_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+if _fuse_get_feature_flag is not None:
+    _fuse_get_feature_flag.argtypes = [ctypes.POINTER(fuse_conn_info), ctypes.c_uint64]
+    _fuse_get_feature_flag.restype = ctypes.c_bool
+
+
+# Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
+# For missing xattrs, errno is set to the ENOATTR value (e.g. in getxattr and removexattr).
+# But, on some other platforms, ENOATTR is missing; use the same value as ENODATA there.
+# We have a test that makes sure this is not None for all platforms we test on.
+ENOATTR = getattr(errno, 'ENOATTR', getattr(errno, 'ENODATA', None))
+
+
+# POSIX ACLs are exchanged with the Linux kernel as extended attributes with these keys:
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/xattr.h#L91
+XATTR_NAME_POSIX_ACL_ACCESS = 'system.posix_acl_access'
+XATTR_NAME_POSIX_ACL_DEFAULT = 'system.posix_acl_default'
+
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl_xattr.h
+POSIX_ACL_XATTR_VERSION = 0x0002
+# Qualifier of PosixACLEntry for tags that do not have one, defined as -1 in the kernel but converted to uint32_t.
+ACL_UNDEFINED_ID = 0xFFFF_FFFF
+
+
+# https://github.com/torvalds/linux/blob/v7.2/include/uapi/linux/posix_acl.h
+class ACLTag(enum.Enum):
+    'What the permissions of an ACL entry applies to.'
+
+    # fmt: off
+    USER_OBJ  = 0x01   # The usual non-ACL owning user
+    USER      = 0x02
+    GROUP_OBJ = 0x04   # The usual non-ACL owning group
+    GROUP     = 0x08
+    MASK      = 0x10
+    OTHER     = 0x20
+    # fmt: on
+
+
+class ACLPermission(enum.IntFlag):
+    'Permissions of an ACL entry, a combination of READ, WRITE, and EXECUTE.'
+
+    # fmt: off
+    READ    = 0x04
+    WRITE   = 0x02
+    EXECUTE = 0x01
+    # fmt: on
+
+
+class PosixACLEntry(NamedTuple):
+    tag: ACLTag
+    permissions: ACLPermission
+    qualifier: int = ACL_UNDEFINED_ID  # uid for ACLTag.USER, gid for ACLTag.GROUP, else undefined
+
+
+# struct posix_acl_xattr_header { __le32 a_version; }
+_POSIX_ACL_XATTR_HEADER = struct.Struct('<I')
+# struct posix_acl_xattr_entry { __le16 e_tag; __le16 e_perm; __le32 e_id; }
+_POSIX_ACL_XATTR_ENTRY = struct.Struct('<HHI')
+
+
+def posix_acl_to_xattr(entries: Iterable[PosixACLEntry]) -> bytes:
+    'Pack (tag, permissions, qualifier) triples into the Linux-specific system.posix_acl_access binary format.'
+
+    # Only Linux implements POSIX ACLs as extended file attributes.
+    # FreeBSD's fusefs marks FUSE_POSIX_ACL as "not yet implemented":
+    #   https://github.com/freebsd/freebsd-src/blob/release/15.1.0/sys/fs/fuse/fuse_internal.c#L1104-L1119
+    # macOS uses NFSv4 ACLs and macFUSE does not define the capability at all:
+    #   https://github.com/macfuse/library/blob/master/include/fuse_common.h
+    if _system != 'Linux':
+        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
+
+    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L840-L876
+    # The entries are sorted into the canonical order required by the kernel's posix_acl_valid() in
+    # https://github.com/torvalds/linux/blob/v7.2/fs/posix_acl.c#L243 via a state machine.
+    # The order is: USER_OBJ -> USER -> GROUP_OBJ -> GROUP -> MASK -> OTHER (the same order as their enum values)
+    # Multiple named entries with the same tag are additionally sorted by their qualifier.
+    # See https://man7.org/linux/man-pages/man5/acl.5.html#VALID_ACLs
+    ordered = sorted(entries, key=lambda entry: (entry.tag.value, entry.qualifier))
+
+    packed = []
+    for entry in ordered:
+        permissions = int(entry.permissions)
+        # https://github.com/torvalds/linux/blob/8d3ae59288f1e7d58d76558a6ee96d533bc5019f/fs/posix_acl.c#L250
+        # As usual, limited to three permission bits: ACL_READ|ACL_WRITE|ACL_EXECUTE
+        if not 0 <= permissions <= 7:
+            raise ValueError(f"POSIX ACL entry for {entry.tag.name} has invalid permission bits: {permissions:#x}!")
+
+        if entry.tag in (ACLTag.USER, ACLTag.GROUP):
+            if not 0 <= entry.qualifier < ACL_UNDEFINED_ID:
+                raise ValueError(
+                    f"POSIX ACL entry for {entry.tag.name} requires a defined uid/gid, got {entry.qualifier}!"
+                )
+            qualifier = entry.qualifier
+        else:
+            # According to man acl:
+            # > Entries with tag types other than ACL_USER or ACL_GROUP have no defined qualifiers.
+            if entry.qualifier not in (-1, ACL_UNDEFINED_ID):
+                raise ValueError(f"POSIX ACL entry for {entry.tag.name} must not have qualifier {entry.qualifier}!")
+            qualifier = ACL_UNDEFINED_ID
+
+        packed.append(_POSIX_ACL_XATTR_ENTRY.pack(entry.tag.value, permissions, qualifier))
+
+    return _POSIX_ACL_XATTR_HEADER.pack(POSIX_ACL_XATTR_VERSION) + b''.join(packed)
+
+
+def posix_acl_from_xattr(value: bytes) -> list[PosixACLEntry]:
+    'Parses the Linux-specific xattr ACL binary format. The inverse of posix_acl_to_xattr.'
+
+    if _system != 'Linux':
+        raise NotImplementedError(f"POSIX ACLs not (yet) supported for {_system}.")
+
+    header_size = _POSIX_ACL_XATTR_HEADER.size
+    entry_size = _POSIX_ACL_XATTR_ENTRY.size
+    if len(value) < header_size or (len(value) - header_size) % entry_size != 0:
+        raise ValueError(f"POSIX ACL of size {len(value)} is truncated or contains trailing bytes!")
+
+    version = _POSIX_ACL_XATTR_HEADER.unpack_from(value)[0]
+    if version != POSIX_ACL_XATTR_VERSION:
+        raise ValueError(f"Expected POSIX ACL version {POSIX_ACL_XATTR_VERSION} but got: {version}!")
+
+    entries = []
+    for raw_tag, permissions, qualifier in (
+        _POSIX_ACL_XATTR_ENTRY.unpack_from(value, offset) for offset in range(header_size, len(value), entry_size)
+    ):
+        if not 0 <= permissions <= 7:
+            raise ValueError(f"POSIX ACL entry with tag {raw_tag:#x} has invalid permission bits: {permissions:#x}!")
+
+        try:
+            tag = ACLTag(raw_tag)
+        except ValueError as exception:
+            raise ValueError(f"Unknown POSIX ACL tag: {raw_tag:#x}!") from exception
+        if tag in (ACLTag.USER, ACLTag.GROUP) and qualifier == ACL_UNDEFINED_ID:
+            raise ValueError(f"POSIX ACL entry for {tag.name} requires a defined uid/gid but got ACL_UNDEFINED_ID!")
+
+        entries.append(PosixACLEntry(tag, ACLPermission(permissions), qualifier))
+    return entries
 
 
 if _system == "OpenBSD":
