@@ -5,7 +5,7 @@
 [![Downloads](https://static.pepy.tech/badge/mfusepy/month)](https://pepy.tech/project/mfusepy)
 [![Changelog](https://img.shields.io/badge/Changelog-Markdown-blue)](https://github.com/mxmlnkn/mfusepy/blob/master/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-ISC-blue.svg)](http://opensource.org/licenses/ISC)
-[![Build Status](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml/badge.svg)](https://github.com/mxmlnkn/mfusepy/actions)
+[![Build Status](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml/badge.svg)](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml)
 [![Discord](https://img.shields.io/discord/783411320354766878?label=discord)](https://discord.gg/Wra6t6akh2)
 [![Telegram](https://img.shields.io/badge/Chat-Telegram-%2330A3E6)](https://t.me/joinchat/FUdXxkXIv6c4Ib8bgaSxNg)
 
@@ -31,13 +31,13 @@ If you depend on this project, you should fix the major version, or else you ris
 E.g., in your pyproject.toml:
 
 ```toml
-dependencies = ["mfusepy ~= 1.1",]
+dependencies = ["mfusepy ~= 3.2",]
 ```
 
 If you have tested with multiple major versions and they are known to work, you can relax the constraint for maximum compatibility:
 
 ```toml
-dependencies = ["mfusepy >= 1.1, < 3.0",]
+dependencies = ["mfusepy >= 3.2, < 4.0",]
 ```
 
 
@@ -107,6 +107,9 @@ mfusepy requires FUSE 2.6 (or later) and runs on:
 - NetBSD (amd64)
 - OpenBSD (amd64)
 - OmniOS (amd64)
+
+FUSE 3 is currently supported on Linux and NetBSD. Other platforms use their FUSE 2-compatible
+implementations.
 
 While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7.org/linux/man-pages/man4/fuse.4.html), several user space libraries exist for easy access.
 `libfuse` acts as the reference implementation.
