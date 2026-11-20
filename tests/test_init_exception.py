@@ -37,6 +37,12 @@ class FakeFUSE(mfusepy.FUSE):
     def failing_readlink(self, path):
         raise SystemExit("critical failure")
 
+    def failing_generic(self, path):
+        raise RuntimeError("generic failure")
+
+    def failing_negative_oserror(self, path):
+        raise OSError(-1, "negative errno")
+
 
 class ConfigOperations:
     use_ns = True
@@ -49,6 +55,17 @@ class ConfigFUSE(mfusepy.FUSE):
     def __init__(self, options):
         self.operations = ConfigOperations()
         self._libfuse2_options_moved_into_libfuse3_config = options
+
+
+class InitConfigOperations:
+    def __init__(self):
+        self.calls = []
+
+    def init(self, path):
+        self.calls.append('init')
+
+    def init_with_config(self, conn, config):
+        self.calls.append(('init_with_config', config.nullpath_ok))
 
 
 class FalseyError(Exception):
@@ -84,6 +101,32 @@ def test_unsettable_moved_option_raises():
     fuse = ConfigFUSE({'not_a_config_option': True})
     with pytest.raises(RuntimeError, match="not_a_config_option"):
         mfusepy.FUSE.init_fuse_3(fuse, None, ctypes.pointer(mfusepy.fuse_config()))
+
+
+def test_regular_runtime_error_returns_einval(monkeypatch):
+    monkeypatch.setattr(mfusepy, 'fuse_exit', lambda: None)
+    fuse = FakeFUSE()
+    assert fuse._wrapper("getattr", fuse.failing_generic, b'/file') == -errno.EINVAL
+    assert fuse._FUSE__critical_exception is None
+
+
+def test_negative_oserror_returns_einval(monkeypatch):
+    monkeypatch.setattr(mfusepy, 'fuse_exit', lambda: None)
+    fuse = FakeFUSE()
+    assert fuse._wrapper("getattr", fuse.failing_negative_oserror, b'/file') == -errno.EINVAL
+    assert fuse._FUSE__critical_exception is None
+
+
+@requires_fuse_3
+def test_init_with_config_prefers_config_callback_and_applies_nopath():
+    operations = InitConfigOperations()
+    fuse = object.__new__(mfusepy.FUSE)
+    fuse.operations = operations
+    fuse._libfuse2_options_moved_into_libfuse3_config = {'nopath': True}
+
+    mfusepy.FUSE.init_fuse_3(fuse, None, ctypes.pointer(mfusepy.fuse_config()))
+
+    assert operations.calls == [('init_with_config', 1)]
 
 
 def test_init_fuse_2_oserror_aborts(monkeypatch):

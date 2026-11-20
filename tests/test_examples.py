@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../e
 
 import mfusepy  # noqa: E402
 from context import Context as ContextOperations  # noqa: E402
+from context import cli as cli_context  # noqa: E402
 from loopback import Loopback  # noqa: E402
 from loopback import cli as cli_loopback  # noqa: E402
 from memory import cli as cli_memory  # noqa: E402
@@ -326,6 +327,13 @@ def test_read_write_file_system(cli, tmp_path):
         assert os.stat(path).st_atime == 1.5
         assert os.stat(path).st_mtime == 12.5
 
+        # FreeBSD's FUSE implementation rejects hard links when st_ino and the kernel nodeid differ.
+        if cli == cli_loopback and not sys.platform.startswith('freebsd'):
+            hardlink = mount_point / "hardlink"
+            os.link(path, hardlink)
+            assert hardlink.read_bytes() == b"ba"
+            os.unlink(hardlink)
+
         assert filter_platform_files(os.listdir(mount_point)) == ["foo"]
         os.unlink(path)
         assert not path.exists()
@@ -374,6 +382,15 @@ def test_read_write_file_system(cli, tmp_path):
         for i in range(200):
             path = mount_point / str(i)
             path.unlink()
+
+
+def test_context_example(tmp_path):
+    with RunCLI(cli_context, tmp_path, []):
+        assert (tmp_path / 'uid').read_text().strip() == str(os.getuid())
+        assert (tmp_path / 'gid').read_text().strip() == str(os.getgid())
+        assert int((tmp_path / 'pid').read_text()) > 0
+        with pytest.raises(OSError):
+            (tmp_path / 'uid').write_text('x')
 
 
 @pytest.mark.parametrize('cli', [cli_memory_nullpath])

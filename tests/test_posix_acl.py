@@ -217,3 +217,17 @@ def test_posix_acl_throws_on_other_platforms():
         posix_acl_to_xattr(_example_entries())
     with pytest.raises(NotImplementedError):
         posix_acl_from_xattr(b'\x02\0\0\0')
+
+
+@linux_only
+def test_posix_acl_empty_round_trip():
+    packed = posix_acl_to_xattr([])
+    assert packed == struct.pack('<I', mfusepy.POSIX_ACL_XATTR_VERSION)
+    assert posix_acl_from_xattr(packed) == []
+
+
+@linux_only
+def test_posix_acl_accepts_largest_named_id():
+    entries = _example_entries()
+    entries[1] = PosixACLEntry(ACLTag.USER, entries[1].permissions, ACL_UNDEFINED_ID - 1)
+    assert posix_acl_from_xattr(posix_acl_to_xattr(entries)) == entries
