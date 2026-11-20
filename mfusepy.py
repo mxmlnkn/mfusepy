@@ -2766,10 +2766,17 @@ class FUSE:
         self._init(conn, None)
 
     def init_fuse_3(self, conn: FuseConnInfoPointer, config: FuseConfigPointer) -> None:
-        if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
-            config.contents.nullpath_ok = True
         if config:
+            if getattr(self.operations, 'flag_nopath', False) and getattr(self.operations, 'flag_nullpath_ok', False):
+                config.contents.nullpath_ok = True
             for key, value in self._libfuse2_options_moved_into_libfuse3_config.items():
+                option = key
+                if key == 'nopath':
+                    if not value:
+                        continue
+                    key = 'nullpath_ok'
+                if not hasattr(config.contents, key):
+                    raise RuntimeError(f"FUSE 3 cannot set the libfuse 2 option {option!r}")
                 setattr(config.contents, key, value)
         self._init(conn, config)
 

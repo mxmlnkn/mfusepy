@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # pylint: disable=protected-access
 
+import ctypes
 import errno
 import os
 import sys
@@ -10,6 +11,11 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import mfusepy  # noqa: E402
+
+requires_fuse_3 = pytest.mark.skipif(
+    mfusepy.fuse_version_major < 3,
+    reason="The moved libfuse 2 options are applied by init_fuse_3.",
+)
 
 
 class FakeFUSE(mfusepy.FUSE):
@@ -32,6 +38,19 @@ class FakeFUSE(mfusepy.FUSE):
         raise SystemExit("critical failure")
 
 
+class ConfigOperations:
+    use_ns = True
+
+    def init(self, path):
+        pass
+
+
+class ConfigFUSE(mfusepy.FUSE):
+    def __init__(self, options):
+        self.operations = ConfigOperations()
+        self._libfuse2_options_moved_into_libfuse3_config = options
+
+
 class FalseyError(Exception):
     def __bool__(self):
         return False
@@ -42,6 +61,29 @@ class RaisingInitOperations:
 
     def init(self, path):
         raise FalseyError("init failed")
+
+
+@requires_fuse_3
+def test_nopath_false_keeps_default():
+    fuse = ConfigFUSE({'nopath': False})
+    config = mfusepy.fuse_config()
+    mfusepy.FUSE.init_fuse_3(fuse, None, ctypes.pointer(config))
+    assert config.nullpath_ok == 0
+
+
+@requires_fuse_3
+def test_nopath_true_sets_nullpath_ok():
+    fuse = ConfigFUSE({'nopath': True})
+    config = mfusepy.fuse_config()
+    mfusepy.FUSE.init_fuse_3(fuse, None, ctypes.pointer(config))
+    assert config.nullpath_ok != 0
+
+
+@requires_fuse_3
+def test_unsettable_moved_option_raises():
+    fuse = ConfigFUSE({'not_a_config_option': True})
+    with pytest.raises(RuntimeError, match="not_a_config_option"):
+        mfusepy.FUSE.init_fuse_3(fuse, None, ctypes.pointer(mfusepy.fuse_config()))
 
 
 def test_init_fuse_2_oserror_aborts(monkeypatch):
