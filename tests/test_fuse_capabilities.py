@@ -3,6 +3,8 @@
 # The members of ctypes structs are defined dynamically via '_fields_', which pylint cannot see.
 # pylint: disable=no-member
 
+import ctypes
+import dataclasses
 import os
 import sys
 
@@ -93,6 +95,26 @@ def test_enable_requires_capable():
     assert not is_wanted(connection, capability)
     if mfusepy._HAS_WANT_EXT:
         assert not connection.want_ext & flag
+
+
+def test_feature_flag_helpers_are_typed_by_factory():
+    context = mfusepy._context
+    if not context.has_feature_flags or context.libfuse is None:
+        pytest.skip("libfuse does not export the feature flag helpers.")
+
+    # A second CDLL object has distinct ctypes function pointers. Their signatures must be configured by
+    # _FuseTypes itself instead of relying on the module-level aliases of the runtime instance.
+    libfuse = ctypes.CDLL(mfusepy._libfuse_path)
+    types = mfusepy._FuseTypes(dataclasses.replace(context, libfuse=libfuse))
+    conn_info = types.fuse_conn_info
+    expected_argtypes = [ctypes.POINTER(conn_info), ctypes.c_uint64]
+
+    assert conn_info._set_feature_flag.argtypes == expected_argtypes
+    assert conn_info._set_feature_flag.restype is ctypes.c_bool
+    assert conn_info._unset_feature_flag.argtypes == expected_argtypes
+    assert conn_info._unset_feature_flag.restype is None
+    assert conn_info._get_feature_flag.argtypes == expected_argtypes
+    assert conn_info._get_feature_flag.restype is ctypes.c_bool
 
 
 @requires_want
