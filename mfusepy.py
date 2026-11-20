@@ -165,7 +165,6 @@ class _FuseContext:
         _system = platform.system()
         _machine = platform.machine()
 
-
         # Beware that FUSE_LIBRARY_PATH path was unchecked! If it is set to libfuse3.so.3.14.0,
         # then it will mount without error, but when trying to access the mount point, will give:
         #     Uncaught exception from FUSE operation setxattr, returning errno.EINVAL:
@@ -183,7 +182,7 @@ class _FuseContext:
         if not _libfuse_path:
             if _system == 'Darwin':
                 # libfuse dependency
-                _libiconv = ctypes.CDLL(find_library('iconv'), ctypes.RTLD_GLOBAL)
+                ctypes.CDLL(find_library('iconv'), ctypes.RTLD_GLOBAL)
 
                 _libfuse_path = (
                     find_library('fuse4x') or find_library('osxfuse') or find_library('fuse') or find_library('fuse-t')
@@ -255,7 +254,6 @@ class _FuseContext:
         if _system == 'NetBSD' and hasattr(_libfuse, 'fuse_pkgversion'):
             _libfuse.fuse_pkgversion.restype = ctypes.c_char_p
             _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
-
 
         fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
         _fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
@@ -369,11 +367,8 @@ class _FuseTypes:
             #
             # We have to fix up c_long and c_ulong so that it matches the
             # Cygwin (and UNIX) sizes when run on Windows.
-            import sys
-
             c_win_long = ctypes.c_int64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_int32
             c_win_ulong = ctypes.c_uint64 if sys.maxsize > 0xFFFFFFFF else ctypes.c_uint32
-
 
         class c_timespec(ctypes.Structure):
             if _system == 'Windows' or _system.startswith('CYGWIN'):
@@ -385,10 +380,8 @@ class _FuseTypes:
             else:
                 _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
 
-
         class c_utimbuf(ctypes.Structure):
             _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
-
 
         # Set non-FUSE-specific kernel type definitions.
         if _system in ('Darwin', 'FreeBSD'):
@@ -813,16 +806,13 @@ class _FuseTypes:
         else:
             raise NotImplementedError(_system + ' is not supported.')
 
-
         class c_stat(ctypes.Structure):
             _fields_ = _c_stat__fields_
-
 
         # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_statvfs.h.html
         if _system == 'FreeBSD':
             c_fsblkcnt_t = ctypes.c_uint64
             c_fsfilcnt_t = ctypes.c_uint64
-
 
         class c_statvfs(ctypes.Structure):
             if _system == 'FreeBSD':
@@ -921,7 +911,6 @@ class _FuseTypes:
                         ('__f_spare', ctypes.c_uint * 5),
                     ]
 
-
         if (
             _system == 'Linux' and not (_machine.startswith('mips') and ctypes.sizeof(ctypes.c_void_p) == 4)
         ) or _system.startswith('CYGWIN'):
@@ -1002,7 +991,6 @@ class _FuseTypes:
 
         else:
             raise NotImplementedError(f"struct flock layout for {_system} is not known!")
-
 
         # fuse_file_info as defined in fuse_common.h. Changes in FUSE 3:
         #  - fh_old was removed
@@ -1141,17 +1129,14 @@ class _FuseTypes:
             else:
                 _fuse_file_info_fields_ += [('poll_events', _fuse_uint32)]
 
-
         class fuse_file_info(ctypes.Structure):
             _fields_ = _fuse_file_info_fields_
-
 
         if _librefuse:
             if ctypes.alignment(ctypes.c_uint64) == 8:
                 assert ctypes.sizeof(fuse_file_info) == 40
         elif ctypes.sizeof(ctypes.c_int) == 4 and _FUSE_VERSION >= (3, 17, 1):
             assert ctypes.sizeof(fuse_file_info) == 64
-
 
         class fuse_context(ctypes.Structure):
             _fields_ = [
@@ -1176,7 +1161,6 @@ class _FuseTypes:
         # FUSE_BUF_FD_RETRY = (1 << 3),
         fuse_buf_flags = ctypes.c_int
 
-
         class fuse_buf(ctypes.Structure):
             _fields_ = [
                 ('size', ctypes.c_size_t),
@@ -1188,7 +1172,6 @@ class _FuseTypes:
             if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
                 _fields_ += [('mem_size', ctypes.c_size_t)]
 
-
         class fuse_bufvec(ctypes.Structure):
             _fields_ = [
                 ('count', ctypes.c_size_t),
@@ -1196,7 +1179,6 @@ class _FuseTypes:
                 ('off', ctypes.c_size_t),
                 ('buf', fuse_buf * 1),  # Inline struct fuse_buf buf[1], not a pointer.
             ]
-
 
         if TYPE_CHECKING:
             fuse_fi_p = ctypes._Pointer[fuse_file_info]  # noqa: W212
@@ -1212,7 +1194,6 @@ class _FuseTypes:
             c_utimbuf_p = ctypes.POINTER(c_utimbuf)
             fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
             fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
-
 
         # fuse_conn_info struct as defined and documented in fuse_common.h
         _fuse_conn_info_fields: list[FieldsEntry] = [
@@ -1261,7 +1242,6 @@ class _FuseTypes:
                     ]
                 else:
                     _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
-
 
         _HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
 
@@ -1379,7 +1359,6 @@ class _FuseTypes:
         else:
             CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
 
-
         # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
         class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
             # The members are defined via '_fields_', which pylint cannot see.
@@ -1454,7 +1433,6 @@ class _FuseTypes:
                 self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
                 if type(self)._HAS_WANT_EXT:
                     self.want_ext &= ~flag
-
 
         if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
             assert ctypes.sizeof(fuse_conn_info) == 128
@@ -1536,10 +1514,8 @@ class _FuseTypes:
                     ('reserved', ctypes.c_uint64 * 48),
                 ]
 
-
         class fuse_config(ctypes.Structure):
             _fields_ = _fuse_config_fields_
-
 
         if TYPE_CHECKING:
             FuseConfigPointer = ctypes._Pointer[fuse_config]
@@ -1548,9 +1524,7 @@ class _FuseTypes:
             FuseConfigPointer = ctypes.POINTER(fuse_config)
             FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
 
-
         fuse_pollhandle_p = ctypes.c_void_p  # Not exposed to API
-
 
         _fuse_operations_fields_readlink_getdir: list[FieldsEntry] = [
             ('readlink', CFUNCTYPE(c_int, c_char_p, c_byte_p, c_size_t)),
@@ -1747,7 +1721,6 @@ class _FuseTypes:
                     ('syncfs', CFUNCTYPE(c_int, c_char_p)),
                 ]
             # fmt: on
-
 
         class fuse_operations(ctypes.Structure):
             _fields_ = _fuse_operations_fields
