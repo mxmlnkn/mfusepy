@@ -260,7 +260,7 @@ class _FuseContext:
         fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
         version_patch = _get_fuse_version_patch(_libfuse)
         # Assume the most recent patch version in case it cannot be determined from the version string.
-        _FUSE_VERSION = (fuse_version_major, fuse_version_minor, 9 if version_patch is None else version_patch)
+        fuse_version = (fuse_version_major, fuse_version_minor, 9 if version_patch is None else version_patch)
         if fuse_version_major == 2 and fuse_version_minor < 6:
             raise AttributeError(
                 f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
@@ -273,7 +273,7 @@ class _FuseContext:
             )
 
         has_feature_flags = (
-            _FUSE_VERSION >= (3, 17, 1)
+            fuse_version >= (3, 17, 1)
             and not _librefuse
             and hasattr(_libfuse, 'fuse_set_feature_flag')
             and hasattr(_libfuse, 'fuse_get_feature_flag')
@@ -282,7 +282,7 @@ class _FuseContext:
         return cls(
             system=_system,
             machine=_machine,
-            fuse_version=_FUSE_VERSION,
+            fuse_version=fuse_version,
             librefuse=_librefuse,
             has_feature_flags=has_feature_flags,
             libfuse=_libfuse,
@@ -342,7 +342,7 @@ class _FuseTypes:
         _system = context.system
         _machine = context.machine
         fuse_version_major, fuse_version_minor, _fuse_version_hotfix = context.fuse_version
-        _FUSE_VERSION = context.fuse_version
+        fuse_version = context.fuse_version
         _librefuse = context.librefuse
 
         if _system == 'Windows' or _system.startswith('CYGWIN'):
@@ -378,7 +378,7 @@ class _FuseTypes:
 
         # Set non-FUSE-specific kernel type definitions.
         if _system in ('Darwin', 'FreeBSD'):
-            ENOTSUP = 45
+            enotsup = 45
 
             c_dev_t: type = ctypes.c_uint64 if _system == 'FreeBSD' else ctypes.c_int32
             c_fsblkcnt_t: type = ctypes.c_ulong
@@ -474,7 +474,7 @@ class _FuseTypes:
                     ('st_spare', ctypes.c_int64 * 9),
                 ]
         elif _system == 'Linux':
-            ENOTSUP = 95
+            enotsup = 95
 
             # sys/statvfs.h
             c_fsblkcnt_t = ctypes.c_ulonglong
@@ -630,7 +630,7 @@ class _FuseTypes:
                     f"Unsupported Linux machine {_machine!r}. Please add a struct stat layout for it."
                 )
         elif _system == 'Windows' or _system.startswith('CYGWIN'):
-            ENOTSUP = 129 if _system == 'Windows' else 134
+            enotsup = 129 if _system == 'Windows' else 134
             c_dev_t = ctypes.c_uint
             c_fsblkcnt_t = c_win_ulong
             c_fsfilcnt_t = c_win_ulong
@@ -665,7 +665,7 @@ class _FuseTypes:
                 ('st_birthtimespec', c_timespec),
             ]
         elif _system == 'OpenBSD':
-            ENOTSUP = 91
+            enotsup = 91
             c_dev_t = ctypes.c_int32
             c_uid_t = ctypes.c_uint32
             c_gid_t = ctypes.c_uint32
@@ -712,7 +712,7 @@ class _FuseTypes:
                 ('st_birthtimespec', c_timespec),
             ]
         elif _system == 'NetBSD':
-            ENOTSUP = 45
+            enotsup = 45
             c_dev_t = ctypes.c_uint64
             c_uid_t = ctypes.c_uint32
             c_gid_t = ctypes.c_uint32
@@ -759,7 +759,7 @@ class _FuseTypes:
                 ('st_spare', ctypes.c_uint32 * 2),
             ]
         elif _system == 'SunOS':
-            ENOTSUP = 48
+            enotsup = 48
             c_dev_t = ctypes.c_uint64
             c_uid_t = ctypes.c_uint32
             c_gid_t = ctypes.c_uint32
@@ -1077,7 +1077,7 @@ class _FuseTypes:
             ]
             # Introduced in 3.14.1, not 3.14.0, and its placement is an API-incompatible change / bug!
             # https://github.com/libfuse/libfuse/issues/1029
-            if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1):
+            if (3, 14, 1) <= fuse_version < (3, 17, 1):
                 _fuse_file_info_fields_bitfield += [
                     ('parallel_direct_writes', _fuse_uint32, 1),
                 ]
@@ -1090,11 +1090,11 @@ class _FuseTypes:
                 _fuse_file_info_fields_bitfield += [('cache_readdir', ctypes.c_uint, 1)]
             if fuse_version_minor >= 11:
                 _fuse_file_info_fields_bitfield += [('noflush', ctypes.c_uint, 1)]
-            if _FUSE_VERSION >= (3, 17, 1):
+            if fuse_version >= (3, 17, 1):
                 _fuse_file_info_fields_bitfield += [
                     ('parallel_direct_writes', _fuse_uint32, 1),
                 ]
-            if _FUSE_VERSION >= (3, 18, 3) and not _librefuse:
+            if fuse_version >= (3, 18, 3) and not _librefuse:
                 _fuse_file_info_fields_bitfield += [
                     ('kill_suidgid', _fuse_uint32, 1),
                 ]
@@ -1111,14 +1111,14 @@ class _FuseTypes:
             # https://github.com/libfuse/libfuse/pull/1081
             # This padding did always exist because fh was aligned to an offset modulo 8 B,
             # but libfuse 3.17 made this explicit and I'm not fully sure how ctypes behaves.
-            if _FUSE_VERSION >= (3, 17, 1):
+            if fuse_version >= (3, 17, 1):
                 _fuse_file_info_fields_ += [('padding3', _fuse_uint32)]
 
             _fuse_file_info_fields_ += [
                 ('fh', ctypes.c_uint64),
                 ('lock_owner', ctypes.c_uint64),
             ]
-            if _FUSE_VERSION >= (3, 17, 1):
+            if fuse_version >= (3, 17, 1):
                 _fuse_file_info_fields_ += [
                     ('poll_events', ctypes.c_uint32),
                     ('backing_id', ctypes.c_int32),
@@ -1134,7 +1134,7 @@ class _FuseTypes:
         if _librefuse:
             if ctypes.alignment(ctypes.c_uint64) == 8:
                 assert ctypes.sizeof(fuse_file_info) == 40
-        elif ctypes.sizeof(ctypes.c_int) == 4 and _FUSE_VERSION >= (3, 17, 1):
+        elif ctypes.sizeof(ctypes.c_int) == 4 and fuse_version >= (3, 17, 1):
             assert ctypes.sizeof(fuse_file_info) == 64
 
         class fuse_context(ctypes.Structure):
@@ -1168,7 +1168,7 @@ class _FuseTypes:
                 ('fd', ctypes.c_int),
                 ('pos', c_off_t),
             ]
-            if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+            if fuse_version >= (3, 17, 1) and not _librefuse:
                 _fields_ += [('mem_size', ctypes.c_size_t)]
 
         class fuse_bufvec(ctypes.Structure):
@@ -1232,7 +1232,7 @@ class _FuseTypes:
             _fuse_conn_info_fields += [('reserved', _fuse_uint32 * (32 - len(_fuse_conn_info_fields)))]
         elif fuse_version_major == 3 or _librefuse:
             _fuse_conn_info_fields += [('time_gran', _fuse_uint32)]
-            if _FUSE_VERSION < (3, 17, 1) or _librefuse:
+            if fuse_version < (3, 17, 1) or _librefuse:
                 _fuse_conn_info_fields += [('reserved', _fuse_uint32 * 22)]
             else:
                 _fuse_conn_info_fields += [
@@ -1242,7 +1242,7 @@ class _FuseTypes:
                     ('capable_ext', ctypes.c_uint64),
                     ('want_ext', ctypes.c_uint64),
                 ]
-                if _FUSE_VERSION >= (3, 18, 0):
+                if fuse_version >= (3, 18, 0):
                     _fuse_conn_info_fields += [
                         ('request_timeout', ctypes.c_uint16),
                         ('reserved', ctypes.c_uint16 * 31),
@@ -1250,7 +1250,7 @@ class _FuseTypes:
                 else:
                     _fuse_conn_info_fields += [('reserved', ctypes.c_uint32 * 16)]
 
-        _HAS_WANT_EXT = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
+        has_want_ext = any(field[0] == 'want_ext' for field in _fuse_conn_info_fields)
 
         # Note that these are libfuse's FUSE_CAP_* values and NOT the kernel's FUSE_* values, which
         # differ for some flags, e.g., POSIX_ACL is bit 19 in libfuse but bit 20 in <linux/fuse.h>.
@@ -1258,7 +1258,7 @@ class _FuseTypes:
         # libfuse translates between the two.
         # https://github.com/libfuse/libfuse/blob/fuse-3.18.3/include/fuse_common.h#L185-L521
         # fmt:off
-        _LIBFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
+        libfusecapability_bits: dict[FuseCapability, int] = {
             # libfuse 2.9.9 capabilities
             FuseCapability.ASYNC_READ           : 1 << 0,
             FuseCapability.POSIX_LOCKS          : 1 << 1,
@@ -1298,29 +1298,29 @@ class _FuseTypes:
             FuseCapability.IO_URING_BUFPOOL     : 1 << 34,
         }
         # libfuse 2.8+ defines the 'capable' and 'want' members and the flags up to FUSE_CAP_IOCTL_DIR.
-        _LIBFUSE2CAPABILITY_BITS: dict[FuseCapability, int] = {
-            capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 11)
+        libfuse2capability_bits: dict[FuseCapability, int] = {
+            capability: flag for capability, flag in libfusecapability_bits.items() if flag <= (1 << 11)
         }
         # libfuse 3 removed FUSE_CAP_BIG_WRITES because it is always enabled.
         # We don't have to replicate any libfuse minor version capability differences. Libfuse can check that itself.
         # Flags beyond bit 31 exist only since libfuse 3.17, which added the 64-bit 'capable_ext'/'want_ext' members,
         # and cannot be represented without them, so do not declare them when has_want_ext is false, i.e., before 3.17.
-        _LIBFUSE3CAPABILITY_BITS: dict[FuseCapability, int] = {
+        libfuse3capability_bits: dict[FuseCapability, int] = {
             capability: flag
-            for capability, flag in _LIBFUSECAPABILITY_BITS.items()
-            if capability is not FuseCapability.BIG_WRITES and (_HAS_WANT_EXT or flag < 1 << 32)
+            for capability, flag in libfusecapability_bits.items()
+            if capability is not FuseCapability.BIG_WRITES and (has_want_ext or flag < 1 << 32)
         }
         # librefuse defines the flags up to FUSE_CAP_HANDLE_KILLPRIV plus these two with libfuse2-compatible bits.
         # https://github.com/NetBSD/src/blob/netbsd-11/lib/librefuse/fuse.h#L143-L164
-        _LIBREFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
-            **{capability: flag for capability, flag in _LIBFUSECAPABILITY_BITS.items() if flag <= (1 << 20)},
+        librefusecapability_bits: dict[FuseCapability, int] = {
+            **{capability: flag for capability, flag in libfusecapability_bits.items() if flag <= (1 << 20)},
             FuseCapability.CACHE_SYMLINKS       : 1 << 23,
             FuseCapability.NO_OPENDIR_SUPPORT   : 1 << 24,
         }
         # macFUSE is based on libfuse 2 and reuses the bits 23 to 31 for Apple-specific features.
         # https://github.com/macfuse/library/blob/master/include/fuse_common.h#L163-L184
-        _MACFUSECAPABILITY_BITS: dict[FuseCapability, int] = {
-            **_LIBFUSE2CAPABILITY_BITS,
+        macfusecapability_bits: dict[FuseCapability, int] = {
+            **libfuse2capability_bits,
             FuseCapability.ACCESS_EXTENDED      : 1 << 23,  # CACHE_SYMLINKS in libfuse
             FuseCapability.NODE_RWLOCK          : 1 << 24,  # NO_OPENDIR_SUPPORT in libfuse
             FuseCapability.RENAME_SWAP          : 1 << 25,
@@ -1335,7 +1335,7 @@ class _FuseTypes:
         # Also reserves ALLOCATE, EXCHANGE_DATA, VOL_RENAME, XTIMES for OSXFUSE but does not use those flag.
         # Even though it reserves from for OSXFUSE, there are still clashes with macfuse.
         # https://github.com/winfsp/winfsp/blob/release/1.12/inc/fuse/fuse_common.h#L42-L58
-        _WINFSPCAPABILITY_BITS: dict[FuseCapability, int] = {
+        winfspcapability_bits: dict[FuseCapability, int] = {
             FuseCapability.ASYNC_READ           : 1 << 0,
             FuseCapability.POSIX_LOCKS          : 1 << 1,
             FuseCapability.ATOMIC_O_TRUNC       : 1 << 3,
@@ -1356,15 +1356,15 @@ class _FuseTypes:
         # fmt:on
 
         if _system == 'Windows' or _system.startswith('CYGWIN'):
-            CAPABILITY_BITS: dict[FuseCapability, int] = _WINFSPCAPABILITY_BITS
+            capability_bits: dict[FuseCapability, int] = winfspcapability_bits
         elif _librefuse:
-            CAPABILITY_BITS = _LIBREFUSECAPABILITY_BITS
+            capability_bits = librefusecapability_bits
         elif _system == 'Darwin':
-            CAPABILITY_BITS = _MACFUSECAPABILITY_BITS
+            capability_bits = macfusecapability_bits
         elif fuse_version_major >= 3:
-            CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
+            capability_bits = libfuse3capability_bits
         else:
-            CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
+            capability_bits = libfuse2capability_bits
 
         # https://github.com/libfuse/libfuse/pull/1081/commits/24f5b129c4e1b03ebbd05ac0c7673f306facea1ak
         class fuse_conn_info(ctypes.Structure):  # Added in 2.6 (ABI break of "init" from 2.5->2.6)
@@ -1444,11 +1444,11 @@ class _FuseTypes:
                 if type(self)._HAS_WANT_EXT:
                     self.want_ext &= ~flag
 
-        if _FUSE_VERSION >= (3, 17, 1) and not _librefuse:
+        if fuse_version >= (3, 17, 1) and not _librefuse:
             assert ctypes.sizeof(fuse_conn_info) == 128
 
-        fuse_conn_info.CAPABILITY_BITS = CAPABILITY_BITS
-        fuse_conn_info._HAS_WANT_EXT = _HAS_WANT_EXT
+        fuse_conn_info.CAPABILITY_BITS = capability_bits
+        fuse_conn_info._HAS_WANT_EXT = has_want_ext
 
         # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's
         # internal bookkeeping in sync. They locate the enclosing session via container_of() and may therefore only
@@ -1533,7 +1533,7 @@ class _FuseTypes:
 
             # Another ABI break as discussed here: https://lists.debian.org/debian-devel/2024/03/msg00278.html
             # The break was in 3.14.1, not 3.14.0. The hotfix version from fuse_pkgversion() distinguishes them.
-            if (3, 14, 1) <= _FUSE_VERSION < (3, 17, 1) and not _librefuse:
+            if (3, 14, 1) <= fuse_version < (3, 17, 1) and not _librefuse:
                 _fuse_config_fields_ += [('parallel_direct_writes', ctypes.c_int)]
 
             if not _librefuse:
@@ -1669,7 +1669,7 @@ class _FuseTypes:
                 ]
             if fuse_version_minor >= 9 or _system == 'Windows' or _system.startswith('CYGWIN'):
                 _fuse_operations_fields += _fuse_operations_fields_2_9
-                if _FUSE_VERSION >= (2, 9, 1) or _system in ('Windows', 'Darwin') or _system.startswith('CYGWIN'):
+                if fuse_version >= (2, 9, 1) or _system in ('Windows', 'Darwin') or _system.startswith('CYGWIN'):
                     _fuse_operations_fields += _fuse_operations_fields_2_9_1
                 if _system == 'Windows':
                     _fuse_operations_fields += [
@@ -1804,7 +1804,7 @@ class _FuseTypes:
                 _fuse_operations_fields += [
                     ('statx', c_void_p),  # Not supported, struct statx is not defined here.
                 ]
-            if _FUSE_VERSION >= (3, 19, 0) and not _librefuse:
+            if fuse_version >= (3, 19, 0) and not _librefuse:
                 _fuse_operations_fields += [
                     ('syncfs', CFUNCTYPE(c_int, c_char_p)),
                 ]
@@ -1813,7 +1813,7 @@ class _FuseTypes:
         class fuse_operations(ctypes.Structure):
             _fields_ = _fuse_operations_fields
 
-        self.ENOTSUP = ENOTSUP
+        self.ENOTSUP = enotsup
         self.c_dev_t = c_dev_t
         self.c_fsblkcnt_t = c_fsblkcnt_t
         self.c_fsfilcnt_t = c_fsfilcnt_t
@@ -1842,8 +1842,8 @@ class _FuseTypes:
         self.fuse_bufvec_p = fuse_bufvec_p
         self.fuse_bufvec_pp = fuse_bufvec_pp
         self.fuse_conn_info = fuse_conn_info
-        self.CAPABILITY_BITS = CAPABILITY_BITS
-        self._HAS_WANT_EXT = _HAS_WANT_EXT
+        self.CAPABILITY_BITS = capability_bits
+        self._HAS_WANT_EXT = has_want_ext
         self._LIBFUSECAPABILITY_BITS = _LIBFUSECAPABILITY_BITS
         self._LIBFUSE2CAPABILITY_BITS = _LIBFUSE2CAPABILITY_BITS
         self._LIBFUSE3CAPABILITY_BITS = _LIBFUSE3CAPABILITY_BITS
