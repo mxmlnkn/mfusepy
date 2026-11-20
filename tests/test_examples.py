@@ -390,8 +390,15 @@ def test_context_example(tmp_path):
         assert (tmp_path / 'uid').read_text().strip() == str(os.getuid())
         assert (tmp_path / 'gid').read_text().strip() == str(os.getgid())
         assert int((tmp_path / 'pid').read_text()) > 0
-        with pytest.raises(OSError, match=r'\[Errno (1|13|30)\]'):
+        with pytest.raises(OSError) as exception:  # noqa: PT011 - The errno is platform-dependent.
             (tmp_path / 'uid').write_text('x')
+        assert exception.value.errno in (
+            errno.EPERM,
+            errno.EACCES,
+            errno.EROFS,
+            errno.ENOSYS,
+            errno.EOPNOTSUPP,
+        )
 
 
 @pytest.mark.parametrize('cli', [cli_memory_nullpath])
