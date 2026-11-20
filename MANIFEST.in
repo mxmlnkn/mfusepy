@@ -3,3 +3,4 @@
 # py-modules are packaged.
 recursive-include examples *.py
 recursive-include tests *.py
+include AUTHORS

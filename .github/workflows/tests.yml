@@ -82,6 +82,12 @@ jobs:
         continue-on-error: true
         run: flake8 --config tests/.flake8 $( git ls-tree -r --name-only HEAD | 'grep' -E '[.]py$' )
 
+      - name: Check AUTHORS
+        run: |
+          if ! diff <( git log --all --use-mailmap --format='%aN <%aE>' | sort -u | grep -v 'no author' ) <( sed '/^#/d; /^$/d' AUTHORS ); then
+              echo "::warning title=AUTHORS::AUTHORS is out of date."
+          fi
+
       - name: Security Lint With Bandit
         run: bandit -q -r -ll mfusepy.py examples
 

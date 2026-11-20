@@ -1,0 +1,38 @@
+# Contributors to mfusepy, in alphabetical order.
+#
+# Generated from the public git history with:
+#   git log --all --use-mailmap --format='%aN <%aE>' | sort -u | grep -v 'no author'
+#
+# This file records contributions and is used for packaging and attribution.
+# It is not a copyright assignment or an exhaustive copyright audit.
+# See LICENSE for the copyright notices. Entries are taken from the public
+# git history. Open an issue or mail the maintainer if you want an entry
+# corrected or removed.
+
+Adam Manzanares <nmtadam@gmail.com>
+Anton Ovchinnikov <anton@tonyo.info>
+Ben Hagen <c.ben.hagen@gmail.com>
+Bill Zissimopoulos <billziss@navimatics.com>
+Ethan Estrada <ethan.estrada@gmail.com>
+Felix Yan <felixonmars@archlinux.org>
+Giorgos Verigakis <verigak@gmail.com>
+Greg Pearson <greg.pearson@hpe.com>
+Jaikrishna <t.s.jaikrishna@gmail.com>
+Jakub Wilk <jwilk@jwilk.net>
+Johannes Buchner <johannes.buchner.acad@gmx.com>
+lpzummer <lpzummer@gmail.com>
+Maximilian Knespel <mxmlnknp@gmail.com>
+Nick Coutsos <nick@coutsos.com>
+Niko Fink <nfink95@gmail.com>
+Nikolaus Rath <Nikolaus@rath.org>
+Nir Soffer <nirsof@gmail.com>
+Paulo Costa <me@paulo.costa.nom.br>
+Rian Hunter <rian@alum.mit.edu>
+rncry <rncry@users.noreply.github.com>
+Sam Thursfield <sam.thursfield@codethink.co.uk>
+Sašo Živanović <saso.zivanovic@guest.arnes.si>
+Terence Honles <terence@honles.com>
+The2nd <the2nd@otpme.org>
+Thomas Waldmann <tw@waldmann-edv.de>
+Valentin David <valentin.david@codethink.co.uk>
+Yaroslav Halchenko <debian@onerussian.com>

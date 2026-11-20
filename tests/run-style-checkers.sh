@@ -19,3 +19,6 @@ pylint --rcfile tests/.pylintrc "${allPythonFiles[@]}" | tee pylint.log
 ! 'egrep' ': E[0-9]{4}: ' pylint.log
 pytype -d import-error "${allPythonFiles[@]}"
 mypy --config-file tests/.mypy.ini "${allPythonFiles[@]}"
+status=$?
+python3 tests/check-authors.py || status=1
+exit $status
