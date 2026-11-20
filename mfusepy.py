@@ -381,8 +381,17 @@ class _FuseTypes:
             else:
                 _fields_ = [('tv_sec', ctypes.c_long), ('tv_nsec', ctypes.c_long)]
 
+        c_time_t: type
+        if _system == 'Windows' or _system.startswith('CYGWIN'):
+            c_time_t = ctypes.c_int64
+        elif _system in ('OpenBSD', 'FreeBSD', 'NetBSD'):
+            c_time_t = ctypes.c_int64
+        else:
+            c_time_t = ctypes.c_long
+
         class c_utimbuf(ctypes.Structure):
-            _fields_ = [('actime', c_timespec), ('modtime', c_timespec)]
+            # https://man7.org/linux/man-pages/man2/utimes.2.html#DESCRIPTION
+            _fields_ = [('actime', c_time_t), ('modtime', c_time_t)]
 
         # Set non-FUSE-specific kernel type definitions.
         if _system in ('Darwin', 'FreeBSD'):
@@ -1191,6 +1200,7 @@ class _FuseTypes:
             c_stat_p = ctypes._Pointer[c_stat]  # noqa: W212
             c_statvfs_p = ctypes._Pointer[c_statvfs]  # noqa: W212
             c_utimbuf_p = ctypes._Pointer[c_utimbuf]  # noqa: W212
+            c_timespec_p = ctypes._Pointer[c_timespec]  # noqa: W212
             fuse_bufvec_p = ctypes._Pointer[fuse_bufvec]  # noqa: W212
             fuse_bufvec_pp = ctypes._Pointer[fuse_bufvec_p]  # noqa: W212
         else:
@@ -1198,6 +1208,7 @@ class _FuseTypes:
             c_stat_p = ctypes.POINTER(c_stat)
             c_statvfs_p = ctypes.POINTER(c_statvfs)
             c_utimbuf_p = ctypes.POINTER(c_utimbuf)
+            c_timespec_p = ctypes.POINTER(c_timespec)
             fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
             fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
 
@@ -1626,7 +1637,7 @@ class _FuseTypes:
             if fuse_version_minor >= 6:
                 _fuse_operations_fields += [
                     ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),
-                    ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p)),
+                    ('utimens', CFUNCTYPE(c_int, c_char_p, c_timespec_p)),
                     ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),
                 ]
             if fuse_version_minor >= 8:
@@ -1745,7 +1756,7 @@ class _FuseTypes:
                 ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
                 ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
                 ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
-                ('utimens', CFUNCTYPE(c_int, c_char_p, c_utimbuf_p, fuse_fi_p)),                           # Added file info
+                ('utimens', CFUNCTYPE(c_int, c_char_p, c_timespec_p, fuse_fi_p)),                          # Added file info
                 ('bmap', CFUNCTYPE(c_int, c_char_p, c_size_t, c_uint64_p)),                                # Same as v2.9
                 ('ioctl', CFUNCTYPE(                                                                       # Argument type
                     c_int, c_char_p, c_int if fuse_version_minor < 5 else c_uint, c_void_p,
@@ -1809,6 +1820,7 @@ class _FuseTypes:
         self.c_stat_p = c_stat_p
         self.c_statvfs_p = c_statvfs_p
         self.c_utimbuf_p = c_utimbuf_p
+        self.c_timespec_p = c_timespec_p
         self.fuse_bufvec_p = fuse_bufvec_p
         self.fuse_bufvec_pp = fuse_bufvec_pp
         self.fuse_conn_info = fuse_conn_info
@@ -1878,6 +1890,7 @@ if TYPE_CHECKING:
     c_stat_p = Any
     c_statvfs_p = Any
     c_utimbuf_p = Any
+    c_timespec_p = Any
     fuse_bufvec_p = Any
     fuse_bufvec_pp = Any
 else:
@@ -1885,6 +1898,7 @@ else:
     c_stat_p = _types.c_stat_p
     c_statvfs_p = _types.c_statvfs_p
     c_utimbuf_p = _types.c_utimbuf_p
+    c_timespec_p = _types.c_timespec_p
     fuse_bufvec_p = _types.fuse_bufvec_p
     fuse_bufvec_pp = _types.fuse_bufvec_pp
 if TYPE_CHECKING:
@@ -2790,17 +2804,17 @@ class FUSE:
         fh = (fip.contents if self.raw_fi else fip.contents.fh) if fip else None
         return self.operations.lock(None if path is None else path.decode(self.encoding, self.errors), fh, cmd, lock)
 
-    def utimens_fuse_2(self, path: Optional[bytes], buf: c_utimbuf_p) -> int:
+    def utimens_fuse_2(self, path: Optional[bytes], buf: c_timespec_p) -> int:
         if buf:
-            atime = time_of_timespec(buf.contents.actime, use_ns=self.use_ns)
-            mtime = time_of_timespec(buf.contents.modtime, use_ns=self.use_ns)
+            atime = time_of_timespec(buf[0], use_ns=self.use_ns)
+            mtime = time_of_timespec(buf[1], use_ns=self.use_ns)
             times = (atime, mtime)
         else:
             times = None
 
         return self.operations.utimens(None if path is None else path.decode(self.encoding, self.errors), times)
 
-    def utimens_fuse_3(self, path: Optional[bytes], buf: c_utimbuf_p, fip: fuse_fi_p) -> int:
+    def utimens_fuse_3(self, path: Optional[bytes], buf: c_timespec_p, fip: fuse_fi_p) -> int:
         return self.utimens_fuse_2(path, buf)
 
     def bmap(self, path: bytes, blocksize: int, idx: c_uint64_p) -> int:
