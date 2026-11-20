@@ -5,6 +5,8 @@ import ctypes
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import mfusepy  # noqa: E402
@@ -23,3 +25,13 @@ def test_freebsd_st_gen_is_64_bit():
     types = freebsd_types()
     fields = dict(types.c_stat._fields_)
     assert ctypes.sizeof(fields['st_gen']) == 8
+
+
+def test_i686_linux_layout_is_supported():
+    types = mfusepy._FuseTypes(mfusepy._FuseContext(system='Linux', machine='i686', fuse_version=(3, 18, 3)))
+    assert ctypes.sizeof(types.c_stat) > 0
+
+
+def test_unknown_linux_machine_raises():
+    with pytest.raises(NotImplementedError, match='s390x'):
+        mfusepy._FuseTypes(mfusepy._FuseContext(system='Linux', machine='s390x', fuse_version=(3, 18, 3)))
