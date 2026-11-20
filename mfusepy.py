@@ -1625,7 +1625,7 @@ class _FuseTypes:
                     ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),
                     ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),
                     ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info))),
-                    ('destroy', CFUNCTYPE(c_void_p, c_void_p)),
+                    ('destroy', CFUNCTYPE(None, c_void_p)),
                 ]
             if fuse_version_minor >= 5:
                 _fuse_operations_fields += [
@@ -1757,7 +1757,7 @@ class _FuseTypes:
                 ('releasedir', CFUNCTYPE(c_int, c_char_p, fuse_fi_p)),                                     # Same as v2.9
                 ('fsyncdir', CFUNCTYPE(c_int, c_char_p, c_int, fuse_fi_p)),                                # Same as v2.9
                 ('init', CFUNCTYPE(c_void_p, POINTER(fuse_conn_info), POINTER(fuse_config))),              # Added config
-                ('destroy', CFUNCTYPE(c_void_p, c_void_p)),                                                # Same as v2.9
+                ('destroy', CFUNCTYPE(None, c_void_p)),                                                    # Same as v2.9
                 ('access', CFUNCTYPE(c_int, c_char_p, c_int)),                                             # Same as v2.9
                 ('create', CFUNCTYPE(c_int, c_char_p, c_mode_t, fuse_fi_p)),                               # Same as v2.9
                 ('lock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int, POINTER(c_flock_t))),                # Same as v2.9
