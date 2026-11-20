@@ -483,14 +483,20 @@ def test_loopback_getattr_reports_inode(tmp_path):
     assert operations.getattr('/file')['st_ino'] == os.stat(path).st_ino
 
 
+@pytest.mark.parametrize('cli', [cli_loopback, cli_memory, cli_memory_nullpath])
 @pytest.mark.skipif(sys.platform != 'linux', reason="flock semantics differ on the BSDs and macOS")
-def test_flock_callback_uses_underlying_file(tmp_path):
-    mount_source = tmp_path / "folder"
-    mount_point = tmp_path / "mounted"
-    mount_source.mkdir()
-    mount_point.mkdir()
+def test_flock_callback(cli, tmp_path):
+    if cli == cli_loopback:
+        mount_source = tmp_path / "folder"
+        mount_point = tmp_path / "mounted"
+        mount_source.mkdir()
+        mount_point.mkdir()
+        arguments = [str(mount_source)]
+    else:
+        mount_point = tmp_path
+        arguments = []
 
-    with RunCLI(cli_loopback, mount_point, [str(mount_source)]):
+    with RunCLI(cli, mount_point, arguments):
         path = mount_point / "file"
         path.write_bytes(b"x")
 

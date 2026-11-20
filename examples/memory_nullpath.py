@@ -5,6 +5,7 @@ import collections
 import errno
 import os
 import stat
+import threading
 import time
 from collections.abc import Iterable
 from typing import Any, Optional
@@ -39,6 +40,8 @@ class Memory(fuse.Operations):
         }
         self._inode = 100
         self._opened: dict[int, str] = {}
+        self._flocks: dict[int, bool] = {}
+        self._flock_condition = threading.Condition()
 
     @fuse.overrides(fuse.Operations)
     def init_with_config(self, conn_info: Optional[fuse.fuse_conn_info], config_3: Optional[fuse.fuse_config]) -> None:
@@ -46,6 +49,8 @@ class Memory(fuse.Operations):
         if config_3:
             config_3.nullpath_ok = True
             config_3.use_ino = True
+        if conn_info:
+            conn_info.enable_capability(fuse.FuseCapability.FLOCK_LOCKS)  # pylint: disable=no-member
 
     @fuse.overrides(fuse.Operations)
     def chmod(self, path: str, mode: int) -> int:
@@ -80,6 +85,35 @@ class Memory(fuse.Operations):
         self.fd += 1
         self._opened[self.fd] = path
         return self.fd
+
+    def _flock_conflicts(self, fh: int, exclusive: bool) -> bool:
+        path = self._opened.get(fh)
+        if path is None:
+            raise fuse.FuseOSError(errno.EBADF)
+        return any(
+            other_fh != fh and self._opened.get(other_fh) == path and (exclusive or other_exclusive)
+            for other_fh, other_exclusive in self._flocks.items()
+        )
+
+    @fuse.overrides(fuse.Operations)
+    def flock(self, path: Optional[str], fh: int, op: int) -> int:
+        import fcntl  # pylint: disable=import-outside-toplevel
+
+        if op & fcntl.LOCK_UN:
+            with self._flock_condition:
+                self._flocks.pop(fh, None)
+                self._flock_condition.notify_all()
+            return 0
+
+        exclusive = bool(op & fcntl.LOCK_EX)
+        nonblocking = bool(op & fcntl.LOCK_NB)
+        with self._flock_condition:
+            while self._flock_conflicts(fh, exclusive):
+                if nonblocking:
+                    raise fuse.FuseOSError(errno.EAGAIN)
+                self._flock_condition.wait()
+            self._flocks[fh] = exclusive
+            return 0
 
     @fuse.overrides(fuse.Operations)
     def getattr(self, path: str, fh=None) -> dict[str, Any]:
@@ -136,6 +170,9 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def release(self, path: str, fh: int) -> int:
+        with self._flock_condition:
+            self._flocks.pop(fh, None)
+            self._flock_condition.notify_all()
         del self._opened[fh]
         return 0
 
@@ -154,6 +191,9 @@ class Memory(fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def releasedir(self, path: str, fh: int) -> int:
+        with self._flock_condition:
+            self._flocks.pop(fh, None)
+            self._flock_condition.notify_all()
         del self._opened[fh]
         return 0
 
