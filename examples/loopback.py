@@ -37,6 +37,11 @@ class Loopback(fuse.Operations):
         self.root = os.path.realpath(root)
         self.rwlock = threading.Lock()
 
+    @fuse.overrides(fuse.Operations)
+    def init_with_config(self, conn_info, config_3):
+        if conn_info:
+            conn_info.enable_capability(fuse.FuseCapability.FLOCK_LOCKS)  # pylint: disable=no-member
+
     @with_root_path
     @fuse.overrides(fuse.Operations)
     def access(self, path: str, amode: int) -> int:
@@ -71,6 +76,14 @@ class Loopback(fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
         return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+
+    @with_root_path
+    @fuse.overrides(fuse.Operations)
+    def flock(self, path: Optional[str], fh: int, op: int) -> int:
+        import fcntl  # pylint: disable=import-outside-toplevel
+
+        fcntl.flock(fh, op)
+        return 0
 
     @with_root_path
     @fuse.overrides(fuse.Operations)
