@@ -8,6 +8,7 @@ import logging
 import os
 import stat
 import struct
+import threading
 import time
 from collections.abc import Iterable
 from typing import Any, Optional
@@ -37,6 +38,10 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
                 'st_gid': os.getgid() if hasattr(os, 'getgid') else 0,
             }
         }
+        self.fd = 0
+        self._opened: dict[int, str] = {}
+        self._flocks: dict[int, bool] = {}
+        self._flock_condition = threading.Condition()
 
     @fuse.overrides(fuse.Operations)
     def chmod(self, path: str, mode: int) -> int:
@@ -65,7 +70,38 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
             'st_uid': uid,
             'st_gid': gid,
         }
-        return 0
+        self.fd += 1
+        self._opened[self.fd] = path
+        return self.fd
+
+    def _flock_conflicts(self, fh: int, exclusive: bool) -> bool:
+        path = self._opened.get(fh)
+        if path is None:
+            raise fuse.FuseOSError(errno.EBADF)
+        return any(
+            other_fh != fh and self._opened.get(other_fh) == path and (exclusive or other_exclusive)
+            for other_fh, other_exclusive in self._flocks.items()
+        )
+
+    @fuse.overrides(fuse.Operations)
+    def flock(self, path: Optional[str], fh: int, op: int) -> int:
+        import fcntl  # pylint: disable=import-outside-toplevel
+
+        if op & fcntl.LOCK_UN:
+            with self._flock_condition:
+                self._flocks.pop(fh, None)
+                self._flock_condition.notify_all()
+            return 0
+
+        exclusive = bool(op & fcntl.LOCK_EX)
+        nonblocking = bool(op & fcntl.LOCK_NB)
+        with self._flock_condition:
+            while self._flock_conflicts(fh, exclusive):
+                if nonblocking:
+                    raise fuse.FuseOSError(errno.EAGAIN)
+                self._flock_condition.wait()
+            self._flocks[fh] = exclusive
+            return 0
 
     @fuse.overrides(fuse.Operations)
     def getattr(self, path: str, fh=None) -> dict[str, Any]:
@@ -88,6 +124,7 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
         # default, so re-enable it to leave the default behavior unchanged.
         conn_info.disable_capability(fuse.FuseCapability.ASYNC_READ)
         conn_info.enable_capability(fuse.FuseCapability.ASYNC_READ)
+        conn_info.enable_capability(fuse.FuseCapability.FLOCK_LOCKS)  # pylint: disable=no-member
 
     @fuse.overrides(fuse.Operations)
     def listxattr(self, path: str) -> Iterable[str]:
@@ -197,10 +234,16 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def open(self, path: str, flags: int) -> int:
         # OpenBSD calls mknod + open instead of create.
-        return 0
+        self.fd += 1
+        self._opened[self.fd] = path
+        return self.fd
 
     @fuse.overrides(fuse.Operations)
     def release(self, path: str, fh: int) -> int:
+        with self._flock_condition:
+            self._flocks.pop(fh, None)
+            self._flock_condition.notify_all()
+        self._opened.pop(fh, None)
         return 0
 
     @fuse.overrides(fuse.Operations)
