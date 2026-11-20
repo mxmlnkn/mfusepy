@@ -2842,17 +2842,21 @@ class FUSE:
         fh = fip.contents if self.raw_fi else fip.contents.fh
         return self.operations.poll(None if path is None else path.decode(self.encoding, self.errors), fh, ph, reventsp)
 
-    def write_buf(self, path: bytes, buf: fuse_bufvec_p, offset: int, fip: fuse_fi_p) -> int:
+    def write_buf(self, path: Optional[bytes], buf: fuse_bufvec_p, offset: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations.write_buf(path.decode(self.encoding, self.errors), buf, offset, fh)
+        return self.operations.write_buf(
+            None if path is None else path.decode(self.encoding, self.errors), buf, offset, fh
+        )
 
-    def read_buf(self, path: bytes, bufpp: fuse_bufvec_pp, size: int, offset: int, fip: fuse_fi_p) -> int:
+    def read_buf(self, path: Optional[bytes], bufpp: fuse_bufvec_pp, size: int, offset: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations.read_buf(path.decode(self.encoding, self.errors), bufpp, size, offset, fh)
+        return self.operations.read_buf(
+            None if path is None else path.decode(self.encoding, self.errors), bufpp, size, offset, fh
+        )
 
-    def flock(self, path: bytes, fip: fuse_fi_p, op: int) -> int:
+    def flock(self, path: Optional[bytes], fip: fuse_fi_p, op: int) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
-        return self.operations.flock(path.decode(self.encoding, self.errors), fh, op)
+        return self.operations.flock(None if path is None else path.decode(self.encoding, self.errors), fh, op)
 
     def fallocate(self, path: Optional[bytes], mode: int, offset: int, size: int, fip: fuse_fi_p) -> int:
         fh = fip.contents if self.raw_fi else fip.contents.fh
@@ -3168,7 +3172,7 @@ class Operations:
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
-    def flock(self, path: str, fh: int, op: int) -> int:
+    def flock(self, path: Optional[str], fh: int, op: int) -> int:
         raise FuseOSError(errno.ENOSYS)
 
     @_nullable_dummy_function
