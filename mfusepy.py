@@ -728,7 +728,7 @@ class _FuseTypes:
                 ctypes.c_int,
             )
             getxattr_t = ctypes.CFUNCTYPE(
-                ctypes.c_int64,
+                ctypes.c_int,
                 ctypes.c_char_p,
                 ctypes.c_char_p,
                 ctypes.POINTER(ctypes.c_byte),
@@ -1849,8 +1849,31 @@ class _FuseTypes:
             self.fuse_readdir_flags = fuse_readdir_flags
 
 
+def _set_public_type_names(types: _FuseTypes) -> None:
+    """Make the generated ctypes classes importable so that they can be pickled."""
+    for name in (
+        'c_timespec',
+        'c_utimbuf',
+        'c_stat',
+        'c_statvfs',
+        'c_flock_t',
+        'fuse_file_info',
+        'fuse_context',
+        'fuse_buf',
+        'fuse_bufvec',
+        'fuse_conn_info',
+        'fuse_config',
+        'fuse_operations',
+    ):
+        ctype = getattr(types, name, None)
+        if isinstance(ctype, type):
+            ctype.__module__ = __name__
+            ctype.__qualname__ = name
+
+
 _context = _FuseContext.from_runtime()
 _types = _FuseTypes(_context)
+_set_public_type_names(_types)
 
 _libfuse = cast("ctypes.CDLL", _context.libfuse)
 _libfuse_path = _libfuse._name
@@ -2485,7 +2508,8 @@ class FUSE:
             return 0
 
         retsize = len(ret)
-        assert retsize <= size, f'actual amount read {retsize} greater than expected {size}'
+        if retsize > size:
+            raise FuseOSError(errno.EIO)
 
         ctypes.memmove(buf, ret, retsize)
         return retsize

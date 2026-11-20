@@ -3,6 +3,7 @@
 
 import ctypes
 import os
+import pickle
 import sys
 
 import pytest
@@ -35,3 +36,16 @@ def test_i686_linux_layout_is_supported():
 def test_unknown_linux_machine_raises():
     with pytest.raises(NotImplementedError, match='s390x'):
         mfusepy._FuseTypes(mfusepy._FuseContext(system='Linux', machine='s390x', fuse_version=(3, 18, 3)))
+
+
+def test_public_ctypes_types_are_picklable():
+    for name in ('c_stat', 'fuse_file_info', 'fuse_conn_info', 'fuse_operations'):
+        ctype = getattr(mfusepy, name)
+        assert pickle.loads(pickle.dumps(ctype)) is ctype
+
+
+def test_netbsd_getxattr_returns_int():
+    types = mfusepy._FuseTypes(
+        mfusepy._FuseContext(system='NetBSD', machine='amd64', fuse_version=(3, 10, 0), librefuse=True)
+    )
+    assert types.getxattr_t._restype_ is ctypes.c_int

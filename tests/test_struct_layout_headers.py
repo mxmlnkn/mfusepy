@@ -118,6 +118,10 @@ def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
             lines.append(f'    operations->{name}({arguments});')
         else:
             lines.append(f'    {return_type} result_{name} = operations->{name}({arguments});')
+            lines.append(
+                f'    _Static_assert(__builtin_types_compatible_p('
+                f'__typeof__(operations->{name}({arguments})), {return_type}), "{name} return type");'
+            )
             lines.append(f'    (void) result_{name};')
     lines += ['}', '']
     return lines
