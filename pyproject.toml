@@ -7,7 +7,8 @@
 # https://github.com/pypa/setuptools/issues/4903
 # Use setuptools >= 77 for project.license-files support
 # https://setuptools.readthedocs.io/en/latest/history.html#id284
-# Use setuptools <= 82 because the license specification changes backward-incompatible in 2027-02.
+# Use setuptools < 85 for compatibility with distributions that ship newer setuptools. The license
+# specification changes backward-incompatibly in 2027-02, so keep the upper bound.
 # https://github.com/pypa/setuptools/issues/4903#issuecomment-2923109576
 # <= major must not be used for pinning because it will only match major.0.0 not any higher version!
 requires = ["setuptools >= 61, < 85"]
@@ -166,7 +167,7 @@ examples = [
 build = [
     "build",
     # Keep in sync with the constraint in [build-system].requires.
-    "setuptools >= 61, < 83",
+    "setuptools >= 61, < 85",
     "twine",
     "wheel",
 ]
