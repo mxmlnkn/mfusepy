@@ -397,7 +397,7 @@ class _FuseTypes:
         if _system in ('Darwin', 'FreeBSD'):
             ENOTSUP = 45
 
-            c_dev_t: type = ctypes.c_int32
+            c_dev_t: type = ctypes.c_uint64 if _system == 'FreeBSD' else ctypes.c_int32
             c_fsblkcnt_t: type = ctypes.c_ulong
             c_fsfilcnt_t: type = ctypes.c_ulong
             c_gid_t: type = ctypes.c_uint32
@@ -486,7 +486,7 @@ class _FuseTypes:
                     ('st_blocks', ctypes.c_int64),
                     ('st_blksize', ctypes.c_uint32),
                     ('st_flags', ctypes.c_uint32),
-                    ('st_gen', ctypes.c_uint32),
+                    ('st_gen', ctypes.c_uint64),
                     ('st_filerev', ctypes.c_uint64),
                     ('st_spare', ctypes.c_int64 * 9),
                 ]
