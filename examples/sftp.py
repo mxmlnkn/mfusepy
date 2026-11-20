@@ -49,8 +49,8 @@ class SFTP(fuse.Operations):
     def getattr(self, path: str, fh: Optional[int] = None):
         try:
             st = self.sftp.lstat(path)
-        except OSError:
-            raise fuse.FuseOSError(errno.ENOENT)
+        except OSError as exception:
+            raise fuse.FuseOSError(errno.ENOENT) from exception
 
         return {key: getattr(st, key) for key in ('st_atime', 'st_gid', 'st_mode', 'st_mtime', 'st_size', 'st_uid')}
 

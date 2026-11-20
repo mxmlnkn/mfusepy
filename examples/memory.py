@@ -115,8 +115,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         try:
             return attrs[name]
-        except KeyError:
-            raise fuse.FuseOSError(fuse.ENOATTR)
+        except KeyError as exception:
+            raise fuse.FuseOSError(fuse.ENOATTR) from exception
 
     @fuse.overrides(fuse.Operations)
     def init_with_config(self, conn_info, config_3) -> None:
@@ -172,8 +172,8 @@ class Memory(fuse.LoggingMixIn, fuse.Operations):
 
         try:
             del attrs[name]
-        except KeyError:
-            raise fuse.FuseOSError(fuse.ENOATTR)
+        except KeyError as exception:
+            raise fuse.FuseOSError(fuse.ENOATTR) from exception
 
         return 0
 
