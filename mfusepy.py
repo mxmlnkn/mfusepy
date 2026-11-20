@@ -132,18 +132,18 @@ def get_fuse_version(libfuse: ctypes.CDLL) -> tuple[int, int]:
     raise AttributeError(f"Version {version} of found library {libfuse._name} cannot be parsed!")
 
 
-def _get_fuse_version_hotfix(libfuse: ctypes.CDLL) -> int:
+def _get_fuse_version_patch(libfuse: ctypes.CDLL) -> Optional[int]:
     'Parse the hotfix version from fuse_pkgversion(), which was added in libfuse 3.17.'
     package_version = getattr(libfuse, 'fuse_pkgversion', None)
     if package_version is None:
-        return 0
+        return None
     package_version.restype = ctypes.c_char_p
     version = package_version()
     if not version:
-        return 0
+        return None
     parts = version.split(b'.')
     if len(parts) < 3 or not all(part.isdigit() for part in parts[:3]):
-        return 0
+        return None
     return int(parts[2])
 
 
@@ -256,8 +256,9 @@ class _FuseContext:
             _librefuse = (_libfuse.fuse_pkgversion() or b'').startswith(b'ReFUSE')
 
         fuse_version_major, fuse_version_minor = get_fuse_version(_libfuse)
-        _fuse_version_hotfix = _get_fuse_version_hotfix(_libfuse)
-        _FUSE_VERSION = (fuse_version_major, fuse_version_minor, _fuse_version_hotfix)
+        version_patch = _get_fuse_version_patch(_libfuse)
+        # Assume the most recent patch version in case it cannot be determined from the version string.
+        _FUSE_VERSION = (fuse_version_major, fuse_version_minor, 9 if version_patch is None else version_patch)
         if fuse_version_major == 2 and fuse_version_minor < 6:
             raise AttributeError(
                 f"Found library {_libfuse_path} is too old: {fuse_version_major}.{fuse_version_minor}. "
@@ -1575,6 +1576,8 @@ class _FuseTypes:
             ('write_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_p, c_off_t, fuse_fi_p)),
             ('read_buf', CFUNCTYPE(c_int, c_char_p, fuse_bufvec_pp, c_size_t, c_off_t, fuse_fi_p)),
             ('flock', CFUNCTYPE(c_int, c_char_p, fuse_fi_p, c_int)),
+        ]
+        _fuse_operations_fields_2_9_1 = [
             ('fallocate', CFUNCTYPE(c_int, c_char_p, c_int, c_off_t, c_off_t, fuse_fi_p)),
         ]
 
@@ -1634,6 +1637,8 @@ class _FuseTypes:
                 ]
             if fuse_version_minor >= 9 or _system == 'Windows' or _system.startswith('CYGWIN'):
                 _fuse_operations_fields += _fuse_operations_fields_2_9
+                if _FUSE_VERSION >= (2, 9, 1) or _system in ('Windows', 'Darwin') or _system.startswith('CYGWIN'):
+                    _fuse_operations_fields += _fuse_operations_fields_2_9_1
                 if _system == 'Windows':
                     _fuse_operations_fields += [
                         ('getpath', c_void_p),
@@ -1744,15 +1749,25 @@ class _FuseTypes:
                     fuse_fi_p, c_uint, c_void_p)),
                 *_fuse_operations_fields_2_8,
                 *_fuse_operations_fields_2_9,
-                (
-                    'copy_file_range',                                                                     # New
-                    CFUNCTYPE(
-                        c_ssize_t, c_char_p, fuse_fi_p, c_off_t, c_char_p,
-                        fuse_fi_p, c_off_t, c_size_t, c_int,
-                    ),
-                ),
-                ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                        # New
+                *_fuse_operations_fields_2_9_1,
             ]
+            # TODO: Add FUSE and Operations wrappers for copy_file_range and lseek. The callbacks are
+            #       exposed here for libfuse 3.4+/3.8+, but defining one currently raises a
+            #       missing-wrapper RuntimeError.
+            if (fuse_version_major, fuse_version_minor) >= (3, 4):
+                _fuse_operations_fields += [
+                    (
+                        'copy_file_range',                                                                 # New
+                        CFUNCTYPE(
+                            c_ssize_t, c_char_p, fuse_fi_p, c_off_t, c_char_p,
+                            fuse_fi_p, c_off_t, c_size_t, c_int,
+                        ),
+                    ),
+                ]
+            if (fuse_version_major, fuse_version_minor) >= (3, 8):
+                _fuse_operations_fields += [
+                    ('lseek', CFUNCTYPE(c_off_t, c_char_p, c_off_t, c_int, fuse_fi_p)),                    # New
+                ]
             if fuse_version_minor >= 18:
                 _fuse_operations_fields += [
                     ('statx', c_void_p),  # Not supported, struct statx is not defined here.
