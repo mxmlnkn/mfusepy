@@ -3,7 +3,6 @@
 # The members of ctypes structs are defined dynamically via '_fields_', which pylint cannot see.
 # pylint: disable=no-member
 
-import ctypes.util
 import os
 import subprocess
 import sys
@@ -14,18 +13,6 @@ import pytest
 
 if sys.platform != 'linux':
     pytest.skip("POSIX ACL enforcement is only supported by the Linux FUSE driver.", allow_module_level=True)
-
-# FUSE_CAP_POSIX_ACL is only implemented by libfuse 3, which mfusepy only picks on Linux when
-# libfuse 2 is not installed. Prefer fuse3 there unless the environment already picks a libfuse, and
-# only if fuse3 exists, so that this cannot make 'import mfusepy' fail on the BSDs, which have no
-# libfuse3. This has to happen before importing mfusepy, which loads the library at import time.
-if (
-    sys.platform == 'linux'
-    and not os.environ.get('FUSE_LIBRARY_PATH')
-    and not os.environ.get('FUSE_LIBRARY_NAME')
-    and ctypes.util.find_library('fuse3')
-):
-    os.environ['FUSE_LIBRARY_NAME'] = 'fuse3'
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../examples')))
