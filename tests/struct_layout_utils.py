@@ -155,12 +155,19 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
     return checks
 
 
-def c_probe(includes: Sequence[str], checks: Sequence[LayoutCheck]) -> str:
+def c_probe(
+    includes: Sequence[str],
+    checks: Sequence[LayoutCheck],
+    extra_declarations: Sequence[str] = (),
+    extra_main_lines: Sequence[str] = (),
+) -> str:
     lines = ['#include <stddef.h>', '#include <stdio.h>']
     lines += [f'#include <{include}>' for include in includes]
+    lines += list(extra_declarations)
     lines += ['', 'int main(void) {']
     for check in checks:
         lines.extend(check.c_lines)
+    lines += list(extra_main_lines)
     lines += ['    return 0;', '}']
     return '\n'.join(lines)
 
