@@ -7,12 +7,30 @@
    `ACLPermission` helpers for the Linux `system.posix_acl_*` xattr format. See `examples/posix_acl.py`.
  - Add the cross-platform `FuseCapability` enum and `fuse_conn_info.enable`, which maps capabilities to
    the loaded implementation and supports `fuse_set_feature_flag` from libfuse 3.17+.
+ - Add the `syncfs` callback to `fuse_operations` for libfuse 3.19.
  - Support OmniOS, including the illumos libfuse 2.7 struct layout and 64-bit library lookup.
 
 ## Fixes
 
- - Model the `fuse_file_info` fields added in libfuse 3.17 and the `statx` slot added to
-   `fuse_operations` in 3.18. This fixes `test_struct_layout` on Debian Trixie and Ubuntu 26.04.
+ - Model the `fuse_file_info` fields added in libfuse 3.17, including the hotfix layouts, and
+   `kill_suidgid` in 3.18.3, plus the `statx` slot added to `fuse_operations` in 3.18. This fixes
+   `test_struct_layout` on Debian Trixie and Ubuntu 26.04.
+ - Correct `fuse_file_info.poll_events` to 32-bit, `fuse_config.parallel_direct_writes` for 3.14.1,
+   `fuse_conn_info.request_timeout` for 3.18, `fuse_buf.mem_size` and the `fuse_bufvec` layout, and
+   the FUSE 2.8 `poll` operation. Read the hotfix version from `fuse_pkgversion()` so the right
+   layout is used.
+ - Define `struct flock` per platform and check the lock callback argument.
+ - Use `struct timespec[2]` for the `utimens` callback and `time_t` for `c_utimbuf`.
+ - Add `flag_nopath`/`flag_utime_omit_ok` only from libfuse 2.9 and `fallocate` only from 2.9.1.
+   The FUSE 2 runtime does not expose the hotfix, so use the 2.9.1+ layout for all 2.9 runtimes.
+ - Gate `copy_file_range` to libfuse 3.4+ and `lseek` to 3.8+.
+ - Use 64-bit `dev_t` and `st_gen` on FreeBSD.
+ - Apply the libfuse 2 `nopath` option as `fuse_config.nullpath_ok` instead of aborting the mount.
+ - Reject unknown Linux architectures instead of silently using the i686 `struct stat` layout.
+ - Correct the macFUSE 5.5.0 `fuse_operations` layout.
+ - Correct the Cygwin `fuse_file_info` and `fuse_operations` layouts and do not use WinFsp-specific
+   behavior there.
+ - Reset the reused `stat` buffer between `readdir` entries.
  - Fix the `struct stat` layout on Linux riscv64.
  - Fix the `fuse_operations` field order for WinFsp on Windows, which broke symlinks.
  - Remove the legacy MacFuse lookup, which could abort `import mfusepy` on macOS 14 with macFUSE 5.3.x.
@@ -23,6 +41,7 @@
  - Do not swallow exceptions raised by the `init` callback. They are now re-raised instead of being
    returned as a bogus `private_data` pointer.
  - `examples/loopback.py`: do not follow symlinks in `chmod` and `chown`.
+ - `examples/memory.py`: keep asynchronous reads enabled.
  - Only import `ioctl_opt` on Linux so test collection works on other platforms.
 
 
