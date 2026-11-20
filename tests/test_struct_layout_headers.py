@@ -9,6 +9,7 @@ Compile the downloaded public headers and compare them with FuseTypes. E.g. run 
 """
 
 import ctypes
+import platform
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -330,7 +331,31 @@ def header_cases() -> list[HeaderCase]:
                         include_dir=include_dir,
                         header='fuse.h',
                         structs=tuple(s for s in STRUCTS if s not in ('fuse_config', 'fuse_buf', 'fuse_bufvec')),
-                        skip_reason=("NetBSD librefuse headers need a target sysroot." if system == 'NetBSD' else ''),
+                        skip_reason=(
+                            "NetBSD librefuse headers need a target sysroot."
+                            if system == 'NetBSD' and platform.system() != 'NetBSD'
+                            else ''
+                        ),
+                    )
+                )
+
+    if platform.system() == 'FreeBSD':
+        for directory in sorted((HEADER_ROOT / 'freebsd').glob('*')):
+            include_dir = directory / 'include'
+            if (include_dir / 'sys' / 'stat.h').exists():
+                cases.append(
+                    HeaderCase(
+                        name=f"freebsd-{directory.name}",
+                        context=FuseContext(
+                            system='FreeBSD',
+                            machine='amd64',
+                            fuse_version=(2, 9, 0),
+                        ),
+                        include_dir=include_dir,
+                        includes=('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h'),
+                        structs=(),
+                        kernel_structs=True,
+                        member_sizes=True,
                     )
                 )
     return cases

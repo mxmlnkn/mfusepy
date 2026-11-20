@@ -202,7 +202,7 @@ jobs:
       - name: Install Dependencies (Linux)
         if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |
-          sudo apt-get -y install libfuse2 libfuse-dev libfuse3-dev fuse3 wget
+          sudo apt-get -y install libfuse2 libfuse-dev libfuse3-dev fuse3 wget xz-utils
 
       - name: Install Dependencies (Linux, custom libfuse)
         if: startsWith( matrix.os, 'ubuntu' ) && matrix.libfuse-version
@@ -278,6 +278,10 @@ jobs:
         run: |
           python3 -m pytest -s -v -rs tests
 
+      - name: Download Public Headers
+        if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && !matrix.libfuse-version
+        run: tests/headers/download.sh all
+
       - name: Unit Tests (FUSE 2)
         if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |
@@ -294,12 +298,6 @@ jobs:
           fi
           python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 3'
           python3 -m pytest -v -rs tests
-
-      - name: Test cygfuse struct layout
-        if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' && !matrix.libfuse-version
-        run: |
-          tests/headers/download.sh cygfuse 3.2.0-3
-          python3 -m pytest -q tests/test_struct_layout_headers.py -k cygfuse
 
       - name: Test Compatibility (Ratarmount)
         if: startsWith( matrix.os, 'ubuntu' )
@@ -517,7 +515,7 @@ jobs:
                 # Ports only package pip for the default Python version, which differs between
                 # FreeBSD versions and changes over time, e.g. py311-pip on 13.5 but py312-pip
                 # on 14.3, so install it via its unflavored port origin instead of by name.
-                sudo -E pkg install -y git fusefs-libs python3 devel/py-pip
+                sudo -E pkg install -y git fusefs-libs python3 devel/py-pip curl
 
                 # Make FUSE work
                 sudo -E kldload fusefs
@@ -531,6 +529,10 @@ jobs:
 
                 # Test Installation From Source
                 python3 -m pip install .
+
+                # Check the downloaded FreeBSD system headers against the model.
+                tests/headers/download.sh freebsd "releng/${{ matrix.version }}"
+                python3 -m pytest -s -v -rs tests/test_struct_layout_headers.py -k freebsd
 
                 # Unit Tests (FUSE 2)
                 python3 -c 'import mfusepy; assert mfusepy.fuse_version_major == 2'
@@ -572,7 +574,7 @@ jobs:
                 # Packages
                 sudo -E pkgin -y update
                 # librefuse (FUSE API on top of puffs, no perfused daemon needed) is part of the NetBSD base system.
-                sudo -E pkgin -y install git python311 py311-pip
+                sudo -E pkgin -y install git python311 py311-pip curl
                 sudo -E ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
 
                 # Fix PATH
@@ -590,6 +592,11 @@ jobs:
 
                 # Test Installation From Source
                 python3 -m pip install .
+
+                # Check the downloaded NetBSD librefuse headers against the model.
+                NETBSD_VERSION="${{ matrix.version }}"
+                tests/headers/download.sh netbsd "netbsd-${NETBSD_VERSION%%.*}"
+                python3 -m pytest -s -v -rs tests/test_struct_layout_headers.py -k netbsd
 
                 # preserve pytest exit status, always show logs
                 rc=0
