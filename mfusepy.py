@@ -1212,10 +1212,16 @@ class _FuseTypes:
         _fuse_conn_info_fields += [('max_readahead', _fuse_uint32)]
         if _system == 'Darwin':
             _fuse_conn_info_fields += [('enable', _fuse_uint32)]  # TODO: is a bitfield
-        _fuse_conn_info_fields += [
-            ('capable', _fuse_uint32),  # Added in 2.8
-            ('want', _fuse_uint32),  # Added in 2.8
-        ]
+        if (
+            fuse_version_major == 3
+            or _librefuse
+            or _system == 'OpenBSD'
+            or (fuse_version_major == 2 and fuse_version_minor >= 8)
+        ):
+            _fuse_conn_info_fields += [
+                ('capable', _fuse_uint32),  # Added in 2.8
+                ('want', _fuse_uint32),  # Added in 2.8
+            ]
         # OpenBSD advertises FUSE 2.6 but has the full layout of a newer libfuse.
         _conn_info_minor = 9 if _system == 'OpenBSD' else fuse_version_minor
         if _librefuse or fuse_version_major == 3 or (fuse_version_major == 2 and _conn_info_minor >= 9):
@@ -1375,7 +1381,7 @@ class _FuseTypes:
             _get_feature_flag: Any
 
             def _capable_bits(self) -> int:
-                return self.capable_ext if type(self)._HAS_WANT_EXT else self.capable
+                return self.capable_ext if type(self)._HAS_WANT_EXT else getattr(self, 'capable', 0)
 
             def is_capable(self, capability: FuseCapability) -> bool:
                 '''
@@ -1412,6 +1418,7 @@ class _FuseTypes:
                 pointer = getattr(self, '_fuse_session_pointer', None)
                 if pointer is not None and type(self)._set_feature_flag is not None:
                     return bool(type(self)._set_feature_flag(pointer, flag))
+                # _capable_bits() returns 0 when the struct has no capability fields, e.g., FUSE 2.7.
                 if (self._capable_bits() & flag) != flag:
                     return False
 
@@ -1432,6 +1439,8 @@ class _FuseTypes:
                     return
 
                 # See enable_capability() for why the members are written directly in the fallback.
+                if not hasattr(self, 'want'):
+                    return
                 self.want &= ~flag & 0xFFFF_FFFF  # Because legacy 'want' is only 32-bit
                 if type(self)._HAS_WANT_EXT:
                     self.want_ext &= ~flag
@@ -1660,7 +1669,7 @@ class _FuseTypes:
                 elif _system == 'Darwin':
                     _fuse_operations_fields += [
                         ('reserved00', c_void_p),
-                        ('reserved01', c_void_p),
+                        ('monitor', c_void_p),
                         ('renamex', c_void_p),
                         ('statfs_x', c_void_p),
                         ('setvolname', c_void_p),
