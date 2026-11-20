@@ -614,8 +614,7 @@ class _FuseTypes:
                     ('st_ctimespec', c_timespec),
                     ('__reserved', ctypes.c_ulong),  # unclear what this is
                 ]
-            else:
-                # i686, use as fallback for everything else
+            elif _machine in ('i386', 'i686'):
                 _c_stat__fields_ = [
                     ('st_dev', c_dev_t),
                     ('__pad1', ctypes.c_ushort),
@@ -634,6 +633,10 @@ class _FuseTypes:
                     ('st_ctimespec', c_timespec),
                     ('st_ino', ctypes.c_ulonglong),
                 ]
+            else:
+                raise NotImplementedError(
+                    f"Unsupported Linux machine {_machine!r}. Please add a struct stat layout for it."
+                )
         elif _system == 'Windows' or _system.startswith('CYGWIN'):
             ENOTSUP = 129 if _system == 'Windows' else 134
             c_dev_t = ctypes.c_uint
