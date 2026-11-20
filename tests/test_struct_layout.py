@@ -381,7 +381,9 @@ def test_flock_is_a_structure():
 
 def test_lock_callback_uses_flock_pointer():
     lock_field = next(field for field in mfusepy.fuse_operations._fields_ if field[0] == 'lock')
-    assert lock_field[1]._argtypes_[-1] == ctypes.POINTER(mfusepy.c_flock_t)
+    lock_argtypes = getattr(lock_field[1], '_argtypes_', None)
+    assert lock_argtypes is not None
+    assert lock_argtypes[-1] == ctypes.POINTER(mfusepy.c_flock_t)
 
 
 @pytest.mark.skipif(sys.byteorder != 'little', reason="Bit numbering in the C test assumes little endian.")
