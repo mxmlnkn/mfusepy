@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # pylint: disable=protected-access
+# The members of ctypes structs are defined dynamically via '_fields_', which pylint cannot see.
+# pylint: disable=no-member
 
 import ctypes
 import errno
