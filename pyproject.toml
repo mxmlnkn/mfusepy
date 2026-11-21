@@ -135,6 +135,15 @@ disable = [
     "R0801",
     "global-statement",
     "chained-comparison",  # Only since Python 3.8
+    # For testing our own library, protected access is valid and ctypes and the generated ABI types expose
+    # required details through underscore-prefixed members such as _Pointer.
+    "protected-access",
+    # One might argue that imports outside top-level are even more correct and more robust to platform-specific
+    # differences. If it is required more than once or twice, though top-level is still better.
+    # PEP 810 finally brings explicit lazy imports to Python 3.15, which will be a real saver, but I am still
+    # supporting 3.9, so I guess in 8 years then.
+    "import-outside-toplevel",
+    "wrong-import-position",
 ]
 
 # Development-only dependencies. PEP 735 groups are metadata only: they are shipped in the sdist's

@@ -2667,6 +2667,8 @@ class FUSE:
     # https://github.com/torvalds/linux/blob/1934261d897467a924e2afd1181a7/include/uapi/linux/fuse.h#L263C1-L280C3
     def _readdir(self, path: Optional[bytes], buf, filler, offset: int, fip: fuse_fi_p) -> int:
         # Ignore raw_fi
+        # ctypes struct fields are assigned outside __init__ by design.
+        # pylint: disable=attribute-defined-outside-init
         st = c_stat()
 
         decoded_path = None if path is None else path.decode(self.encoding, self.errors)
