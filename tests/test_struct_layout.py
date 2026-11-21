@@ -16,6 +16,7 @@ from struct_layout_utils import (  # noqa: E402
     c_probe,
     compile_and_run,
     find_compiler,
+    function_prototype_checks,
     parse_c_output,
     python_layout,
 )
@@ -58,7 +59,13 @@ def struct_specs() -> list[StructSpec]:
 
 CHECKS = build_checks(mfusepy, struct_specs())
 PY_INFOS = python_layout(CHECKS)
-C_CHECKER = c_probe(('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h', 'fuse.h'), CHECKS)
+PROTOTYPE_CHECKS = function_prototype_checks(mfusepy, fuse_prefix=mfusepy._system == 'Windows')
+C_CHECKER = c_probe(
+    ('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h', 'fuse.h'),
+    CHECKS,
+    PROTOTYPE_CHECKS,
+    ('    (void) check_fuse_operations;',) if PROTOTYPE_CHECKS else (),
+)
 
 
 def build_cflags() -> list[str]:
@@ -79,6 +86,8 @@ def build_cflags() -> list[str]:
     cflags = [
         f'-DFUSE_USE_VERSION={mfusepy.fuse_version_major}{mfusepy.fuse_version_minor}',
         '-D_FILE_OFFSET_BITS=64',
+        # Older GCC and Clang only warn about incompatible callback pointer types.
+        '-Werror=incompatible-pointer-types',
     ]
     # librefuse's fuse.h is in the default include path, do not pick up the headers of a libfuse package.
     if not mfusepy._librefuse:
