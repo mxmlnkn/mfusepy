@@ -358,8 +358,6 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: pyproject.toml
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -705,7 +703,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: all
 
