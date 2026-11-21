@@ -899,6 +899,11 @@ class _FuseTypes:
                     ('f_ffree', c_fsfilcnt_t),
                     ('f_favail', c_fsfilcnt_t),
                     ('f_fsid', ctypes.c_ulong),
+                ]
+                # glibc inserts an int pad before f_flag on 32-bit platforms.
+                if _system == 'Linux' and ctypes.sizeof(ctypes.c_void_p) == 4:
+                    _fields_ += [('__f_unused', ctypes.c_int)]
+                _fields_ += [
                     ('f_flag', ctypes.c_ulong),
                     ('f_namemax', ctypes.c_ulong),
                 ]
