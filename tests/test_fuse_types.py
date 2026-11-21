@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # pylint: disable=protected-access
 
+# pytype: disable=attribute-error
+
 import ctypes
 import os
 import sys
@@ -35,3 +37,10 @@ def test_i686_linux_layout_is_supported():
 def test_unknown_linux_machine_raises():
     with pytest.raises(NotImplementedError, match='s390x'):
         mfusepy._FuseTypes(mfusepy._FuseContext(system='Linux', machine='s390x', fuse_version=(3, 18, 3)))
+
+
+def test_netbsd_getxattr_returns_int():
+    types = mfusepy._FuseTypes(
+        mfusepy._FuseContext(system='NetBSD', machine='amd64', fuse_version=(3, 10, 0), librefuse=True)
+    )
+    assert types.getxattr_t._restype_ is ctypes.c_int  # type: ignore[attr-defined]

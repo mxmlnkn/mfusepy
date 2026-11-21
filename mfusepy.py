@@ -728,7 +728,7 @@ class _FuseTypes:
                 ctypes.c_int,
             )
             getxattr_t = ctypes.CFUNCTYPE(
-                ctypes.c_int64,
+                ctypes.c_int,
                 ctypes.c_char_p,
                 ctypes.c_char_p,
                 ctypes.POINTER(ctypes.c_byte),
