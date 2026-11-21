@@ -16,6 +16,7 @@ from struct_layout_utils import (  # noqa: E402
     c_probe,
     compile_and_run,
     find_compiler,
+    function_prototype_checks,
     parse_c_output,
     python_layout,
 )
@@ -58,7 +59,13 @@ def struct_specs() -> list[StructSpec]:
 
 CHECKS = build_checks(mfusepy, struct_specs())
 PY_INFOS = python_layout(CHECKS)
-C_CHECKER = c_probe(('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h', 'fuse.h'), CHECKS)
+PROTOTYPE_CHECKS = function_prototype_checks(mfusepy, fuse_prefix=mfusepy._system == 'Windows')
+C_CHECKER = c_probe(
+    ('sys/stat.h', 'sys/statvfs.h', 'fcntl.h', 'time.h', 'utime.h', 'fuse.h'),
+    CHECKS,
+    PROTOTYPE_CHECKS,
+    ('    (void) check_fuse_operations;',) if PROTOTYPE_CHECKS else (),
+)
 
 
 def build_cflags() -> list[str]:

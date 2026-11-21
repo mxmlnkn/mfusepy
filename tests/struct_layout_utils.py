@@ -157,6 +157,82 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
     return checks
 
 
+_PRIMITIVE_C_NAMES = {
+    ctypes.c_char: 'char',
+    ctypes.c_byte: 'char',
+    ctypes.c_ubyte: 'unsigned char',
+    ctypes.c_short: 'short',
+    ctypes.c_ushort: 'unsigned short',
+    ctypes.c_int: 'int',
+    ctypes.c_uint: 'unsigned int',
+    ctypes.c_long: 'long',
+    ctypes.c_ulong: 'unsigned long',
+    ctypes.c_longlong: 'long long',
+    ctypes.c_ulonglong: 'unsigned long long',
+    ctypes.c_int32: 'int32_t',
+    ctypes.c_uint32: 'uint32_t',
+    ctypes.c_int64: 'int64_t',
+    ctypes.c_uint64: 'uint64_t',
+    ctypes.c_size_t: 'size_t',
+    ctypes.c_ssize_t: 'ssize_t',
+}
+
+
+def c_type_name(ctype, fuse_prefix: bool = False) -> str:
+    if ctype is None or ctype is type(None):
+        return 'void'
+    if ctype is ctypes.c_char_p:
+        return 'char *'
+    if ctype is ctypes.c_void_p:
+        return 'void *'
+    if ctype is ctypes.c_size_t:
+        return 'size_t'
+    if ctype is ctypes.c_ssize_t:
+        return 'ssize_t'
+    if ctype in _PRIMITIVE_C_NAMES:
+        return _PRIMITIVE_C_NAMES[ctype]
+    pointee = getattr(ctype, '_type_', None)
+    if pointee is not None:
+        return f'{c_type_name(pointee, fuse_prefix)} *'
+    if hasattr(ctype, '_argtypes_') and hasattr(ctype, '_restype_'):
+        return 'fuse_fill_dir_t'
+    name = getattr(ctype, '__name__', '')
+    if name.startswith('c_'):
+        c_name = name[2:]
+        c_name = c_name.removesuffix('_t')
+        return f'struct {"fuse_" if fuse_prefix else ""}{c_name}'
+    if name.startswith('fuse_'):
+        return f'struct {name}'
+    raise AssertionError(f'No C type name known for {ctype!r}')
+
+
+def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
+    operations = getattr(types, 'fuse_operations', None)
+    if operations is None:
+        return []
+
+    lines = ['static void check_fuse_operations(struct fuse_operations * operations) {']
+    for field in operations._fields_:
+        if len(field) != 2:
+            continue
+        name, callback = field
+        if not hasattr(callback, '_argtypes_'):
+            continue
+        arguments = ', '.join(f'({c_type_name(argument, fuse_prefix)}) 0' for argument in callback._argtypes_)
+        return_type = c_type_name(callback._restype_, fuse_prefix)
+        if return_type == 'void':
+            lines.append(f'    operations->{name}({arguments});')
+        else:
+            lines.append(f'    {return_type} result_{name} = operations->{name}({arguments});')
+            lines.append(
+                f'    _Static_assert(MFUSEPY_SAME_TYPE(operations->{name}({arguments}), {return_type}), '
+                f'"{name} return type");'
+            )
+            lines.append(f'    (void) result_{name};')
+    lines += ['}', '']
+    return lines
+
+
 def c_probe(
     includes: Sequence[str],
     checks: Sequence[LayoutCheck],
