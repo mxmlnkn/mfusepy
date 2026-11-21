@@ -86,6 +86,8 @@ def build_cflags() -> list[str]:
     cflags = [
         f'-DFUSE_USE_VERSION={mfusepy.fuse_version_major}{mfusepy.fuse_version_minor}',
         '-D_FILE_OFFSET_BITS=64',
+        # Older GCC and Clang only warn about incompatible callback pointer types.
+        '-Werror=incompatible-pointer-types',
     ]
     # librefuse's fuse.h is in the default include path, do not pick up the headers of a libfuse package.
     if not mfusepy._librefuse:
