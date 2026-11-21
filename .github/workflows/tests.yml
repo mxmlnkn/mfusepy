@@ -284,6 +284,18 @@ jobs:
         if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && !matrix.libfuse-version
         run: tests/headers/download.sh all
 
+      - name: Download macFUSE Headers
+        if: matrix.os == 'macos-15-intel' && matrix.python-version == '3.13'
+        run: tests/headers/download.sh macfuse
+
+      - name: Test macFUSE Headers
+        if: matrix.os == 'macos-15-intel' && matrix.python-version == '3.13'
+        run: |
+          test -f tests/headers/macfuse/support-libfuse-2.9/include/fuse/fuse.h
+          test -f tests/headers/macfuse/support-libfuse-3.17/include/fuse/fuse.h
+          test -f tests/headers/macfuse/support-libfuse-3.18/include/fuse/fuse.h
+          python3 -m pytest -q tests/test_struct_layout_headers.py -k macfuse
+
       - name: Unit Tests (FUSE 2)
         if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |
