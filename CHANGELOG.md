@@ -55,7 +55,7 @@
    FUSE 3 operations layout, detect librefuse via `fuse_pkgversion`, fail at import if `__fuse_main`
    is missing, and fall back to the soname when `find_library` fails.
  - Use the correct 32-bit return type for the NetBSD `getxattr` callback.
- - Add the glibc `__f_unused` pad to the 32-bit Linux `statvfs` layout.
+ - Add the 32-bit Linux `statvfs` pad used by glibc and little-endian musl.
  - Do not swallow exceptions raised by the `init` callback. They are now re-raised instead of being
    returned as a bogus `private_data` pointer.
  - `examples/loopback.py`: do not follow symlinks in `chmod` and `chown`, and report `st_ino` so hard

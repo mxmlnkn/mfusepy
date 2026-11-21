@@ -905,7 +905,8 @@ class _FuseTypes:
                     ('f_favail', c_fsfilcnt_t),
                     ('f_fsid', ctypes.c_ulong),
                 ]
-                # glibc inserts an int pad before f_flag on 32-bit platforms.
+                # glibc and little-endian musl insert an int pad before f_flag on 32-bit Linux.
+                # Big-endian musl and Bionic use different layouts and are not modeled.
                 if _system == 'Linux' and ctypes.sizeof(ctypes.c_void_p) == 4:
                     _fields_ += [('__f_unused', ctypes.c_int)]
                 _fields_ += [
