@@ -1,0 +1,50 @@
+name: Exotic Platform Smoke
+
+# Manual only. Emulation is slow and these layouts change rarely, so this must not run on every push.
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        type: choice
+        options: [i686, aarch64]
+        default: i686
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+
+    - uses: docker/setup-qemu-action@v3
+      with:
+        platforms: all
+
+    - name: Check struct layouts on the target architecture
+      env:
+        ARCH: ${{ inputs.arch }}
+      run: |
+        case "$ARCH" in
+            i686) platform=linux/386; image=i386/debian:bookworm ;;
+            aarch64) platform=linux/arm64; image=arm64v8/debian:bookworm ;;
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+        esac
+        docker run --rm --platform "$platform" \
+            -v "$PWD:/src" -w /src \
+            "$image" \
+            bash -c '
+                set -e
+                apt-get update
+                apt-get install -y --no-install-recommends \
+                    python3 python3-pip python3-pytest gcc libc6-dev libfuse-dev pkg-config
+                python3 -m pip install --break-system-packages pytest-order
+                python3 -c "import ctypes, mfusepy; print(mfusepy.fuse_version_major, ctypes.sizeof(mfusepy.c_stat))"
+                python3 -m pytest -q tests/test_struct_layout.py tests/test_fuse_types.py
+            '
