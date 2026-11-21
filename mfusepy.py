@@ -1826,7 +1826,6 @@ class _FuseTypes:
         class fuse_operations(ctypes.Structure):
             _fields_ = _fuse_operations_fields
 
-        self.ENOTSUP = enotsup
         self.c_dev_t = c_dev_t
         self.c_fsblkcnt_t = c_fsblkcnt_t
         self.c_fsfilcnt_t = c_fsfilcnt_t
@@ -1835,28 +1834,30 @@ class _FuseTypes:
         self.c_off_t = c_off_t
         self.c_pid_t = c_pid_t
         self.c_uid_t = c_uid_t
-        self.setxattr_t = setxattr_t
-        self.getxattr_t = getxattr_t
         self.c_timespec = c_timespec
         self.c_utimbuf = c_utimbuf
         self.c_stat = c_stat
         self.c_statvfs = c_statvfs
         self.c_flock_t = c_flock_t
+        self.c_stat_p = c_stat_p
+        self.c_statvfs_p = c_statvfs_p
+        self.c_utimbuf_p = c_utimbuf_p
+        self.c_timespec_p = c_timespec_p
+
+        self.ENOTSUP = enotsup
+        self.CAPABILITY_BITS = capability_bits
+        self._HAS_WANT_EXT = has_want_ext
+        self.setxattr_t = setxattr_t
+        self.getxattr_t = getxattr_t
         self.fuse_file_info = fuse_file_info
         self.fuse_context = fuse_context
         self.fuse_buf_flags = fuse_buf_flags
         self.fuse_buf = fuse_buf
         self.fuse_bufvec = fuse_bufvec
         self.fuse_fi_p = fuse_fi_p
-        self.c_stat_p = c_stat_p
-        self.c_statvfs_p = c_statvfs_p
-        self.c_utimbuf_p = c_utimbuf_p
-        self.c_timespec_p = c_timespec_p
         self.fuse_bufvec_p = fuse_bufvec_p
         self.fuse_bufvec_pp = fuse_bufvec_pp
         self.fuse_conn_info = fuse_conn_info
-        self.CAPABILITY_BITS = capability_bits
-        self._HAS_WANT_EXT = has_want_ext
         self.fuse_config = fuse_config
         self.fuse_pollhandle_p = fuse_pollhandle_p
         self.fuse_operations = fuse_operations
@@ -1881,6 +1882,10 @@ _FUSE_VERSION = _context.fuse_version
 _librefuse = _context.librefuse
 
 ENOTSUP = _types.ENOTSUP
+
+# These are very platform-dependent C structs from system headers and should not have been exported
+# or needed by implementations using mfusepy. They could have been made private via underscore, but
+# for now leave them as is. The usual mfusepy API converts to/from these type via Python int or dicts.
 c_dev_t = _types.c_dev_t
 c_fsblkcnt_t = _types.c_fsblkcnt_t
 c_fsfilcnt_t = _types.c_fsfilcnt_t
@@ -1889,13 +1894,24 @@ c_mode_t = _types.c_mode_t
 c_off_t = _types.c_off_t
 c_pid_t = _types.c_pid_t
 c_uid_t = _types.c_uid_t
-setxattr_t = _types.setxattr_t
-getxattr_t = _types.getxattr_t
 c_timespec = _types.c_timespec
 c_utimbuf = _types.c_utimbuf
 c_stat = _types.c_stat
 c_statvfs = _types.c_statvfs
 c_flock_t = _types.c_flock_t
+if TYPE_CHECKING:
+    c_stat_p = Any
+    c_statvfs_p = Any
+    c_utimbuf_p = Any
+    c_timespec_p = Any
+else:
+    c_stat_p = _types.c_stat_p
+    c_statvfs_p = _types.c_statvfs_p
+    c_utimbuf_p = _types.c_utimbuf_p
+    c_timespec_p = _types.c_timespec_p
+
+setxattr_t = _types.setxattr_t
+getxattr_t = _types.getxattr_t
 if TYPE_CHECKING:
     fuse_file_info = Any
     fuse_context = Any
@@ -1906,29 +1922,11 @@ fuse_buf_flags = _types.fuse_buf_flags
 fuse_buf = _types.fuse_buf
 fuse_bufvec = _types.fuse_bufvec
 
-if TYPE_CHECKING:
-    fuse_fi_p = Any
-    c_stat_p = Any
-    c_statvfs_p = Any
-    c_utimbuf_p = Any
-    c_timespec_p = Any
-    fuse_bufvec_p = Any
-    fuse_bufvec_pp = Any
-else:
-    fuse_fi_p = _types.fuse_fi_p
-    c_stat_p = _types.c_stat_p
-    c_statvfs_p = _types.c_statvfs_p
-    c_utimbuf_p = _types.c_utimbuf_p
-    c_timespec_p = _types.c_timespec_p
-    fuse_bufvec_p = _types.fuse_bufvec_p
-    fuse_bufvec_pp = _types.fuse_bufvec_pp
-
-if TYPE_CHECKING:
-    fuse_conn_info = Any
-    fuse_config = Any
-else:
-    fuse_conn_info = _types.fuse_conn_info
-    fuse_config = _types.fuse_config
+fuse_fi_p = _types.fuse_fi_p
+fuse_bufvec_p = _types.fuse_bufvec_p
+fuse_bufvec_pp = _types.fuse_bufvec_pp
+fuse_conn_info = _types.fuse_conn_info
+fuse_config = _types.fuse_config
 
 if TYPE_CHECKING:
     FuseConfigPointer = ctypes._Pointer[fuse_config]
@@ -3254,3 +3252,44 @@ def overrides(parent_class):
         return method
 
     return overrider
+
+
+__all__: list[str] = [  # noqa: RUF022 - Grouped by purpose, not alphabetically.
+    # Core API
+    'FUSE',
+    'Operations',
+    'FuseOSError',
+    'LoggingMixIn',
+    'ReadDirResult',
+    # Decorators, logging, and context helpers
+    'overrides',
+    'log_callback',
+    'callback_logger',
+    'fuse_get_context',
+    'fuse_exit',
+    'fuse_main_real',
+    # Version and common constants
+    'fuse_version_major',
+    'fuse_version_minor',
+    'get_fuse_version',
+    'ENOATTR',
+    'ENOTSUP',
+    # Capabilities
+    'FuseCapability',
+    # Callback type hints: TODO: These are too system-dependant and should have been a dict.
+    'fuse_file_info',
+    'fuse_conn_info',
+    'fuse_config',
+    'fuse_bufvec_p',
+    'fuse_bufvec_pp',
+    # POSIX ACL helpers
+    'ACLPermission',
+    'ACLTag',
+    'PosixACLEntry',
+    'ACL_UNDEFINED_ID',
+    'POSIX_ACL_XATTR_VERSION',
+    'XATTR_NAME_POSIX_ACL_ACCESS',
+    'XATTR_NAME_POSIX_ACL_DEFAULT',
+    'posix_acl_to_xattr',
+    'posix_acl_from_xattr',
+]
