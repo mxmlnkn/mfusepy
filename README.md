@@ -106,10 +106,12 @@ mfusepy requires FUSE 2.8 (or later) and runs on:
 
 - Linux (i386, x86_64, PPC, arm64, MIPS, riscv64)
 - macOS (Apple Silicon, Intel)
-- FreeBSD (i386, amd64)
+- FreeBSD (amd64)
 - NetBSD (amd64)
 - OpenBSD (amd64)
 - OmniOS (amd64)
+
+Linux struct layouts follow glibc. 32-bit musl and Bionic `struct stat` layouts are not modeled.
 
 FUSE 3 is currently supported on Linux and NetBSD. Other platforms use their FUSE 2-compatible
 implementations.
