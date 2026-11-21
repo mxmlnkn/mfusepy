@@ -1566,7 +1566,7 @@ class _FuseTypes:
                     ('dmask', ctypes.c_uint32),
                     ('no_rofd_flush', ctypes.c_int32),
                     ('parallel_direct_writes', ctypes.c_int32),
-                    ('flags', ctypes.c_int32),
+                    ('flags', ctypes.c_uint32),
                     ('reserved', ctypes.c_uint64 * 48),
                 ]
 
