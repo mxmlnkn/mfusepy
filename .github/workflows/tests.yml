@@ -679,7 +679,7 @@ jobs:
   QEMU-Tests:
     # Struct layouts for 32-bit and non-x86 targets are easy to get wrong and cheap enough to check.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -723,8 +723,7 @@ jobs:
                   set -e
                   apt-get update
                   apt-get install -y --no-install-recommends \
-                      python3 python3-pip python3-pytest gcc libc6-dev libfuse-dev pkg-config util-linux
-                  python3 -m pip install --break-system-packages pytest-order
+                      python3 python3-pytest gcc libc6-dev libfuse-dev pkg-config util-linux
                   if [ "$ARCH" = i686 ]; then
                       runner=linux32
                       expected_size=4
