@@ -20,5 +20,9 @@ pylint "${allPythonFiles[@]}" | tee pylint.log
 pytype -d import-error "${allPythonFiles[@]}"
 mypy "${allPythonFiles[@]}"
 status=$?
-python3 tests/check-authors.py || status=1
+if ! diff <( git log --all --use-mailmap --format='%aN <%aE>' | LC_ALL=C.UTF-8 sort -fu | grep -v 'no author' ) \
+        <( sed '/^#/d; /^$/d' AUTHORS ); then
+    echo "AUTHORS is out of date." >&2
+    status=1
+fi
 exit $status
