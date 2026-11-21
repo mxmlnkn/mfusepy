@@ -91,15 +91,18 @@ See some examples of how you can use mfusepy:
 | Example                          | Description                                    |
 |----------------------------------|------------------------------------------------|
 | [memory](examples/memory.py)     | A simple memory filesystem                     |
+| [memory_nullpath](examples/memory_nullpath.py) | A memory filesystem using nullpath_ok |
 | [loopback](examples/loopback.py) | A loopback filesystem                          |
 | [context](examples/context.py)   | Sample usage of `fuse_get_context()`           |
 | [sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)   |
 | [acl](examples/posix_acl.py)     | A filesystem implementing ACL xattrs           |
+| [readdir_with_offset](examples/readdir_with_offset.py) | A filesystem implementing readdir_with_offset |
+| [readdir_returning_offsets](examples/readdir_returning_offsets.py) | A filesystem returning readdir offsets |
 
 
 # Platforms
 
-mfusepy requires FUSE 2.6 (or later) and runs on:
+mfusepy requires FUSE 2.8 (or later) and runs on:
 
 - Linux (i386, x86_64, PPC, arm64, MIPS, riscv64)
 - macOS (Apple Silicon, Intel)
