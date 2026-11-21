@@ -208,7 +208,7 @@ fetch_macfuse() {
 
         local major minor hotfix
         case "$branch" in
-            support/libfuse-3.17) major=3; minor=17; hotfix=2 ;;
+            support/libfuse-3.17) major=3; minor=17; hotfix=4 ;;
             support/libfuse-3.18) major=3; minor=18; hotfix=3 ;;
             *) major=2; minor=9; hotfix=0 ;;
         esac

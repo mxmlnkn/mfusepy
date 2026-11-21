@@ -274,7 +274,7 @@ def header_cases() -> list[HeaderCase]:
 
     macfuse_versions = {
         'support-libfuse-2.9': (2, 9, 0, '29', ''),
-        'support-libfuse-3.17': (3, 17, 2, '317', ''),
+        'support-libfuse-3.17': (3, 17, 4, '317', ''),
         'support-libfuse-3.18': (3, 18, 3, '318', ''),
     }
     for version in sorted((HEADER_ROOT / 'macfuse').glob('*')):
