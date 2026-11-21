@@ -46,6 +46,12 @@ def test_public_ctypes_types_are_picklable():
         assert pickle.loads(pickle.dumps(ctype)) is ctype
 
 
+def test_winfsp_does_not_advertise_unmodeled_capabilities():
+    types = mfusepy._FuseTypes(mfusepy._FuseContext(system='Windows', machine='x86_64', fuse_version=(2, 8, 0)))
+    assert mfusepy.FuseCapability.STAT_EX not in types.CAPABILITY_BITS
+    assert mfusepy.FuseCapability.DELETE_ACCESS not in types.CAPABILITY_BITS
+
+
 def test_netbsd_getxattr_returns_int():
     types = mfusepy._FuseTypes(
         mfusepy._FuseContext(system='NetBSD', machine='amd64', fuse_version=(3, 10, 0), librefuse=True)
