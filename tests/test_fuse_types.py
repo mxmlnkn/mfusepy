@@ -48,4 +48,4 @@ def test_netbsd_getxattr_returns_int():
     types = mfusepy._FuseTypes(
         mfusepy._FuseContext(system='NetBSD', machine='amd64', fuse_version=(3, 10, 0), librefuse=True)
     )
-    assert types.getxattr_t._restype_ is ctypes.c_int
+    assert types.getxattr_t._restype_ is ctypes.c_int  # type: ignore[attr-defined]
