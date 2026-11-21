@@ -1,29 +1,69 @@
 
-# Version 3.2.0 built on 2026-11-18
+# Version 3.2.0 built on 2026-11-25
+
+This release substantially expands the automated test matrix against real libfuse headers across libfuse
+2.x and 3.x, macFUSE, WinFsp, Cygwin, the BSDs, and multiple CPU architectures. The expanded coverage
+uncovered many bugs, mostly on less commonly tested platforms and in rarely used FUSE features such as flock.
 
 ## Features
 
  - Add `posix_acl_to_xattr` and `posix_acl_from_xattr`, plus the `PosixACLEntry`, `ACLTag`, and
-   `ACLPermission` helpers for the Linux `system.posix_acl_*` xattr format. See `examples/posix_acl.py`.
- - Add the cross-platform `FuseCapability` enum and `fuse_conn_info.enable`, which maps capabilities to
-   the loaded implementation and supports `fuse_set_feature_flag` from libfuse 3.17+.
+   `ACLPermission` helpers and `XATTR_NAME_POSIX_ACL_*` constants for the Linux `system.posix_acl_*`
+   xattr format. Entries are validated and sorted into the canonical order required by the kernel. The
+   helpers raise `NotImplementedError` outside Linux. See `examples/posix_acl.py`.
+ - Add the cross-platform `FuseCapability` enum and `fuse_conn_info.is_capable`,
+   `enable_capability`, and `disable_capability`, which map capabilities to the loaded implementation
+   and support `fuse_set_feature_flag` from libfuse 3.17+.
+ - Add the `syncfs` callback to `fuse_operations` for libfuse 3.19.
  - Support OmniOS, including the illumos libfuse 2.7 struct layout and 64-bit library lookup.
+ - Implement `flock` in `examples/loopback.py`, `examples/memory.py`, and `examples/memory_nullpath.py`
+   and request `FLOCK_LOCKS`.
+ - Define `__all__` so wildcard imports expose only the intended public API.
 
 ## Fixes
 
- - Model the `fuse_file_info` fields added in libfuse 3.17 and the `statx` slot added to
-   `fuse_operations` in 3.18. This fixes `test_struct_layout` on Debian Trixie and Ubuntu 26.04.
+ - Return `EIO` instead of relying on an assertion when a `read` callback returns more bytes than requested.
+ - Model the `fuse_file_info` fields added in libfuse 3.17 and 3.18.3 (`backing_id`, `compat_flags`, and `kill_suidgid`).
+ - Correct `fuse_file_info.poll_events` to 32-bit, `fuse_config.parallel_direct_writes` for 3.14.1,
+   `fuse_conn_info.request_timeout` for 3.18, `fuse_buf.mem_size` and the `fuse_bufvec` layout, and
+   the FUSE 2.8 `poll` operation. Use the patch-level version from `fuse_pkgversion()` so that
+   releases such as 3.14.1 and 3.18.3 select the correct layout.
+ - Model `fuse_config.flags` as unsigned, matching the libfuse declaration.
+ - Define `struct flock` per platform and check the lock callback argument.
+ - Use `struct timespec[2]` for the `utimens` callback and `time_t` for `c_utimbuf`.
+ - Add `flag_nopath`/`flag_utime_omit_ok` only from libfuse 2.9 and `fallocate` only from 2.9.1.
+   Use the 2.9.1+ layout for all 2.9 runtimes because the FUSE 2 runtime does not expose the hotfix.
+ - Condition `copy_file_range` to libfuse 3.4+ and `lseek` to 3.8+.
+ - Use 64-bit `dev_t` and `st_gen` on FreeBSD.
+ - Apply the libfuse 2 `nopath` option as `fuse_config.nullpath_ok` instead of aborting the mount.
+ - Accept a missing path in the `write_buf`, `read_buf`, and `flock` wrappers when `nopath`/`nullpath_ok` is set.
+ - Reject unknown Linux architectures instead of silently using the i686 `struct stat` layout.
+ - Correct the macFUSE 5.5.0 and WinFsp `fuse_operations` layouts, including the WinFsp
+   `getdir`/`readlink` order that broke symlinks and the missing extension fields.
+ - Correct the Cygwin `fuse_file_info` and `fuse_operations` layouts and do not use WinFsp-specific behavior there.
+ - Reset the reused `stat` buffer between `readdir` entries.
  - Fix the `struct stat` layout on Linux riscv64.
- - Fix the `fuse_operations` field order for WinFsp on Windows, which broke symlinks.
+ - Correct Darwin `st_flags`/`st_gen`, NetBSD `st_blksize`, and FreeBSD `st_padding1`/`st_blksize` types.
+ - Fix the `struct stat` layout on Linux PPC by adding the trailing glibc reserved fields.
+ - Correct the `destroy` callback prototype to return `void` instead of `void *`.
  - Remove the legacy MacFuse lookup, which could abort `import mfusepy` on macOS 14 with macFUSE 5.3.x.
  - Fix the `fuse_context` size for libfuse < 2.8.
  - NetBSD: use the base-system librefuse instead of libfuse and perfused, call `__fuse_main` with the
-   FUSE 3 operations layout, detect librefuse via `fuse_pkgversion`, keep its struct layouts independent
-   of the API version, and fall back to the soname when `find_library` fails.
+   FUSE 3 operations layout, detect librefuse via `fuse_pkgversion`, fail at import if `__fuse_main`
+   is missing, and fall back to the soname when `find_library` fails.
+ - Use the correct 32-bit return type for the NetBSD `getxattr` callback.
+ - Add the 32-bit Linux `statvfs` pad used by glibc and little-endian musl.
  - Do not swallow exceptions raised by the `init` callback. They are now re-raised instead of being
    returned as a bogus `private_data` pointer.
- - `examples/loopback.py`: do not follow symlinks in `chmod` and `chown`.
- - Only import `ioctl_opt` on Linux so test collection works on other platforms.
+ - `examples/loopback.py`: do not follow symlinks in `chmod` and `chown`, and report `st_ino` so hard links work.
+ - `examples/context.py`: honor the requested read size and offset and implement `open` for OpenBSD.
+ - `examples/memory.py`: keep asynchronous reads enabled and import `ioctl_opt` lazily.
+ - `examples/memory_nullpath.py`: report `st_ino` for symlinks.
+
+## Build
+
+ - Allow setuptools < 85 instead of < 83.
+ - Ship `tests/` and `examples/` in the source distribution so packagers can run the test suite.
 
 
 # Version 3.1.1 built on 2026-03-13
