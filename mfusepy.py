@@ -1498,6 +1498,9 @@ class _FuseTypes:
         fuse_conn_info._unset_feature_flag = _fuse_unset_feature_flag
         fuse_conn_info._get_feature_flag = _fuse_get_feature_flag
 
+        if _libfuse is not None:
+            _libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
+
         # FUSE 3-only struct for second init argument defined in fuse.h.
         # If a FUSE 2 method is loaded but 'init_with_config' overridden,
         # then this argument will only be zero-initialized and should be ignored.
@@ -1945,8 +1948,6 @@ if fuse_version_major == 3:
     fuse_fill_dir_flags = _types.fuse_fill_dir_flags
     fuse_fill_dir_t = _types.fuse_fill_dir_t
     fuse_readdir_flags = _types.fuse_readdir_flags
-
-_libfuse.fuse_get_context.restype = ctypes.POINTER(fuse_context)
 
 
 # Some platforms, like macOS 15, define ENOATTR and ENODATA with different values.
