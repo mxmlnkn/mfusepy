@@ -675,3 +675,62 @@ jobs:
                 exit "$rc"
                 ;;
             esac
+
+  QEMU-Tests:
+    # Struct layouts for 32-bit and non-x86 targets are easy to get wrong and cheap enough to check.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: i686
+            platform: linux/386
+            image: i386/debian:bookworm
+          - arch: aarch64
+            platform: linux/arm64
+            image: arm64v8/debian:bookworm
+          - arch: ppc64le
+            platform: linux/ppc64le
+            image: ppc64le/debian:bookworm
+          - arch: riscv64
+            platform: linux/riscv64
+            image: riscv64/ubuntu:24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Check struct layouts on ${{ matrix.arch }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm --platform "$PLATFORM" \
+              -e ARCH="$ARCH" \
+              -v "$PWD:/src" -w /src \
+              "$IMAGE" \
+              bash -c '
+                  set -e
+                  apt-get update
+                  apt-get install -y --no-install-recommends \
+                      python3 python3-pytest gcc libc6-dev libfuse-dev pkg-config util-linux
+                  if [ "$ARCH" = i686 ]; then
+                      runner=linux32
+                      expected_size=4
+                  else
+                      runner=
+                      expected_size=8
+                  fi
+                  $runner python3 -c "import ctypes, platform, mfusepy; print(platform.machine(), ctypes.sizeof(ctypes.c_void_p)); assert ctypes.sizeof(ctypes.c_void_p) == $expected_size"
+                  $runner python3 -m pytest -q tests/test_struct_layout.py tests/test_fuse_types.py
+              '
