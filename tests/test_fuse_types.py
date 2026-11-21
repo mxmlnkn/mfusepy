@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # pylint: disable=protected-access
 
+# pytype: disable=attribute-error
+
 import ctypes
 import os
 import pickle
