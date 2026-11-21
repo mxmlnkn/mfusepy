@@ -47,6 +47,7 @@
    layout and delete-access semantics are modeled.
  - Reset the reused `stat` buffer between `readdir` entries.
  - Fix the `struct stat` layout on Linux riscv64.
+ - Fix the `struct stat` layout on Linux PPC by adding the trailing glibc reserved fields.
  - Correct the `destroy` callback prototype to return `void` instead of `void *`.
  - Remove the legacy MacFuse lookup, which could abort `import mfusepy` on macOS 14 with macFUSE 5.3.x.
  - Fix the `fuse_context` size for libfuse < 2.8.

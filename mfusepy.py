@@ -569,6 +569,8 @@ class _FuseTypes:
                     ('st_atimespec', c_timespec),
                     ('st_mtimespec', c_timespec),
                     ('st_ctimespec', c_timespec),
+                    ('__glibc_reserved4', ctypes.c_ulong),
+                    ('__glibc_reserved5', ctypes.c_ulong),
                 ]
             elif _machine in ('ppc64', 'ppc64le'):
                 _c_stat__fields_ = [
@@ -586,6 +588,9 @@ class _FuseTypes:
                     ('st_atimespec', c_timespec),
                     ('st_mtimespec', c_timespec),
                     ('st_ctimespec', c_timespec),
+                    ('__glibc_reserved4', ctypes.c_ulong),
+                    ('__glibc_reserved5', ctypes.c_ulong),
+                    ('__glibc_reserved6', ctypes.c_ulong),
                 ]
             elif _machine in ('aarch64', 'riscv64'):
                 _c_stat__fields_ = [
