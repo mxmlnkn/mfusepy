@@ -206,6 +206,13 @@ def c_type_name(ctype, fuse_prefix: bool = False) -> str:
     raise AssertionError(f'No C type name known for {ctype!r}')
 
 
+# ctypes aliases c_uint64 to c_ulong on LP64, so bmap's uint64_t * would otherwise be rendered as
+# size_t *, which is incompatible with the Darwin headers.
+_CALLBACK_ARGUMENT_NAMES = {
+    ('bmap', 2): 'uint64_t *',
+}
+
+
 def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
     operations = getattr(types, 'fuse_operations', None)
     if operations is None:
@@ -218,7 +225,10 @@ def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
         name, callback = field
         if not hasattr(callback, '_argtypes_'):
             continue
-        arguments = ', '.join(f'({c_type_name(argument, fuse_prefix)}) 0' for argument in callback._argtypes_)
+        arguments = ', '.join(
+            f'({_CALLBACK_ARGUMENT_NAMES.get((name, index), c_type_name(argument, fuse_prefix))}) 0'
+            for index, argument in enumerate(callback._argtypes_)
+        )
         return_type = c_type_name(callback._restype_, fuse_prefix)
         if return_type == 'void':
             lines.append(f'    operations->{name}({arguments});')

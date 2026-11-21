@@ -315,3 +315,8 @@ def test_c_type_name_derives_struct_names():
     assert c_type_name(mfusepy.c_flock_t) == 'struct flock'
     assert c_type_name(mfusepy.fuse_file_info) == 'struct fuse_file_info'
     assert c_type_name(mfusepy.c_stat, fuse_prefix=True) == 'struct fuse_stat'
+
+
+def test_bmap_argument_uses_declared_uint64_type():
+    types = mfusepy._FuseTypes(mfusepy._FuseContext(system='Linux', machine='x86_64', fuse_version=(2, 9, 9)))
+    assert any('bmap((char *) 0, (size_t) 0, (uint64_t *) 0)' in line for line in function_prototype_checks(types))
