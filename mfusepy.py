@@ -1937,7 +1937,7 @@ else:
 
 fuse_pollhandle_p = _types.fuse_pollhandle_p
 fuse_operations = _types.fuse_operations
-CAPABILITY_BITS = _types.CAPABILITY_BITS
+_CAPABILITY_BITS = _types.CAPABILITY_BITS
 _HAS_WANT_EXT = _types._HAS_WANT_EXT
 if _system == 'Windows' or _system.startswith('CYGWIN'):
     c_win_long = _types.c_win_long

@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import mfusepy  # noqa: E402
-from mfusepy import CAPABILITY_BITS, FuseCapability, fuse_conn_info  # noqa: E402
+from mfusepy import _CAPABILITY_BITS, FuseCapability, fuse_conn_info  # noqa: E402
 
 _HAS_WANT = any(field[0] == 'want' for field in fuse_conn_info._fields_)
 requires_want = pytest.mark.skipif(
@@ -27,7 +27,7 @@ def test_enable_is_callable():
 
 
 def get_declared_capabilities() -> list[tuple[FuseCapability, int]]:
-    return sorted(CAPABILITY_BITS.items(), key=lambda item: item[1])
+    return sorted(_CAPABILITY_BITS.items(), key=lambda item: item[1])
 
 
 def _set_capable(connection: fuse_conn_info, flags: int) -> None:
@@ -39,7 +39,7 @@ def _set_capable(connection: fuse_conn_info, flags: int) -> None:
 
 def is_wanted(connection: fuse_conn_info, capability: FuseCapability) -> bool:
     '''Return whether the given capability is requested to be enabled in 'want'/'want_ext'.'''
-    flag = CAPABILITY_BITS.get(capability)
+    flag = _CAPABILITY_BITS.get(capability)
     if flag is None:
         return False
     want = connection.want_ext if mfusepy._HAS_WANT_EXT else connection.want
@@ -48,14 +48,14 @@ def is_wanted(connection: fuse_conn_info, capability: FuseCapability) -> bool:
 
 def test_capability_map_is_sane():
     # The map must only contain capabilities of the cross-platform enum and each bit at most once.
-    assert set(CAPABILITY_BITS) <= set(FuseCapability)
-    assert len(set(CAPABILITY_BITS.values())) == len(CAPABILITY_BITS)
+    assert set(_CAPABILITY_BITS) <= set(FuseCapability)
+    assert len(set(_CAPABILITY_BITS.values())) == len(_CAPABILITY_BITS)
 
 
 @requires_want
 def test_enable_undeclared_capability():
     # Every implementation leaves out the capabilities of the others, e.g., macFUSE's or WinFsp's.
-    undeclared = next(capability for capability in FuseCapability if capability not in CAPABILITY_BITS)
+    undeclared = next(capability for capability in FuseCapability if capability not in _CAPABILITY_BITS)
     connection = fuse_conn_info()
     _set_capable(connection, 0xFFFF_FFFF_FFFF_FFFF)
 
