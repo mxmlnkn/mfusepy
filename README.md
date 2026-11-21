@@ -5,7 +5,7 @@
 [![Downloads](https://static.pepy.tech/badge/mfusepy/month)](https://pepy.tech/project/mfusepy)
 [![Changelog](https://img.shields.io/badge/Changelog-Markdown-blue)](https://github.com/mxmlnkn/mfusepy/blob/master/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-ISC-blue.svg)](http://opensource.org/licenses/ISC)
-[![Build Status](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml/badge.svg)](https://github.com/mxmlnkn/mfusepy/actions)
+[![Build Status](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml/badge.svg)](https://github.com/mxmlnkn/mfusepy/actions/workflows/tests.yml)
 [![Discord](https://img.shields.io/discord/783411320354766878?label=discord)](https://discord.gg/Wra6t6akh2)
 [![Telegram](https://img.shields.io/badge/Chat-Telegram-%2330A3E6)](https://t.me/joinchat/FUdXxkXIv6c4Ib8bgaSxNg)
 
@@ -31,14 +31,16 @@ If you depend on this project, you should fix the major version, or else you ris
 E.g., in your pyproject.toml:
 
 ```toml
-dependencies = ["mfusepy ~= 1.1",]
+dependencies = ["mfusepy ~= 3.2",]
 ```
 
 If you have tested with multiple major versions and they are known to work, you can relax the constraint for maximum compatibility:
 
 ```toml
-dependencies = ["mfusepy >= 1.1, < 3.0",]
+dependencies = ["mfusepy >= 1.1, < 4.0",]
 ```
+
+If you are migrating from fusepy, pinning to `mfusepy ~= 1.1` is the recommended first step for best compatibility.
 
 
 # About this fork
@@ -91,22 +93,30 @@ See some examples of how you can use mfusepy:
 | Example                          | Description                                    |
 |----------------------------------|------------------------------------------------|
 | [memory](examples/memory.py)     | A simple memory filesystem                     |
+| [memory_nullpath](examples/memory_nullpath.py) | A memory filesystem using nullpath_ok |
 | [loopback](examples/loopback.py) | A loopback filesystem                          |
 | [context](examples/context.py)   | Sample usage of `fuse_get_context()`           |
 | [sftp](examples/sftp.py)         | A simple SFTP filesystem (requires paramiko)   |
 | [acl](examples/posix_acl.py)     | A filesystem implementing ACL xattrs           |
+| [readdir_with_offset](examples/readdir_with_offset.py) | A filesystem implementing readdir_with_offset |
+| [readdir_returning_offsets](examples/readdir_returning_offsets.py) | A filesystem returning readdir offsets |
 
 
 # Platforms
 
-mfusepy requires FUSE 2.6 (or later) and runs on:
+mfusepy requires FUSE 2.8 (or later) and runs on:
 
 - Linux (i386, x86_64, PPC, arm64, MIPS, riscv64)
 - macOS (Apple Silicon, Intel)
-- FreeBSD (i386, amd64)
+- FreeBSD (amd64)
 - NetBSD (amd64)
 - OpenBSD (amd64)
 - OmniOS (amd64)
+
+Linux struct layouts follow glibc. 32-bit musl and Bionic `struct stat` layouts are not modeled.
+
+FUSE 3 is currently supported on Linux and NetBSD. Other platforms use their FUSE 2-compatible
+implementations.
 
 While FUSE is (at least in the Unix world) a [Linux kernel feature](https://man7.org/linux/man-pages/man4/fuse.4.html), several user space libraries exist for easy access.
 `libfuse` acts as the reference implementation.
