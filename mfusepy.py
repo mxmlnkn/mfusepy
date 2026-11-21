@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from signal import SIG_DFL, SIGINT, SIGTERM, signal
 from stat import S_IFDIR
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, cast, get_type_hints
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Optional, Union, cast, get_type_hints
 
 FieldsEntry = Union[tuple[str, type], tuple[str, type, int]]
 BitFieldsEntry = tuple[str, type, int]
@@ -1854,9 +1854,6 @@ class _FuseTypes:
         self.fuse_buf_flags = fuse_buf_flags
         self.fuse_buf = fuse_buf
         self.fuse_bufvec = fuse_bufvec
-        self.fuse_fi_p = fuse_fi_p
-        self.fuse_bufvec_p = fuse_bufvec_p
-        self.fuse_bufvec_pp = fuse_bufvec_pp
         self.fuse_conn_info = fuse_conn_info
         self.fuse_config = fuse_config
         self.fuse_pollhandle_p = fuse_pollhandle_p
@@ -1870,8 +1867,19 @@ class _FuseTypes:
             self.fuse_readdir_flags = fuse_readdir_flags
 
 
+def _import_public_types(types: _FuseTypes) -> None:
+    """Expose the generated ctypes classes so that they can be imported and pickled."""
+    for name in dir(types):
+        if name.startswith(('c_', 'fuse_')):
+            ctype = getattr(types, name, None)
+            if isinstance(ctype, type) and issubclass(ctype, ctypes.Structure):
+                ctype.__module__ = __name__
+                ctype.__qualname__ = name
+
+
 _context = _FuseContext.from_runtime()
 _types = _FuseTypes(_context)
+_import_public_types(_types)
 
 _libfuse = cast("ctypes.CDLL", _context.libfuse)
 _libfuse_path = _libfuse._name
@@ -1920,18 +1928,55 @@ else:
     fuse_context = _types.fuse_context
 fuse_buf_flags = _types.fuse_buf_flags
 fuse_buf = _types.fuse_buf
-fuse_bufvec = _types.fuse_bufvec
-
-fuse_fi_p = _types.fuse_fi_p
-fuse_bufvec_p = _types.fuse_bufvec_p
-fuse_bufvec_pp = _types.fuse_bufvec_pp
-fuse_conn_info = _types.fuse_conn_info
-fuse_config = _types.fuse_config
 
 if TYPE_CHECKING:
-    FuseConfigPointer = ctypes._Pointer[fuse_config]
-    FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]
+
+    class _CTypeStub(ctypes.Structure):
+        _fields_: ClassVar[list[Any]]
+
+        def __getattr__(self, name: str) -> Any:
+            return None
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            return None
+
+    class fuse_config(ctypes.Structure):
+        pass
+
+    class fuse_bufvec(ctypes.Structure):
+        pass
+
+    class fuse_conn_info(_CTypeStub):
+        capable: int
+        want: int
+        capable_ext: int
+        want_ext: int
+        _CAPABILITY_BITS: ClassVar[dict[FuseCapability, int]]
+        _HAS_WANT_EXT: ClassVar[bool]
+        _fuse_session_pointer: Any
+
+        def is_capable(self, capability: FuseCapability) -> bool:
+            raise NotImplementedError
+
+        def enable_capability(self, capability: FuseCapability) -> bool:
+            raise NotImplementedError
+
+        def disable_capability(self, capability: FuseCapability) -> None:
+            raise NotImplementedError
+
+    fuse_fi_p = ctypes._Pointer[fuse_file_info]  # noqa: W212
+    fuse_bufvec_p = ctypes._Pointer[fuse_bufvec]  # noqa: W212
+    fuse_bufvec_pp = ctypes._Pointer[fuse_bufvec_p]  # noqa: W212
+    FuseConfigPointer = ctypes._Pointer[fuse_config]  # noqa: W212
+    FuseConnInfoPointer = ctypes._Pointer[fuse_conn_info]  # noqa: W212
 else:
+    fuse_bufvec = _types.fuse_bufvec
+    fuse_config = _types.fuse_config
+    fuse_conn_info = _types.fuse_conn_info
+
+    fuse_fi_p = ctypes.POINTER(fuse_file_info)
+    fuse_bufvec_p = ctypes.POINTER(fuse_bufvec)
+    fuse_bufvec_pp = ctypes.POINTER(fuse_bufvec_p)
     FuseConfigPointer = ctypes.POINTER(fuse_config)
     FuseConnInfoPointer = ctypes.POINTER(fuse_conn_info)
 
