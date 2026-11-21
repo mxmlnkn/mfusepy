@@ -2502,7 +2502,8 @@ class FUSE:
             return 0
 
         retsize = len(ret)
-        assert retsize <= size, f'actual amount read {retsize} greater than expected {size}'
+        if retsize > size:
+            raise FuseOSError(errno.EIO)
 
         ctypes.memmove(buf, ret, retsize)
         return retsize

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
+import ctypes
+import errno
 import os
 import sys
 import types
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -106,3 +110,14 @@ def test_flock_wrapper_accepts_missing_path():
     fuse, operations = make_fuse()
     assert mfusepy.FUSE.flock(fuse, None, make_fip(), 3) == 0  # type: ignore
     assert operations.calls == [('flock', None, 42, 3)]
+
+
+def test_read_rejects_oversized_result():
+    fuse, _ = make_fuse()
+    fuse.operations.read = lambda path, size, offset, fh: b'x' * (size + 1)
+    buf = ctypes.create_string_buffer(4)
+
+    with pytest.raises(mfusepy.FuseOSError) as exception:
+        mfusepy.FUSE.read(fuse, b'/file', buf, 4, 0, make_fip())  # type: ignore
+
+    assert exception.value.errno == errno.EIO
