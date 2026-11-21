@@ -1350,8 +1350,10 @@ class _FuseTypes:
             # TODO: Add and test support for this and then reuse READDIRPLUS instead of a Windows-custom capability.
             # FuseCapability.READDIR_PLUS         : 1 << 21,
             FuseCapability.READ_ONLY            : 1 << 22,
-            FuseCapability.STAT_EX              : 1 << 23,
-            FuseCapability.DELETE_ACCESS        : 1 << 24,
+            # FSP_FUSE_CAP_STAT_EX switches to the extended fuse_stat layout, which is not modeled.
+            # FSP_FUSE_CAP_DELETE_ACCESS requires matching delete-access semantics in access().
+            # FuseCapability.STAT_EX              : 1 << 23,
+            # FuseCapability.DELETE_ACCESS        : 1 << 24,
             FuseCapability.ALLOCATE             : 1 << 27,
             FuseCapability.EXCHANGE_DATA        : 1 << 28,
             FuseCapability.CASE_INSENSITIVE     : 1 << 29,

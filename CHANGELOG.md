@@ -43,6 +43,8 @@
    `getdir`/`readlink` order that broke symlinks and the missing extension fields.
  - Correct the Cygwin `fuse_file_info` and `fuse_operations` layouts and do not use WinFsp-specific
    behavior there.
+ - Do not advertise the WinFsp `STAT_EX` and `DELETE_ACCESS` capabilities until the extended stat
+   layout and delete-access semantics are modeled.
  - Reset the reused `stat` buffer between `readdir` entries.
  - Fix the `struct stat` layout on Linux riscv64.
  - Correct the `destroy` callback prototype to return `void` instead of `void *`.
