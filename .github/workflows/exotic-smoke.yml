@@ -37,14 +37,22 @@ jobs:
             *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
         esac
         docker run --rm --platform "$platform" \
+            -e ARCH="$ARCH" \
             -v "$PWD:/src" -w /src \
             "$image" \
             bash -c '
                 set -e
                 apt-get update
                 apt-get install -y --no-install-recommends \
-                    python3 python3-pip python3-pytest gcc libc6-dev libfuse-dev pkg-config
+                    python3 python3-pip python3-pytest gcc libc6-dev libfuse-dev pkg-config util-linux
                 python3 -m pip install --break-system-packages pytest-order
-                python3 -c "import ctypes, mfusepy; print(mfusepy.fuse_version_major, ctypes.sizeof(mfusepy.c_stat))"
-                python3 -m pytest -q tests/test_struct_layout.py tests/test_fuse_types.py
+                if [ "$ARCH" = i686 ]; then
+                    runner=linux32
+                    expected_size=4
+                else
+                    runner=
+                    expected_size=8
+                fi
+                $runner python3 -c "import ctypes, platform, mfusepy; print(platform.machine(), ctypes.sizeof(ctypes.c_void_p)); assert ctypes.sizeof(ctypes.c_void_p) == $expected_size"
+                $runner python3 -m pytest -q tests/test_struct_layout.py tests/test_fuse_types.py
             '
