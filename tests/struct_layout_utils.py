@@ -163,7 +163,16 @@ def c_probe(
     extra_declarations: Sequence[str] = (),
     extra_main_lines: Sequence[str] = (),
 ) -> str:
-    lines = ['#include <stddef.h>', '#include <stdio.h>']
+    lines = [
+        '#include <stddef.h>',
+        '#include <stdio.h>',
+        '/* GCC and Clang can compare exact types. Other compilers fall back to a width check. */',
+        '#if defined(__clang__) || defined(__GNUC__)',
+        '#define MFUSEPY_SAME_TYPE(expression, type) __builtin_types_compatible_p(__typeof__(expression), type)',
+        '#else',
+        '#define MFUSEPY_SAME_TYPE(expression, type) (sizeof(expression) == sizeof(type))',
+        '#endif',
+    ]
     lines += [f'#include <{include}>' for include in includes]
     lines += list(extra_declarations)
     lines += ['', 'int main(void) {']

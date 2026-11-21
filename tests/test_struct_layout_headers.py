@@ -119,8 +119,8 @@ def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
         else:
             lines.append(f'    {return_type} result_{name} = operations->{name}({arguments});')
             lines.append(
-                f'    _Static_assert(sizeof(operations->{name}({arguments})) == '
-                f'sizeof({return_type}), "{name} return type");'
+                f'    _Static_assert(MFUSEPY_SAME_TYPE(operations->{name}({arguments}), {return_type}), '
+                f'"{name} return type");'
             )
             lines.append(f'    (void) result_{name};')
     lines += ['}', '']
