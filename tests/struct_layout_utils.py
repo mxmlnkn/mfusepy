@@ -69,6 +69,7 @@ class StructSpec:
     skip_members: tuple[str, ...] = ()
     skip_member_sizes: tuple[str, ...] = ()
     member_sizes: bool = False
+    member_types: bool = False
 
     @property
     def name(self) -> str:
@@ -80,6 +81,47 @@ class LayoutCheck:
     key: str
     value: int
     c_lines: tuple[str, ...]
+
+
+# ctypes aliases several platform-dependent C types to the same Python class, so an exact type name
+# cannot be recovered from the ctypes type alone. Keep offset and size checks for those members.
+_AMBIGUOUS_C_TYPES = {
+    ctypes.c_long,
+    ctypes.c_ulong,
+    ctypes.c_longlong,
+    ctypes.c_ulonglong,
+    ctypes.c_int64,
+    ctypes.c_uint64,
+    ctypes.c_size_t,
+    ctypes.c_ssize_t,
+}
+
+
+def _is_ambiguous_type(ctype) -> bool:
+    if ctype in _AMBIGUOUS_C_TYPES:
+        return True
+    pointee = getattr(ctype, '_type_', None)
+    return pointee is not None and _is_ambiguous_type(pointee)
+
+
+MEMBER_TYPE_SKIP_STRUCTS = {'fuse_operations'}
+MEMBER_TYPE_SKIPS = {
+    ('c_stat', 'st_atimespec'),
+    ('c_stat', 'st_mtimespec'),
+    ('c_stat', 'st_ctimespec'),
+    # macFUSE models the anonymous enable bitfield struct as a uint32 for the layout checks.
+    ('fuse_conn_info', 'enable'),
+}
+# Some members intentionally use an ABI-compatible ctypes type instead of the exact typedef.
+MEMBER_TYPE_OVERRIDES = {
+    ('fuse_buf', 'flags'): 'enum fuse_buf_flags',
+    ('fuse_config', 'flags'): 'uint32_t',
+    ('fuse_context', 'fuse'): 'struct fuse *',
+    ('fuse_conn_info', 'capable_ext'): 'uint64_t',
+    ('fuse_conn_info', 'want_ext'): 'uint64_t',
+    ('fuse_file_info', 'fh'): 'uint64_t',
+    ('fuse_file_info', 'lock_owner'): 'uint64_t',
+}
 
 
 def _bitfield_lines(key: str, c_name: str, member: str) -> tuple[str, ...]:
@@ -134,11 +176,34 @@ def build_checks(types, structs: Sequence[StructSpec]) -> list[LayoutCheck]:
                 continue
 
             c_member = c_member_name(member)
+            type_lines = []
+            if spec.member_types and spec.python_name not in MEMBER_TYPE_SKIP_STRUCTS:
+                field_type = next((field[1] for field in fields if len(field) == 2 and field[0] == member), None)
+                if (
+                    field_type is not None
+                    and (spec.python_name, member) not in MEMBER_TYPE_SKIPS
+                    and not (isinstance(field_type, type) and issubclass(field_type, ctypes.Array))
+                    and not (hasattr(field_type, '_argtypes_') and hasattr(field_type, '_restype_'))
+                ):
+                    c_type = MEMBER_TYPE_OVERRIDES.get((spec.python_name, member))
+                    if c_type is None and not _is_ambiguous_type(field_type):
+                        try:
+                            c_type = c_type_name(field_type)
+                        except AssertionError:
+                            c_type = None
+                    if c_type is not None:
+                        type_lines.append(
+                            f'    _Static_assert(MFUSEPY_SAME_TYPE(((struct {spec.c_name} *) 0)->{c_member}, '
+                            f'{c_type}), "{name}.{member} type");'
+                        )
             checks.append(
                 LayoutCheck(
                     f'{name}.{member} offset',
                     getattr(struct_type, member).offset,
-                    (f'    printf("{name}.{member} offset:%zu\\n", offsetof(struct {spec.c_name}, {c_member}));',),
+                    (
+                        f'    printf("{name}.{member} offset:%zu\\n", offsetof(struct {spec.c_name}, {c_member}));',
+                        *type_lines,
+                    ),
                 )
             )
             if spec.member_sizes and member not in spec.skip_member_sizes:

@@ -76,7 +76,12 @@ def compiled_layout(case: HeaderCase, types) -> tuple[dict[str, int], dict[str, 
     if compiler is None:
         pytest.skip("No C compiler available for the header matrix.")
 
-    structs = [StructSpec(python_name=name, c_name=name, member_sizes=case.member_sizes) for name in case.structs]
+    # Darwin system typedefs cannot be reproduced with a Linux compiler. Check exact member types on macOS only.
+    member_types = not (case.context.system == 'Darwin' and sys.platform != 'darwin')
+    structs = [
+        StructSpec(python_name=name, c_name=name, member_sizes=case.member_sizes, member_types=member_types)
+        for name in case.structs
+    ]
     if case.kernel_structs:
         structs += [
             StructSpec(
@@ -86,6 +91,7 @@ def compiled_layout(case: HeaderCase, types) -> tuple[dict[str, int], dict[str, 
                 skip_members=tuple(SKIP_MEMBERS.get(c_name, ())),
                 skip_member_sizes=KERNEL_MEMBER_SIZE_SKIPS.get(c_name, ()),
                 member_sizes=True,
+                member_types=member_types,
             )
             for python_name, c_name in KERNEL_STRUCTS
         ]

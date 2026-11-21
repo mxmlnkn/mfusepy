@@ -50,10 +50,13 @@ def struct_specs() -> list[StructSpec]:
             skip_members=tuple(SKIP_MEMBERS.get(c_name, ())),
             skip_member_sizes=KERNEL_MEMBER_SIZE_SKIPS.get(c_name, ()),
             member_sizes=True,
+            member_types=True,
         )
         for python_name, c_name in KERNEL_STRUCTS
     ]
-    specs += [StructSpec(python_name=name, c_name=name, member_sizes=True) for name in fuse_struct_names()]
+    specs += [
+        StructSpec(python_name=name, c_name=name, member_sizes=True, member_types=True) for name in fuse_struct_names()
+    ]
     return specs
 
 
