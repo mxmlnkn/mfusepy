@@ -284,6 +284,10 @@ jobs:
         if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && !matrix.libfuse-version
         run: tests/headers/download.sh all
 
+      - name: Download macFUSE Headers
+        if: matrix.os == 'macos-15-intel' && matrix.python-version == '3.13'
+        run: tests/headers/download.sh macfuse
+
       - name: Unit Tests (FUSE 2)
         if: startsWith( matrix.os, 'ubuntu' ) && !matrix.libfuse-version
         run: |

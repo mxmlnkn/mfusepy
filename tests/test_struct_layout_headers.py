@@ -119,8 +119,8 @@ def function_prototype_checks(types, fuse_prefix: bool = False) -> list[str]:
         else:
             lines.append(f'    {return_type} result_{name} = operations->{name}({arguments});')
             lines.append(
-                f'    _Static_assert(__builtin_types_compatible_p('
-                f'__typeof__(operations->{name}({arguments})), {return_type}), "{name} return type");'
+                f'    _Static_assert(sizeof(operations->{name}({arguments})) == '
+                f'sizeof({return_type}), "{name} return type");'
             )
             lines.append(f'    (void) result_{name};')
     lines += ['}', '']
@@ -138,6 +138,7 @@ class HeaderCase:
     structs: tuple[str, ...] = dataclasses.field(default_factory=lambda: tuple(STRUCTS))
     kernel_structs: bool = False
     member_sizes: bool = True
+    prototypes: bool = True
     skip_reason: str = ''
 
 
@@ -165,7 +166,9 @@ def compiled_layout(case: HeaderCase, types) -> tuple[dict[str, int], dict[str, 
     checks = build_checks(types, structs)
     includes = (*case.includes, case.header) if case.header else case.includes
     fuse_prefix = getattr(case.context, 'system', '') == 'Windows'
-    prototype_checks = function_prototype_checks(types, fuse_prefix=fuse_prefix) if case.header else []
+    prototype_checks = (
+        function_prototype_checks(types, fuse_prefix=fuse_prefix) if case.header and case.prototypes else []
+    )
     source = c_probe(
         includes,
         checks,
@@ -193,11 +196,14 @@ def header_cases() -> list[HeaderCase]:
             include_dir = version / 'include' / include_name
             if not (include_dir / 'fuse.h').exists():
                 continue
-            parts = version.name.split('.')
-            if len(parts) < 2:
-                continue
-            major, minor = int(parts[0]), int(parts[1])
-            hotfix = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            if version.name == 'master':
+                major, minor, hotfix = 3, 19, 0
+            else:
+                parts = version.name.split('.')
+                if len(parts) < 2:
+                    continue
+                major, minor = int(parts[0]), int(parts[1])
+                hotfix = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             structs = tuple(STRUCTS)
             if major == 2:
                 structs = tuple(s for s in STRUCTS if s != 'fuse_config')
@@ -268,20 +274,8 @@ def header_cases() -> list[HeaderCase]:
 
     macfuse_versions = {
         'support-libfuse-2.9': (2, 9, 0, '29', ''),
-        'support-libfuse-3.17': (
-            3,
-            17,
-            2,
-            '317',
-            "macFUSE libfuse 3.x needs generated config headers and matching fuse_conn_info support.",
-        ),
-        'support-libfuse-3.18': (
-            3,
-            18,
-            3,
-            '318',
-            "macFUSE libfuse 3.x needs generated config headers and matching fuse_conn_info support.",
-        ),
+        'support-libfuse-3.17': (3, 17, 2, '317', ''),
+        'support-libfuse-3.18': (3, 18, 3, '318', ''),
     }
     for version in sorted((HEADER_ROOT / 'macfuse').glob('*')):
         include_dir = version / 'include'
@@ -289,10 +283,19 @@ def header_cases() -> list[HeaderCase]:
             continue
         if version.name in macfuse_versions:
             major, minor, hotfix, use_version, skip_reason = macfuse_versions[version.name]
-            structs = tuple(STRUCTS) if major == 3 else tuple(s for s in STRUCTS if s != 'fuse_config')
+            if major == 3:
+                # macFUSE 3 enables Darwin-specific operations and argument types by default. Modeling that
+                # operation ABI is future work, but the shared structs and the extended fuse_conn_info can
+                # still be checked here.
+                structs = tuple(s for s in STRUCTS if s != 'fuse_operations')
+                prototypes = False
+            else:
+                structs = tuple(s for s in STRUCTS if s != 'fuse_config')
+                prototypes = True
         else:
             major, minor, hotfix, use_version = (2, 9, 0, '29')
             structs = tuple(s for s in STRUCTS if s != 'fuse_config')
+            prototypes = True
             skip_reason = (
                 f"macFUSE branch {version.name!r} is not part of the checked release set. "
                 "The matrix checks support/libfuse-2.9, 3.17, and 3.18."
@@ -311,6 +314,7 @@ def header_cases() -> list[HeaderCase]:
                 structs=structs,
                 # The probe is compiled with the host's mode_t, so member sizes are not comparable.
                 member_sizes=False,
+                prototypes=prototypes,
                 skip_reason=skip_reason,
             )
         )

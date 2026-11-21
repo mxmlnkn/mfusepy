@@ -89,6 +89,7 @@ fetch_libfuse() {
             3.16.1 3.16.2
             3.17.1 3.17.2 3.17.3 3.17.4
             3.18.0 3.18.1 3.18.2 3.18.3
+            master
         )
     fi
 
@@ -104,16 +105,27 @@ fetch_libfuse() {
             continue
         fi
 
-        local tag
-        tag=$( libfuse_tag "$cache" "$version" )
+        local ref
+        if [[ $version == master ]]; then
+            ref=origin/master
+        else
+            ref=$( libfuse_tag "$cache" "$version" )
+        fi
         local worktree
-        worktree=$( create_worktree "$cache" "$tag" )
+        worktree=$( create_worktree "$cache" "$ref" )
         rm -rf "$destination"
         mkdir -p "$destination/include/$include_dir"
         cp "$worktree"/include/*.h "$destination/include/$include_dir/"
 
         local major minor hotfix
-        IFS=. read -r major minor hotfix <<< "$version"
+        if [[ $version == master ]]; then
+            # The unreleased development version is modeled as the next minor release.
+            major=3
+            minor=19
+            hotfix=0
+        else
+            IFS=. read -r major minor hotfix <<< "$version"
+        fi
         if [[ $major -ge 3 ]]; then
             cat > "$destination/include/$include_dir/libfuse_config.h" <<EOF
 #pragma once
@@ -193,6 +205,24 @@ fetch_macfuse() {
         rm -rf "$destination"
         mkdir -p "$destination/include/fuse"
         cp "$worktree"/include/*.h "$destination/include/fuse/"
+
+        local major minor hotfix
+        case "$branch" in
+            support/libfuse-3.17) major=3; minor=17; hotfix=2 ;;
+            support/libfuse-3.18) major=3; minor=18; hotfix=3 ;;
+            *) major=2; minor=9; hotfix=0 ;;
+        esac
+        if [[ $major -ge 3 ]]; then
+            cat > "$destination/include/fuse/libfuse_config.h" <<EOF
+#pragma once
+#define FUSE_MAJOR_VERSION $major
+#define FUSE_MINOR_VERSION $minor
+#define FUSE_HOTFIX_VERSION $hotfix
+#define FUSE_RC_VERSION ""
+EOF
+            cp "$destination/include/fuse/libfuse_config.h" \
+                "$destination/include/fuse/fuse_config.h"
+        fi
 
         local license
         license=$( find "$worktree" -maxdepth 2 \( -iname 'LICENSE*' -o -iname 'COPYING*' \) -type f -print -quit )

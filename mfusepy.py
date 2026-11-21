@@ -1209,7 +1209,7 @@ class _FuseTypes:
         if fuse_version_major == 3 or _librefuse:
             _fuse_conn_info_fields += [('max_read', _fuse_uint32)]
         _fuse_conn_info_fields += [('max_readahead', _fuse_uint32)]
-        if _system == 'Darwin':
+        if _system == 'Darwin' and fuse_version_major == 2:
             _fuse_conn_info_fields += [('enable', _fuse_uint32)]  # TODO: is a bitfield
         if (
             fuse_version_major == 3
@@ -1242,6 +1242,11 @@ class _FuseTypes:
                     ('capable_ext', ctypes.c_uint64),
                     ('want_ext', ctypes.c_uint64),
                 ]
+                if _system == 'Darwin':
+                    _fuse_conn_info_fields += [
+                        ('capable_darwin', ctypes.c_uint64),
+                        ('want_darwin', ctypes.c_uint64),
+                    ]
                 if fuse_version >= (3, 18, 0):
                     _fuse_conn_info_fields += [
                         ('request_timeout', ctypes.c_uint16),
@@ -1445,7 +1450,8 @@ class _FuseTypes:
                     self.want_ext &= ~flag
 
         if fuse_version >= (3, 17, 1) and not _librefuse:
-            assert ctypes.sizeof(fuse_conn_info) == 128
+            expected_conn_info_size = 144 if _system == 'Darwin' else 128
+            assert ctypes.sizeof(fuse_conn_info) == expected_conn_info_size
 
         fuse_conn_info.CAPABILITY_BITS = capability_bits
         fuse_conn_info._HAS_WANT_EXT = has_want_ext
