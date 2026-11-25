@@ -192,8 +192,11 @@ class _FuseContext:
                 # On NetBSD 10+ librefuse implements FUSE 3, targeting 3.10 compatibility.
                 # On NetBSD, find_library only works if a C compiler or ld is in PATH (and e.g. not within pkgsrc
                 # builds, where the compiler wrappers drop -lrefuse), so fall back to the soname of the base system
-                # library.
-                _libfuse_path = find_library('refuse') or 'librefuse.so.2'
+                # library. FUSE_LIBRARY_NAME overrides the base-system default, e.g., to select pkgsrc fuse3.
+                _libfuse_name = os.environ.get('FUSE_LIBRARY_NAME')
+                _libfuse_path = find_library(_libfuse_name or 'refuse')
+                if not _libfuse_path and _libfuse_name is None:
+                    _libfuse_path = 'librefuse.so.2'
             elif _system == 'Windows':
                 # pytype: disable=module-attr
                 try:
