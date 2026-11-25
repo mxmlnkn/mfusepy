@@ -1392,7 +1392,7 @@ class _FuseTypes:
             # Everywhere else they are accessed via a pointer's '.contents', which pylint treats as Any.
             # pylint: disable=no-member
             _fields_ = _fuse_conn_info_fields
-            CAPABILITY_BITS: dict[FuseCapability, int]
+            _CAPABILITY_BITS: dict[FuseCapability, int]
             _HAS_WANT_EXT: bool
             _set_feature_flag: Any
             _unset_feature_flag: Any
@@ -1408,7 +1408,7 @@ class _FuseTypes:
                 This mirrors fuse_get_feature_flag(), i.e., it only reflects 'capable', and returns False
                 for a capability that the loaded implementation does not define with this meaning.
                 '''
-                flag = type(self).CAPABILITY_BITS.get(capability)
+                flag = type(self)._CAPABILITY_BITS.get(capability)
                 if flag is None:
                     return False
 
@@ -1424,7 +1424,7 @@ class _FuseTypes:
                 capability with this meaning or if the kernel is not capable of it. Requesting a feature
                 that the kernel does not support would make libfuse abort the mount with EPROTO.
                 '''
-                flag = type(self).CAPABILITY_BITS.get(capability)
+                flag = type(self)._CAPABILITY_BITS.get(capability)
                 if flag is None:
                     return False
 
@@ -1447,7 +1447,7 @@ class _FuseTypes:
 
             def disable_capability(self, capability: FuseCapability) -> None:
                 '''Request the given capability to be disabled, mirroring fuse_unset_feature_flag().'''
-                flag = type(self).CAPABILITY_BITS.get(capability)
+                flag = type(self)._CAPABILITY_BITS.get(capability)
                 if flag is None:
                     return
 
@@ -1467,7 +1467,7 @@ class _FuseTypes:
             expected_conn_info_size = 144 if _system == 'Darwin' else 128
             assert ctypes.sizeof(fuse_conn_info) == expected_conn_info_size
 
-        fuse_conn_info.CAPABILITY_BITS = capability_bits
+        fuse_conn_info._CAPABILITY_BITS = capability_bits
         fuse_conn_info._HAS_WANT_EXT = has_want_ext
 
         # libfuse >= 3.17.3 exports these helpers, which set/unset a capability in 'want_ext' and keep libfuse's
@@ -1848,7 +1848,7 @@ class _FuseTypes:
         self.c_timespec_p = c_timespec_p
 
         self.ENOTSUP = enotsup
-        self.CAPABILITY_BITS = capability_bits
+        self._CAPABILITY_BITS = capability_bits
         self._HAS_WANT_EXT = has_want_ext
         self.setxattr_t = setxattr_t
         self.getxattr_t = getxattr_t
@@ -1985,7 +1985,7 @@ else:
 
 fuse_pollhandle_p = _types.fuse_pollhandle_p
 fuse_operations = _types.fuse_operations
-_CAPABILITY_BITS = _types.CAPABILITY_BITS
+_CAPABILITY_BITS = _types._CAPABILITY_BITS
 _HAS_WANT_EXT = _types._HAS_WANT_EXT
 if _system == 'Windows' or _system.startswith('CYGWIN'):
     c_win_long = _types.c_win_long

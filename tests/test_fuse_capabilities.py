@@ -52,6 +52,11 @@ def test_capability_map_is_sane():
     assert len(set(_CAPABILITY_BITS.values())) == len(_CAPABILITY_BITS)
 
 
+def test_capability_map_is_private():
+    assert fuse_conn_info._CAPABILITY_BITS is _CAPABILITY_BITS
+    assert not hasattr(fuse_conn_info, 'CAPABILITY_BITS')
+
+
 @requires_want
 def test_enable_undeclared_capability():
     # Every implementation leaves out the capabilities of the others, e.g., macFUSE's or WinFsp's.
