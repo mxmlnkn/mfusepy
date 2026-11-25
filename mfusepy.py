@@ -2761,11 +2761,12 @@ class FUSE:
                             setattr(st, key, attrs[key])
                     has_stat = True
 
+            encoded_name = name.encode(self.encoding, self.errors)
             if fuse_version_major == 2:
-                if filler(buf, name.encode(self.encoding, self.errors), st if has_stat else None, offset) != 0:  # type: ignore
+                if filler(buf, encoded_name, st if has_stat else None, offset) != 0:  # type: ignore
                     break
             elif fuse_version_major == 3:
-                if filler(buf, name.encode(self.encoding, self.errors), st if has_stat else None, offset, 0) != 0:
+                if filler(buf, encoded_name, st if has_stat else None, offset, 0) != 0:
                     break
 
         if encountered_non_zero_offset and not use_readdir_with_offset:
